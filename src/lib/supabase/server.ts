@@ -16,12 +16,7 @@ export async function createSupabaseServerClient() {
         })),
       setAll: (cookiesToSet) => {
         cookiesToSet.forEach(({ name, value, options }) => {
-          // next/headers cookie store typing varies across Next versions
-          cookieStore.set({
-            name,
-            value,
-            ...(options ?? {}),
-          } as unknown as Record<string, unknown>);
+          cookieStore.set(name, value, options ?? {});
         });
       },
     },

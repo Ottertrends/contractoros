@@ -18,12 +18,8 @@ export function createSupabaseMiddlewareClient(
         })),
       setAll: (cookiesToSet) => {
         cookiesToSet.forEach(({ name, value, options }) => {
-          // next/server ResponseCookies supports setting via object.
-          res.cookies.set({
-            name,
-            value,
-            ...(options ?? {}),
-          } as unknown as Record<string, unknown>);
+          // Use (name, value, opts) overload — avoids fragile object-union typing on `set`.
+          res.cookies.set(name, value, options ?? {});
         });
       },
     },
