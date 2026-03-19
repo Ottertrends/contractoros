@@ -15,7 +15,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Badge } from "@/components/ui/badge";
+import { WhatsAppConnection } from "@/components/settings/whatsapp-connection";
 
 const businessAreaOptions = [
   { value: "residential", label: "Residential" },
@@ -142,12 +142,6 @@ export function SettingsPageClient({ userId, profile }: { userId: string; profil
     }
   }
 
-  const whatsappBadge = profile.whatsapp_connected ? (
-    <Badge variant="success">Connected</Badge>
-  ) : (
-    <Badge variant="neutral">Not Connected</Badge>
-  );
-
   return (
     <div className="flex flex-col gap-6">
       <div>
@@ -265,20 +259,12 @@ export function SettingsPageClient({ userId, profile }: { userId: string; profil
         <CardHeader>
           <CardTitle>WhatsApp Connection</CardTitle>
         </CardHeader>
-        <CardContent className="flex flex-col gap-5">
-          <div className="flex items-center gap-3">
-            {whatsappBadge}
-          </div>
-
-          <div className="rounded-xl border border-dashed border-slate-300 bg-white px-6 py-10 text-center text-sm text-slate-500">
-            QR code will appear here when WhatsApp integration is configured
-          </div>
-
-          <div className="text-sm text-slate-600">
-            Scan this QR code with WhatsApp to connect your account
-          </div>
-
-          <Button disabled variant="secondary">Disconnect</Button>
+        <CardContent>
+          <WhatsAppConnection
+            userId={userId}
+            initiallyConnected={!!profile.whatsapp_connected}
+            initialPhone={null}
+          />
         </CardContent>
       </Card>
 

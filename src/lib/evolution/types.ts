@@ -1,0 +1,82 @@
+/** Evolution API v1.x (atendai/evolution-api) — request/response shapes (best-effort; API may vary slightly by version). */
+
+export interface CreateInstanceBody {
+  instanceName: string;
+  token?: string;
+  qrcode?: boolean;
+  integration?: string;
+}
+
+export interface CreateInstanceResponse {
+  instance?: {
+    instanceName?: string;
+    status?: string;
+    qrcode?: { base64?: string } | string;
+  };
+  qrcode?: { base64?: string };
+  base64?: string;
+  /** Some versions nest QR under `qrcode` string */
+  [key: string]: unknown;
+}
+
+export interface InstanceStatusResponse {
+  instance?: {
+    instanceName?: string;
+    state?: string;
+  };
+  state?: string;
+  /** connection state payload */
+  [key: string]: unknown;
+}
+
+export interface QRCodeResponse {
+  base64?: string;
+  qrcode?: { base64?: string } | string;
+  code?: string;
+  [key: string]: unknown;
+}
+
+export interface SendTextBody {
+  number: string;
+  textMessage: {
+    text: string;
+  };
+}
+
+export interface SendMessageResponse {
+  key?: { id?: string };
+  [key: string]: unknown;
+}
+
+export interface SetWebhookBody {
+  url: string;
+  webhook_by_events?: boolean;
+  webhook_base64?: boolean;
+  events: string[];
+  [key: string]: unknown;
+}
+
+/** Webhook POST body (subset we care about) */
+export interface EvolutionWebhookPayload {
+  event?: string;
+  instance?: string;
+  data?: unknown;
+  [key: string]: unknown;
+}
+
+export interface MessagesUpsertData {
+  key?: {
+    remoteJid?: string;
+    fromMe?: boolean;
+    id?: string;
+  };
+  message?: Record<string, unknown>;
+  messageTimestamp?: string | number;
+  [key: string]: unknown;
+}
+
+export interface ConnectionUpdateData {
+  state?: string;
+  status?: string;
+  [key: string]: unknown;
+}

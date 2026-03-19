@@ -3,6 +3,7 @@ import {
   LayoutDashboard,
   FolderKanban,
   FileText,
+  MessageSquare,
   Boxes,
   BarChart3,
   Settings as SettingsIcon,
@@ -11,6 +12,7 @@ import {
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/dashboard/projects", label: "Projects", icon: FolderKanban },
+  { href: "/dashboard/messages", label: "Messages", icon: MessageSquare },
   { href: "/dashboard/invoices", label: "Invoices", icon: FileText },
   { href: "/dashboard/price-book", label: "Price Book", icon: Boxes },
   { href: "/dashboard/stats", label: "Stats", icon: BarChart3 },
