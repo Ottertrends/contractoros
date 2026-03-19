@@ -6,6 +6,7 @@ import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
+import type { AuthChangeEvent, Session } from "@supabase/supabase-js";
 
 import { supabase } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -38,7 +39,7 @@ export default function LoginPage() {
 
   React.useEffect(() => {
     const { data: sub } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
+      (_event: AuthChangeEvent, session: Session | null) => {
         if (session?.user) router.push("/dashboard");
       },
     );

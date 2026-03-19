@@ -1,4 +1,20 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# ContractorOS (Phase 1)
+
+Next.js App Router + Supabase (auth + RLS) + Tailwind/shadcn-style UI.
+
+## Environment variables
+
+Create `.env.local` (never commit secrets) with:
+
+- `NEXT_PUBLIC_SUPABASE_URL`
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+- `SUPABASE_SERVICE_ROLE_KEY` (server-only; used for account deletion API)
+
+### Vercel
+
+Add the same variables under **Project → Settings → Environment Variables** for **Production** (and **Preview** if you use it).
+
+`NEXT_PUBLIC_*` values are inlined at **build time**; the build will fail or the app will not authenticate if they are missing.
 
 ## Getting Started
 
