@@ -82,17 +82,14 @@ export interface EvolutionClient {
 
 export function createEvolutionClient(): EvolutionClient {
   return {
-    async createInstance(instanceName: string, webhookUrl: string) {
-      // Evolution v1.8.x: pass webhook inside the create body.
-      // The separate PUT /webhook/set/{instance} endpoint does not exist in v1.
+    async createInstance(instanceName: string, _webhookUrl: string) {
+      // Evolution v2: minimal body only — extra fields (webhook, token, events)
+      // cause strict-validation 400 errors on v2 and leave the instance in a broken state.
+      // Webhook is always registered separately via setWebhook() after creation.
       const body: CreateInstanceBody = {
         instanceName,
-        token: getApiKey(),
         qrcode: true,
         integration: "WHATSAPP-BAILEYS",
-        webhook: webhookUrl,
-        webhook_by_events: false,
-        events: ["MESSAGES_UPSERT", "CONNECTION_UPDATE", "QRCODE_UPDATED"],
       };
       return evolutionFetch<CreateInstanceResponse>(
         "/instance/create",

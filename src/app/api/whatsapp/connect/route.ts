@@ -30,57 +30,74 @@ export async function POST() {
     console.log("[whatsapp/connect] webhookUrl:", webhookUrl);
 
     const evolution = createEvolutionClient();
+    const WEBHOOK_EVENTS = ["MESSAGES_UPSERT", "CONNECTION_UPDATE", "QRCODE_UPDATED"];
+
+    // Helper: create instance fresh, set webhook, return raw response
+    async function createFresh(): Promise<unknown> {
+      const res = await evolution.createInstance(instanceName, webhookUrl);
+      console.log("[whatsapp/connect] instance created successfully");
+      try {
+        await evolution.setWebhook(instanceName, webhookUrl, WEBHOOK_EVENTS);
+        console.log("[whatsapp/connect] webhook registered:", webhookUrl);
+      } catch (we) {
+        console.warn("[whatsapp/connect] setWebhook failed (non-fatal):", we instanceof Error ? we.message : we);
+      }
+      return res;
+    }
+
     let created: unknown = null;
-    let instanceAlreadyExists = false;
 
     try {
-      created = await evolution.createInstance(instanceName, webhookUrl);
-      console.log("[whatsapp/connect] instance created successfully");
+      created = await createFresh();
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      console.log("[whatsapp/connect] createInstance error:", msg);
-
-      const instanceExists =
+      const alreadyExists =
         /\b409\b/.test(msg) ||
         /already\s+exist/i.test(msg) ||
         /\bduplicate\b/i.test(msg);
 
-      if (!instanceExists) throw e;
-      console.log("[whatsapp/connect] instance already exists — will re-register webhook");
-      instanceAlreadyExists = true;
+      if (!alreadyExists) throw e;
+
+      console.log("[whatsapp/connect] instance already exists — re-registering webhook");
+      try {
+        await evolution.setWebhook(instanceName, webhookUrl, WEBHOOK_EVENTS);
+      } catch (we) {
+        console.warn("[whatsapp/connect] setWebhook failed (non-fatal):", we instanceof Error ? we.message : we);
+      }
     }
 
-    // Always (re)register the webhook — critical if instance already existed
-    // or if the createInstance webhook param was ignored by the server
-    const WEBHOOK_EVENTS = ["MESSAGES_UPSERT", "CONNECTION_UPDATE", "QRCODE_UPDATED"];
-    try {
-      await evolution.setWebhook(instanceName, webhookUrl, WEBHOOK_EVENTS);
-      console.log("[whatsapp/connect] webhook registered:", webhookUrl);
-    } catch (e) {
-      // setWebhook may not exist on some Evolution v1 builds — log and continue
-      console.warn(
-        "[whatsapp/connect] setWebhook failed (may be unsupported):",
-        e instanceof Error ? e.message : e,
-      );
-    }
-
-    // Evolution v2: createInstance response already contains the QR code.
-    // Try to extract it first. Only call getQRCode if the creation response had no QR.
+    // Try to get QR — first from createInstance response, then via getQRCode endpoint
     let qr = await resolveQrDataUrl(created);
 
     if (!qr) {
-      console.log("[whatsapp/connect] No QR in createInstance response — calling getQRCode");
+      console.log("[whatsapp/connect] No QR in create response — calling getQRCode");
       try {
         const connect = await evolution.getQRCode(instanceName);
-        console.log("[whatsapp/connect] QR fetched via getQRCode");
         qr = await resolveQrDataUrl(connect, created);
+        console.log("[whatsapp/connect] getQRCode succeeded, QR:", qr ? "yes" : "no");
       } catch (e) {
-        // getQRCode can 404 on Evolution v2 when the instance is already connecting.
-        // Log but don't crash — the QR from createInstance (if any) is still usable.
-        console.warn("[whatsapp/connect] getQRCode failed (non-fatal):", e instanceof Error ? e.message : e);
+        const msg = e instanceof Error ? e.message : String(e);
+        console.warn("[whatsapp/connect] getQRCode failed:", msg);
+
+        // If instance is broken (404 after "already exists"), delete and recreate
+        if (/404|not found|does not exist/i.test(msg)) {
+          console.log("[whatsapp/connect] Broken instance detected — deleting and recreating");
+          try { await evolution.deleteInstance(instanceName); } catch (_) { /* ignore */ }
+          try {
+            created = await createFresh();
+            qr = await resolveQrDataUrl(created);
+            if (!qr) {
+              const connect2 = await evolution.getQRCode(instanceName);
+              qr = await resolveQrDataUrl(connect2, created);
+            }
+          } catch (recreateErr) {
+            throw recreateErr;
+          }
+        }
       }
     }
-    console.log("[whatsapp/connect] QR resolved:", qr ? "yes" : "no", "instanceAlreadyExisted:", instanceAlreadyExists);
+
+    console.log("[whatsapp/connect] QR resolved:", qr ? "yes" : "no");
 
     const { error: profileErr } = await supabase
       .from("profiles")
