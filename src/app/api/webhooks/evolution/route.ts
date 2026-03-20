@@ -26,25 +26,42 @@ async function resolveOwnerWhatsappJid(
   payloadSender: string | null,
 ): Promise<string | null> {
   const raw = payloadSender?.trim();
-  // Only trust payload.sender if it looks like an actual phone JID, not an instance name
-  if (raw && isPhoneJid(raw)) {
-    console.log("[evolution-webhook] ownerJid from payload.sender:", raw);
-    return raw;
+
+  // Query profile for stored canonical JID AND phone in one call
+  const { data: prof } = await admin
+    .from("profiles")
+    .select("phone, whatsapp_owner_jid")
+    .eq("id", userId)
+    .maybeSingle();
+
+  // 1. Prefer stored canonical JID — set from a previous validated sender, most reliable
+  if (prof?.whatsapp_owner_jid && typeof prof.whatsapp_owner_jid === "string") {
+    console.log("[evolution-webhook] ownerJid from stored whatsapp_owner_jid:", prof.whatsapp_owner_jid);
+    return prof.whatsapp_owner_jid;
   }
+
+  // 2. Trust payload.sender if it looks like a real phone JID (not an instance UUID)
+  if (raw && isPhoneJid(raw)) {
+    // Normalize: strip device suffix (:XX) so "17372969713:4@s.whatsapp.net" → "17372969713@s.whatsapp.net"
+    const canonical = `${raw.split("@")[0].split(":")[0]}@s.whatsapp.net`;
+    console.log("[evolution-webhook] ownerJid from payload.sender:", raw, "→ canonical:", canonical);
+    // Persist so future calls use exact match — no more digit guessing
+    await admin.from("profiles").update({ whatsapp_owner_jid: canonical }).eq("id", userId);
+    return canonical;
+  }
+
   if (raw) {
     console.log("[evolution-webhook] payload.sender looks non-phone, ignoring:", raw);
   }
-  const { data: prof } = await admin
-    .from("profiles")
-    .select("phone")
-    .eq("id", userId)
-    .maybeSingle();
+
+  // 3. Last resort: DB phone. For US 10-digit numbers prepend country code 1.
   const phone = prof?.phone;
   if (!phone || typeof phone !== "string") return null;
   const digits = phone.replace(/\D/g, "");
   if (!digits) return null;
-  const jid = `${digits}@s.whatsapp.net`;
-  console.log("[evolution-webhook] ownerJid from DB phone:", jid);
+  const normalized = digits.length === 10 ? `1${digits}` : digits;
+  const jid = `${normalized}@s.whatsapp.net`;
+  console.log("[evolution-webhook] ownerJid from DB phone (normalized):", jid);
   return jid;
 }
 
@@ -108,7 +125,9 @@ async function processPayload(payload: EvolutionWebhookPayload) {
   const admin = createSupabaseAdminClient();
 
   if (eventRaw.includes("connection")) {
-    await handleConnectionUpdate(admin, userId, instance, payload.data);
+    const payloadSenderForConn =
+      typeof payload.sender === "string" ? payload.sender.trim() : null;
+    await handleConnectionUpdate(admin, userId, instance, payload.data, payloadSenderForConn);
   }
 
   if (
@@ -154,16 +173,24 @@ async function handleConnectionUpdate(
   userId: string,
   instance: string,
   data: unknown,
+  payloadSender?: string | null,
 ) {
   const d = (data ?? {}) as ConnectionUpdateData;
   const state = String(d.state ?? d.status ?? "").toLowerCase();
   console.log("[evolution-webhook] connectionUpdate state:", state, "| instance:", instance);
 
   if (state.includes("open") || state === "connected") {
-    await admin
-      .from("profiles")
-      .update({ whatsapp_connected: true, whatsapp_instance_id: instance })
-      .eq("id", userId);
+    const patch: Record<string, unknown> = {
+      whatsapp_connected: true,
+      whatsapp_instance_id: instance,
+    };
+    // When connection opens, also store the canonical owner JID from payload.sender
+    if (payloadSender && isPhoneJid(payloadSender)) {
+      const canonical = `${payloadSender.split("@")[0].split(":")[0]}@s.whatsapp.net`;
+      patch.whatsapp_owner_jid = canonical;
+      console.log("[evolution-webhook] connectionUpdate: storing whatsapp_owner_jid:", canonical);
+    }
+    await admin.from("profiles").update(patch).eq("id", userId);
   } else if (
     state.includes("close") ||
     state.includes("logout") ||
@@ -219,7 +246,8 @@ async function handleMessagesUpsert(
     const remote = digits(jid);
     const owner = digits(ownerJid);
     const isSelf = remote === owner || remote.endsWith(owner) || owner.endsWith(remote);
-    console.log("[evolution-webhook] self-chat check — remote:", remote, "| owner:", owner, "| isSelf:", isSelf);
+    // Unique searchable tag — search "[SELFCHAT-DEBUG]" in Vercel logs to see actual values
+    console.log("[SELFCHAT-DEBUG]", JSON.stringify({ remote, owner, isSelf, jid, ownerJid }));
     if (!isSelf) {
       console.log("[evolution-webhook] Outgoing to external — skipping | remoteJid:", jid);
       return;
