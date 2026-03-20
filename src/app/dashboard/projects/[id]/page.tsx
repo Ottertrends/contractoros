@@ -7,6 +7,8 @@ import { DraftInvoiceCard } from "@/components/invoices/draft-invoice-card";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { ensureDraftInvoice } from "@/lib/invoice/sync-draft";
+import { getServerLang } from "@/lib/i18n/server";
+import { getT } from "@/lib/i18n/translations";
 import type { Invoice, InvoiceItem, InvoiceStatus, Project } from "@/lib/types/database";
 import { ProjectForm } from "@/components/projects/project-form";
 
@@ -35,6 +37,11 @@ export default async function ProjectDetailPage({
   } = await supabase.auth.getUser();
   if (!user) return null;
 
+  const lang = await getServerLang();
+  const t = getT(lang);
+  const tp = t.projects;
+  const ti = t.invoices;
+
   const projectId = params.id;
 
   const { data: project, error: projectError } = await supabase
@@ -48,7 +55,7 @@ export default async function ProjectDetailPage({
   if (projectError || !project) {
     return (
       <div className="p-4 md:p-6">
-        <div className="text-slate-900 font-semibold">Project not found</div>
+        <div className="text-slate-900 dark:text-slate-50 font-semibold">{t.common.noResults}</div>
       </div>
     );
   }
@@ -97,10 +104,10 @@ export default async function ProjectDetailPage({
     <div className="flex flex-col gap-6">
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <Link href="/dashboard/projects" className="text-sm text-primary hover:underline">
-          ← Back to Projects
+          {tp.backToProjects}
         </Link>
         <div className="text-sm text-slate-500">
-          Last updated:{" "}
+          {tp.lastUpdated}:{" "}
           {safeProject.updated_at
             ? new Date(safeProject.updated_at).toLocaleDateString()
             : "—"}
@@ -119,12 +126,12 @@ export default async function ProjectDetailPage({
         />
       ) : (
         <Card>
-          <CardHeader><CardTitle>Draft Invoice</CardTitle></CardHeader>
+          <CardHeader><CardTitle>{tp.draftInvoice}</CardTitle></CardHeader>
           <CardContent>
             <p className="text-sm text-slate-500">
-              No draft invoice yet.{" "}
+              {tp.noInvoiceYet}{" "}
               <Link href={`/dashboard/invoices/new?projectId=${projectId}`} className="text-primary hover:underline">
-                Create one manually
+                {tp.createManually}
               </Link>
             </p>
           </CardContent>
@@ -136,9 +143,9 @@ export default async function ProjectDetailPage({
         <Card>
           <CardHeader>
             <div className="flex items-center justify-between gap-3 flex-wrap">
-              <CardTitle>Other Invoices</CardTitle>
+              <CardTitle>{tp.otherInvoices}</CardTitle>
               <Link href={`/dashboard/invoices/new?projectId=${projectId}`}>
-                <Button variant="secondary" size="sm">New Invoice</Button>
+                <Button variant="secondary" size="sm">{tp.newInvoice}</Button>
               </Link>
             </div>
           </CardHeader>
@@ -147,10 +154,10 @@ export default async function ProjectDetailPage({
               <table className="w-full text-sm">
                 <thead className="text-left text-xs uppercase text-slate-500 border-b border-slate-200">
                   <tr>
-                    <th className="py-2 pr-3">Invoice #</th>
-                    <th className="py-2 pr-3">Status</th>
-                    <th className="py-2 pr-3 text-right">Total</th>
-                    <th className="py-2 text-right">Date</th>
+                    <th className="py-2 pr-3">{ti.invoiceNumber}</th>
+                    <th className="py-2 pr-3">{ti.status}</th>
+                    <th className="py-2 pr-3 text-right">{ti.total}</th>
+                    <th className="py-2 text-right">{ti.date}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
@@ -172,8 +179,8 @@ export default async function ProjectDetailPage({
                       </td>
                       <td className="py-3 text-right text-slate-400">
                         {inv.date
-                          ? new Date(inv.date).toLocaleDateString("en-US")
-                          : new Date(inv.created_at).toLocaleDateString("en-US")}
+                          ? new Date(inv.date).toLocaleDateString()
+                          : new Date(inv.created_at).toLocaleDateString()}
                       </td>
                     </tr>
                   ))}

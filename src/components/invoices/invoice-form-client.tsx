@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { Trash2, Plus } from "lucide-react";
 
 import { supabase } from "@/lib/supabase/client";
+import { useLanguage } from "@/lib/i18n/client";
 import type { Invoice, InvoiceItem, InvoiceStatus, PriceBookItem, Project } from "@/lib/types/database";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -97,6 +98,9 @@ export function InvoiceFormClient({
   defaultProjectId,
 }: Props) {
   const router = useRouter();
+  const { t } = useLanguage();
+  const ti = t.invoices;
+  const tp = t.projects;
 
   const [projectId, setProjectId] = React.useState<string>(
     invoice?.project_id ?? defaultProjectId ?? projects[0]?.id ?? "",
@@ -289,7 +293,7 @@ export function InvoiceFormClient({
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between gap-3 flex-wrap">
-            <CardTitle>{mode === "create" ? "New Invoice" : "Edit Invoice"}</CardTitle>
+            <CardTitle>{mode === "create" ? ti.newInvoice : ti.editInvoice}</CardTitle>
             <div className="flex items-center gap-2">
               <Badge variant={statusVariant(status)}>
                 {status.charAt(0).toUpperCase() + status.slice(1)}
@@ -300,10 +304,10 @@ export function InvoiceFormClient({
         </CardHeader>
         <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-5">
           <div className="flex flex-col gap-2">
-            <Label>Project *</Label>
+            <Label>{ti.project} *</Label>
             <Select value={projectId} onValueChange={setProjectId}>
               <SelectTrigger>
-                <SelectValue placeholder="Select a project" />
+                <SelectValue placeholder={ti.selectProject} />
               </SelectTrigger>
               <SelectContent>
                 {projects.map((p) => (
@@ -316,22 +320,22 @@ export function InvoiceFormClient({
           </div>
 
           <div className="flex flex-col gap-2">
-            <Label>Status</Label>
+            <Label>{ti.status}</Label>
             <Select value={status} onValueChange={(v) => setStatus(v as InvoiceStatus)}>
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="draft">Draft</SelectItem>
-                <SelectItem value="sent">Sent</SelectItem>
-                <SelectItem value="paid">Paid</SelectItem>
-                <SelectItem value="cancelled">Cancelled</SelectItem>
+                <SelectItem value="draft">{ti.draft}</SelectItem>
+                <SelectItem value="sent">{ti.sent}</SelectItem>
+                <SelectItem value="paid">{ti.paid}</SelectItem>
+                <SelectItem value="cancelled">{ti.cancelled}</SelectItem>
               </SelectContent>
             </Select>
           </div>
 
           <div className="md:col-span-2 flex flex-col gap-2">
-            <Label>Notes</Label>
+            <Label>{ti.notes}</Label>
             <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} />
           </div>
         </CardContent>
@@ -342,19 +346,19 @@ export function InvoiceFormClient({
         <Card>
           <CardHeader>
             <CardTitle className="text-sm font-medium text-slate-500 uppercase tracking-wide">
-              Client Info
+              {ti.clientInfo}
             </CardTitle>
           </CardHeader>
-          <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm text-slate-700">
+          <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm text-slate-700 dark:text-slate-300">
             {selectedProject.client_name && (
-              <div><span className="font-medium">Client:</span> {selectedProject.client_name}</div>
+              <div><span className="font-medium">{ti.client}:</span> {selectedProject.client_name}</div>
             )}
             {selectedProject.address && (
-              <div><span className="font-medium">Address:</span> {selectedProject.address}</div>
+              <div><span className="font-medium">{tp.address}:</span> {selectedProject.address}</div>
             )}
             {(selectedProject.city || selectedProject.state) && (
               <div>
-                <span className="font-medium">City/State:</span>{" "}
+                <span className="font-medium">{tp.city}/{tp.state}:</span>{" "}
                 {[selectedProject.city, selectedProject.state, selectedProject.zip].filter(Boolean).join(", ")}
               </div>
             )}
@@ -365,7 +369,7 @@ export function InvoiceFormClient({
       {/* Line items */}
       <Card>
         <CardHeader>
-          <CardTitle>Line Items</CardTitle>
+          <CardTitle>{tp.lineItems}</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
           {priceBook.length > 0 && (
@@ -380,14 +384,14 @@ export function InvoiceFormClient({
             <table className="w-full text-sm min-w-[600px]">
               <thead>
                 <tr className="text-left text-xs uppercase text-slate-500 border-b border-slate-200">
-                  <th className="pb-2 pr-2 w-full">Description</th>
-                  <th className="pb-2 pr-2 w-20">Qty</th>
-                  <th className="pb-2 pr-2 w-28">Unit Price</th>
-                  <th className="pb-2 pr-2 w-28">Total</th>
+                  <th className="pb-2 pr-2 w-full">{ti.description}</th>
+                  <th className="pb-2 pr-2 w-20">{ti.qty}</th>
+                  <th className="pb-2 pr-2 w-28">{ti.unitPrice}</th>
+                  <th className="pb-2 pr-2 w-28">{ti.lineTotal}</th>
                   <th className="pb-2 w-8" />
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                 {lineItems.map((item) => (
                   <tr key={item._id}>
                     <td className="py-2 pr-2">
@@ -396,7 +400,7 @@ export function InvoiceFormClient({
                         onChange={(e) => updateLineItem(item._id, "description", e.target.value)}
                         onBlur={(e) => applyPriceBookItem(item._id, e.target.value)}
                         list="pricebook-list"
-                        placeholder="Description"
+                        placeholder={ti.description}
                         className="text-sm"
                       />
                     </td>
@@ -424,7 +428,7 @@ export function InvoiceFormClient({
                       </div>
                     </td>
                     <td className="py-2 pr-2">
-                      <div className="px-2 py-2 text-slate-700 font-mono text-sm">
+                      <div className="px-2 py-2 text-slate-700 dark:text-slate-300 font-mono text-sm">
                         {fmt(parseFloat(item.total) || 0)}
                       </div>
                     </td>
@@ -449,18 +453,18 @@ export function InvoiceFormClient({
             onClick={addLineItem}
             className="flex items-center gap-1.5 text-sm text-primary hover:underline w-fit"
           >
-            <Plus className="w-4 h-4" /> Add Line Item
+            <Plus className="w-4 h-4" /> {ti.addItem}
           </button>
 
           {/* Totals */}
           <div className="flex flex-col items-end gap-2 border-t border-slate-200 pt-4">
             <div className="w-64 flex flex-col gap-1.5">
-              <div className="flex justify-between text-sm text-slate-600">
-                <span>Subtotal</span>
+              <div className="flex justify-between text-sm text-slate-600 dark:text-slate-400">
+                <span>{ti.subtotal}</span>
                 <span className="font-mono">{fmt(subtotal)}</span>
               </div>
-              <div className="flex items-center justify-between gap-2 text-sm text-slate-600">
-                <span>Tax Rate (%)</span>
+              <div className="flex items-center justify-between gap-2 text-sm text-slate-600 dark:text-slate-400">
+                <span>{ti.taxRate}</span>
                 <Input
                   type="number"
                   min="0"
@@ -472,13 +476,13 @@ export function InvoiceFormClient({
                 />
               </div>
               {taxAmount > 0 && (
-                <div className="flex justify-between text-sm text-slate-600">
-                  <span>Tax Amount</span>
+                <div className="flex justify-between text-sm text-slate-600 dark:text-slate-400">
+                  <span>{ti.taxAmount}</span>
                   <span className="font-mono">{fmt(taxAmount)}</span>
                 </div>
               )}
-              <div className="flex justify-between border-t border-slate-200 pt-2 text-base font-semibold text-slate-900">
-                <span>Total</span>
+              <div className="flex justify-between border-t border-slate-200 pt-2 text-base font-semibold text-slate-900 dark:text-slate-50">
+                <span>{ti.grandTotal}</span>
                 <span className="font-mono">{fmt(total)}</span>
               </div>
             </div>
@@ -498,7 +502,7 @@ export function InvoiceFormClient({
                   onClick={() => void save("sent")}
                   disabled={saving}
                 >
-                  Mark as Sent
+                  {ti.markAsSent}
                 </Button>
               )}
               {status === "sent" && (
@@ -508,7 +512,7 @@ export function InvoiceFormClient({
                   onClick={() => void save("paid")}
                   disabled={saving}
                 >
-                  Mark as Paid
+                  {ti.markAsPaid}
                 </Button>
               )}
               <PdfExportButton
@@ -529,22 +533,22 @@ export function InvoiceFormClient({
               <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
                 <DialogTrigger asChild>
                   <Button type="button" variant="danger">
-                    Delete
+                    {ti.deleteInvoice}
                   </Button>
                 </DialogTrigger>
                 <DialogContent>
                   <DialogHeader>
-                    <DialogTitle>Delete invoice?</DialogTitle>
+                    <DialogTitle>{ti.deleteConfirmTitle}</DialogTitle>
                     <DialogDescription>
-                      This will permanently delete {invoiceNumber} and all its line items.
+                      {ti.deleteConfirmDesc}
                     </DialogDescription>
                   </DialogHeader>
                   <DialogFooter>
                     <Button variant="secondary" type="button" onClick={() => setDeleteOpen(false)} disabled={deleting}>
-                      Cancel
+                      {ti.cancel}
                     </Button>
                     <Button variant="danger" type="button" onClick={() => void onDelete()} disabled={deleting}>
-                      {deleting ? "Deleting…" : "Delete"}
+                      {deleting ? ti.deleting : ti.delete}
                     </Button>
                   </DialogFooter>
                 </DialogContent>
@@ -560,10 +564,10 @@ export function InvoiceFormClient({
             onClick={() => router.push("/dashboard/invoices")}
             disabled={saving}
           >
-            Cancel
+            {ti.cancel}
           </Button>
           <Button type="button" onClick={() => void save()} disabled={saving}>
-            {saving ? "Saving…" : mode === "create" ? "Save Draft" : "Save"}
+            {saving ? ti.saving : mode === "create" ? tp.saveDraft : ti.saveInvoice}
           </Button>
         </div>
       </div>

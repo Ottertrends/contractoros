@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
 import { supabase } from "@/lib/supabase/client";
+import { useLanguage } from "@/lib/i18n/client";
 import type { Invoice, InvoiceItem } from "@/lib/types/database";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -39,6 +40,8 @@ function computeTotal(rows: LineItemRow[]): number {
 
 export function DraftInvoiceCard({ projectName, invoice, items }: Props) {
   const router = useRouter();
+  const { t } = useLanguage();
+  const tp = t.projects;
   const [saving, setSaving] = React.useState(false);
   const [date, setDate] = React.useState(invoice.date?.slice(0, 10) ?? new Date().toISOString().slice(0, 10));
   const [rows, setRows] = React.useState<LineItemRow[]>(() =>
@@ -132,12 +135,12 @@ export function DraftInvoiceCard({ projectName, invoice, items }: Props) {
       <CardHeader>
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div className="flex items-center gap-3">
-            <CardTitle>Draft Invoice</CardTitle>
-            <Badge variant="neutral">draft</Badge>
+            <CardTitle>{tp.draftInvoice}</CardTitle>
+            <Badge variant="neutral">{tp.draft}</Badge>
             <span className="text-xs font-mono text-slate-500">{invoice.invoice_number}</span>
           </div>
           <Link href={`/dashboard/invoices/${invoice.id}`}>
-            <Button variant="secondary" size="sm">Open Full Invoice</Button>
+            <Button variant="secondary" size="sm">{tp.openFullInvoice}</Button>
           </Link>
         </div>
       </CardHeader>
@@ -146,13 +149,13 @@ export function DraftInvoiceCard({ projectName, invoice, items }: Props) {
         {/* Header row: project name + date */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="flex flex-col gap-1">
-            <Label className="text-xs text-slate-500">Project</Label>
+            <Label className="text-xs text-slate-500">{tp.projectName.replace(" *","")}</Label>
             <div className="px-3 py-2 rounded-md bg-slate-50 dark:bg-slate-900 text-sm border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300">
               {projectName}
             </div>
           </div>
           <div className="flex flex-col gap-1">
-            <Label htmlFor="invoice-date" className="text-xs text-slate-500">Invoice Date</Label>
+            <Label htmlFor="invoice-date" className="text-xs text-slate-500">{t.invoices.invoiceDate}</Label>
             <Input
               id="invoice-date"
               type="date"
@@ -164,15 +167,15 @@ export function DraftInvoiceCard({ projectName, invoice, items }: Props) {
 
         {/* Line items */}
         <div className="flex flex-col gap-2">
-          <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Line Items</div>
+          <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">{tp.lineItems}</div>
 
           {/* Column headers */}
           <div className="hidden sm:grid grid-cols-[2fr_3fr_1fr_1fr_1fr_auto] gap-2 text-xs text-slate-400 px-1">
-            <span>Product Name</span>
-            <span>Description</span>
-            <span>Qty</span>
-            <span>Unit Price</span>
-            <span className="text-right">Total</span>
+            <span>{tp.productName}</span>
+            <span>{tp.description}</span>
+            <span>{tp.qty}</span>
+            <span>{tp.unitPrice}</span>
+            <span className="text-right">{t.invoices.lineTotal}</span>
             <span />
           </div>
 
@@ -182,23 +185,23 @@ export function DraftInvoiceCard({ projectName, invoice, items }: Props) {
               className="grid grid-cols-1 sm:grid-cols-[2fr_3fr_1fr_1fr_1fr_auto] gap-2 items-start"
             >
               <div>
-                <Label className="sm:hidden text-xs text-slate-400">Product Name</Label>
+                <Label className="sm:hidden text-xs text-slate-400">{tp.productName}</Label>
                 <Input
-                  placeholder="Product name"
+                  placeholder={tp.productName}
                   value={row.name}
                   onChange={(e) => updateRow(idx, "name", e.target.value)}
                 />
               </div>
               <div>
-                <Label className="sm:hidden text-xs text-slate-400">Description</Label>
+                <Label className="sm:hidden text-xs text-slate-400">{tp.description}</Label>
                 <Input
-                  placeholder="Description"
+                  placeholder={tp.description}
                   value={row.description}
                   onChange={(e) => updateRow(idx, "description", e.target.value)}
                 />
               </div>
               <div>
-                <Label className="sm:hidden text-xs text-slate-400">Qty</Label>
+                <Label className="sm:hidden text-xs text-slate-400">{tp.qty}</Label>
                 <Input
                   type="number"
                   min="0"
@@ -209,7 +212,7 @@ export function DraftInvoiceCard({ projectName, invoice, items }: Props) {
                 />
               </div>
               <div>
-                <Label className="sm:hidden text-xs text-slate-400">Unit Price</Label>
+                <Label className="sm:hidden text-xs text-slate-400">{tp.unitPrice}</Label>
                 <Input
                   type="number"
                   min="0"
@@ -220,7 +223,7 @@ export function DraftInvoiceCard({ projectName, invoice, items }: Props) {
                 />
               </div>
               <div className="flex items-center sm:justify-end pt-0 sm:pt-2">
-                <Label className="sm:hidden text-xs text-slate-400 mr-2">Total</Label>
+                <Label className="sm:hidden text-xs text-slate-400 mr-2">{t.invoices.lineTotal}</Label>
                 <span className="text-sm font-mono text-slate-700 dark:text-slate-300">
                   {fmt(Number(row.quantity) * Number(row.unit_price))}
                 </span>
@@ -244,17 +247,17 @@ export function DraftInvoiceCard({ projectName, invoice, items }: Props) {
             onClick={addRow}
             className="self-start text-xs text-primary hover:underline mt-1"
           >
-            + Add line item
+            {tp.addLineItem}
           </button>
         </div>
 
         {/* Total + Save */}
         <div className="flex items-center justify-between gap-4 pt-2 border-t border-slate-200 dark:border-slate-800 flex-wrap">
           <div className="text-sm font-semibold text-slate-700 dark:text-slate-200">
-            Total: <span className="font-mono text-lg">{fmt(grandTotal)}</span>
+            {t.invoices.grandTotal}: <span className="font-mono text-lg">{fmt(grandTotal)}</span>
           </div>
           <Button onClick={() => void handleSave()} disabled={saving}>
-            {saving ? "Saving…" : "Save Draft"}
+            {saving ? tp.saving2 : tp.saveDraft}
           </Button>
         </div>
       </CardContent>

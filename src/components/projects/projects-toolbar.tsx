@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
+import { useLanguage } from "@/lib/i18n/client";
 
 export function ProjectsToolbar({
   initialQuery,
@@ -15,6 +16,8 @@ export function ProjectsToolbar({
   initialStatus: string;
 }) {
   const router = useRouter();
+  const { t } = useLanguage();
+  const tp = t.projects;
 
   const [q, setQ] = React.useState(initialQuery);
   const [status, setStatus] = React.useState(initialStatus);
@@ -46,25 +49,25 @@ export function ProjectsToolbar({
         <Input
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          placeholder="Search projects (name, client, location, notes)"
+          placeholder={tp.searchPlaceholder}
           onKeyDown={(e) => {
             if (e.key === "Enter") pushWith();
           }}
-          aria-label="Search projects"
+          aria-label={tp.searchPlaceholder}
         />
       </div>
 
       <div className="w-full sm:w-56">
         <Select value={status} onValueChange={(v) => { setStatus(v); pushWith({ nextStatus: v }); }}>
           <SelectTrigger>
-            <SelectValue placeholder="Status" />
+            <SelectValue placeholder={tp.allStatuses} />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All statuses</SelectItem>
-            <SelectItem value="active">Active</SelectItem>
-            <SelectItem value="on_hold">On hold</SelectItem>
-            <SelectItem value="completed">Completed</SelectItem>
-            <SelectItem value="cancelled">Cancelled</SelectItem>
+            <SelectItem value="all">{tp.allStatuses}</SelectItem>
+            <SelectItem value="active">{tp.active}</SelectItem>
+            <SelectItem value="on_hold">{tp.onHold}</SelectItem>
+            <SelectItem value="completed">{tp.completed}</SelectItem>
+            <SelectItem value="cancelled">{tp.cancelled}</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -75,9 +78,8 @@ export function ProjectsToolbar({
         onClick={() => pushWith()}
         className="sm:self-end"
       >
-        Search
+        {t.common.search}
       </Button>
     </div>
   );
 }
-

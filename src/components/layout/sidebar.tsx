@@ -1,3 +1,5 @@
+"use client";
+
 import Link from "next/link";
 import {
   LayoutDashboard,
@@ -9,22 +11,26 @@ import {
   Settings as SettingsIcon,
 } from "lucide-react";
 
-const navItems = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/dashboard/projects", label: "Projects", icon: FolderKanban },
-  { href: "/dashboard/messages", label: "Messages", icon: MessageSquare },
-  { href: "/dashboard/invoices", label: "Invoices", icon: FileText },
-  { href: "/dashboard/price-book", label: "Price Book", icon: Boxes },
-  { href: "/dashboard/stats", label: "Stats", icon: BarChart3 },
-  { href: "/dashboard/settings", label: "Settings", icon: SettingsIcon },
-];
+import { useLanguage } from "@/lib/i18n/client";
 
 export function Sidebar() {
+  const { t } = useLanguage();
+
+  const navItems = [
+    { href: "/dashboard", label: t.nav.dashboard, icon: LayoutDashboard },
+    { href: "/dashboard/projects", label: t.nav.projects, icon: FolderKanban },
+    { href: "/dashboard/messages", label: t.nav.messages, icon: MessageSquare },
+    { href: "/dashboard/invoices", label: t.nav.invoices, icon: FileText },
+    { href: "/dashboard/price-book", label: t.nav.priceBook, icon: Boxes },
+    { href: "/dashboard/stats", label: t.nav.stats, icon: BarChart3 },
+    { href: "/dashboard/settings", label: t.nav.settings, icon: SettingsIcon },
+  ];
+
   return (
     <aside className="hidden md:block md:w-64 md:shrink-0 border-r border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950">
       <div className="p-4">
         <div className="text-lg font-semibold text-primary mb-6">
-          ContractorOS
+          {t.nav.brand}
         </div>
         <nav className="flex flex-col gap-1">
           {navItems.map((item) => {
@@ -45,4 +51,3 @@ export function Sidebar() {
     </aside>
   );
 }
-

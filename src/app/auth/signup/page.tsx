@@ -9,31 +9,13 @@ import { toast } from "sonner";
 import type { AuthChangeEvent, Session } from "@supabase/supabase-js";
 
 import { supabase } from "@/lib/supabase/client";
+import { useLanguage } from "@/lib/i18n/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-
-const businessAreaOptions = [
-  { value: "residential", label: "Residential" },
-  { value: "commercial", label: "Commercial" },
-  { value: "industrial", label: "Industrial" },
-  { value: "government", label: "Government" },
-  { value: "other", label: "Other" },
-];
-
-const serviceOptions = [
-  { value: "concrete", label: "Concrete" },
-  { value: "framing", label: "Framing" },
-  { value: "remodeling", label: "Remodeling" },
-  { value: "roofing", label: "Roofing" },
-  { value: "electrical", label: "Electrical" },
-  { value: "plumbing", label: "Plumbing" },
-  { value: "drywall", label: "Drywall" },
-  { value: "excavation", label: "Excavation" },
-];
 
 const quotesOptions = ["1-5", "6-15", "16-30", "30+"] as const;
 
@@ -52,6 +34,28 @@ type SignupValues = z.infer<typeof signupSchema>;
 
 export default function SignupPage() {
   const router = useRouter();
+  const { t } = useLanguage();
+  const ta = t.auth;
+  const ts = t.settings;
+
+  const businessAreaOptions = [
+    { value: "residential", label: ts.residential },
+    { value: "commercial", label: ts.commercial },
+    { value: "industrial", label: ts.industrial },
+    { value: "government", label: ts.government },
+    { value: "other", label: ts.other },
+  ];
+
+  const serviceOptions = [
+    { value: "concrete", label: ts.concrete },
+    { value: "framing", label: ts.framing },
+    { value: "remodeling", label: ts.remodeling },
+    { value: "roofing", label: ts.roofing },
+    { value: "electrical", label: ts.electrical },
+    { value: "plumbing", label: ts.plumbing },
+    { value: "drywall", label: ts.drywall },
+    { value: "excavation", label: ts.excavation },
+  ];
 
   const form = useForm<SignupValues>({
     resolver: zodResolver(signupSchema),
@@ -95,7 +99,6 @@ export default function SignupPage() {
         email: values.email,
         password: values.password,
         options: {
-          // Explicit redirect so Supabase email link points to production, not localhost
           emailRedirectTo: `${appUrl}/auth/callback`,
           data: {
             full_name: values.full_name,
@@ -112,7 +115,6 @@ export default function SignupPage() {
       if (error) throw error;
 
       toast.success("Account created. Redirecting...");
-      // If Supabase email confirmation is disabled, session will exist and middleware will allow dashboard.
       if (data?.session?.access_token) {
         router.push("/dashboard");
       } else {
@@ -128,23 +130,20 @@ export default function SignupPage() {
     <div className="min-h-[calc(100vh-64px)] flex items-center justify-center px-4 py-10">
       <Card className="w-full max-w-2xl">
         <CardHeader>
-          <CardTitle>Create your ContractorOS account</CardTitle>
+          <CardTitle>{ta.signupTitle}</CardTitle>
         </CardHeader>
         <CardContent>
-          <form
-            onSubmit={handleSubmit(onSubmit)}
-            className="flex flex-col gap-6"
-          >
+          <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-6">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="flex flex-col gap-2">
-                <Label htmlFor="full_name">Full name *</Label>
+                <Label htmlFor="full_name">{ta.fullName} *</Label>
                 <Input id="full_name" {...register("full_name")} />
                 {errors.full_name ? (
                   <div className="text-sm text-danger">{errors.full_name.message}</div>
                 ) : null}
               </div>
               <div className="flex flex-col gap-2">
-                <Label htmlFor="company_name">Company name *</Label>
+                <Label htmlFor="company_name">{ta.companyName} *</Label>
                 <Input id="company_name" {...register("company_name")} />
                 {errors.company_name ? (
                   <div className="text-sm text-danger">{errors.company_name.message}</div>
@@ -154,14 +153,14 @@ export default function SignupPage() {
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="flex flex-col gap-2">
-                <Label htmlFor="email">Email *</Label>
+                <Label htmlFor="email">{ta.email} *</Label>
                 <Input id="email" type="email" {...register("email")} />
                 {errors.email ? (
                   <div className="text-sm text-danger">{errors.email.message}</div>
                 ) : null}
               </div>
               <div className="flex flex-col gap-2">
-                <Label htmlFor="phone">Phone *</Label>
+                <Label htmlFor="phone">{ta.phone} *</Label>
                 <Input id="phone" {...register("phone")} />
                 {errors.phone ? (
                   <div className="text-sm text-danger">{errors.phone.message}</div>
@@ -171,14 +170,14 @@ export default function SignupPage() {
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="flex flex-col gap-2">
-                <Label htmlFor="password">Password *</Label>
+                <Label htmlFor="password">{ta.password} *</Label>
                 <Input id="password" type="password" {...register("password")} />
                 {errors.password ? (
                   <div className="text-sm text-danger">{errors.password.message}</div>
                 ) : null}
               </div>
               <div className="flex flex-col gap-2">
-                <Label>Quotes per month</Label>
+                <Label>{ta.quotesPerMonth}</Label>
                 <Select
                   value={watch("quotes_per_month")}
                   onValueChange={(v) =>
@@ -193,26 +192,20 @@ export default function SignupPage() {
                   </SelectTrigger>
                   <SelectContent>
                     {quotesOptions.map((opt) => (
-                      <SelectItem key={opt} value={opt}>
-                        {opt}
-                      </SelectItem>
+                      <SelectItem key={opt} value={opt}>{opt}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
                 {errors.quotes_per_month ? (
-                  <div className="text-sm text-danger">
-                    {errors.quotes_per_month.message}
-                  </div>
+                  <div className="text-sm text-danger">{errors.quotes_per_month.message}</div>
                 ) : null}
               </div>
             </div>
 
             <div className="flex flex-col gap-3">
               <div>
-                <div className="text-sm font-medium">Business areas *</div>
-                <div className="text-xs text-slate-500">
-                  Select all that apply.
-                </div>
+                <div className="text-sm font-medium">{ta.businessAreas} *</div>
+                <div className="text-xs text-slate-500">{ta.selectAll}</div>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 {businessAreaOptions.map((opt) => {
@@ -228,15 +221,10 @@ export default function SignupPage() {
                           const next = c
                             ? Array.from(new Set([...selectedBusinessAreas, opt.value]))
                             : selectedBusinessAreas.filter((v) => v !== opt.value);
-                          setValue("business_areas", next, {
-                            shouldDirty: true,
-                            shouldValidate: true,
-                          });
+                          setValue("business_areas", next, { shouldDirty: true, shouldValidate: true });
                         }}
                       />
-                      <span className="text-sm text-slate-800 dark:text-slate-50">
-                        {opt.label}
-                      </span>
+                      <span className="text-sm text-slate-800 dark:text-slate-50">{opt.label}</span>
                     </label>
                   );
                 })}
@@ -248,10 +236,8 @@ export default function SignupPage() {
 
             <div className="flex flex-col gap-3">
               <div>
-                <div className="text-sm font-medium">Services provided *</div>
-                <div className="text-xs text-slate-500">
-                  Select all that apply.
-                </div>
+                <div className="text-sm font-medium">{ta.servicesProvided} *</div>
+                <div className="text-xs text-slate-500">{ta.selectAll}</div>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 {serviceOptions.map((opt) => {
@@ -267,15 +253,10 @@ export default function SignupPage() {
                           const next = c
                             ? Array.from(new Set([...selectedServices, opt.value]))
                             : selectedServices.filter((v) => v !== opt.value);
-                          setValue("services", next, {
-                            shouldDirty: true,
-                            shouldValidate: true,
-                          });
+                          setValue("services", next, { shouldDirty: true, shouldValidate: true });
                         }}
                       />
-                      <span className="text-sm text-slate-800 dark:text-slate-50">
-                        {opt.label}
-                      </span>
+                      <span className="text-sm text-slate-800 dark:text-slate-50">{opt.label}</span>
                     </label>
                   );
                 })}
@@ -287,12 +268,12 @@ export default function SignupPage() {
 
             <div className="flex items-center justify-between gap-4 flex-wrap">
               <Button type="submit" disabled={isSubmitting}>
-                {isSubmitting ? "Creating..." : "Sign Up"}
+                {isSubmitting ? ta.signingUp : ta.signupButton}
               </Button>
-              <div className="text-sm text-slate-600">
-                Already have an account?{" "}
+              <div className="text-sm text-slate-600 dark:text-slate-400">
+                {ta.alreadyAccount}{" "}
                 <a href="/auth/login" className="text-primary hover:underline">
-                  Log in
+                  {ta.logIn}
                 </a>
               </div>
             </div>
@@ -302,4 +283,3 @@ export default function SignupPage() {
     </div>
   );
 }
-

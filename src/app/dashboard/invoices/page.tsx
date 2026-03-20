@@ -4,6 +4,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { getServerLang } from "@/lib/i18n/server";
+import { getT } from "@/lib/i18n/translations";
 import type { Invoice, InvoiceStatus } from "@/lib/types/database";
 
 function statusVariant(s: InvoiceStatus) {
@@ -32,6 +34,10 @@ export default async function InvoicesPage({
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return null;
+
+  const lang = await getServerLang();
+  const t = getT(lang);
+  const ti = t.invoices;
 
   const statusFilter =
     typeof searchParams.status === "string" && searchParams.status !== "all"
@@ -73,22 +79,31 @@ export default async function InvoicesPage({
     .filter((i) => i.status === "paid")
     .reduce((acc, i) => acc + (parseFloat(i.total) || 0), 0);
 
+  // Status label map using translations
+  const statusLabels: Record<string, string> = {
+    all: ti.all,
+    draft: ti.draft,
+    sent: ti.sent,
+    paid: ti.paid,
+    cancelled: ti.cancelled,
+  };
+
   const statuses = ["all", "draft", "sent", "paid", "cancelled"] as const;
 
   return (
     <div className="flex flex-col gap-6">
       {/* Summary stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <StatCard title="Total Invoices" value={String(all.length)} />
-        <StatCard title="Draft" value={String(draftCount)} />
-        <StatCard title="Sent" value={String(sentCount)} />
-        <StatCard title="Paid" value={String(paidCount)} />
+        <StatCard title={ti.totalInvoices} value={String(all.length)} />
+        <StatCard title={ti.draft} value={String(draftCount)} />
+        <StatCard title={ti.sent} value={String(sentCount)} />
+        <StatCard title={ti.paid} value={String(paidCount)} />
       </div>
 
       <Card>
         <div className="flex items-center justify-between gap-3 px-6 pt-6 pb-3 flex-wrap">
-          <span className="text-xl font-semibold text-slate-900">Total Revenue</span>
-          <span className="text-2xl font-bold text-slate-900">{fmt(totalRevenue)}</span>
+          <span className="text-xl font-semibold text-slate-900 dark:text-slate-50">{ti.totalRevenue}</span>
+          <span className="text-2xl font-bold text-slate-900 dark:text-slate-50">{fmt(totalRevenue)}</span>
         </div>
       </Card>
 
@@ -104,16 +119,16 @@ export default async function InvoicesPage({
                 className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
                   active
                     ? "bg-primary text-white"
-                    : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                    : "bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
                 }`}
               >
-                {s.charAt(0).toUpperCase() + s.slice(1)}
+                {statusLabels[s]}
               </Link>
             );
           })}
         </div>
         <Link href="/dashboard/invoices/new">
-          <Button>New Invoice</Button>
+          <Button>{ti.newInvoice}</Button>
         </Link>
       </div>
 
@@ -126,26 +141,26 @@ export default async function InvoicesPage({
           <input
             name="q"
             defaultValue={search}
-            placeholder="Search invoices, projects, clients…"
-            className="flex h-9 w-full rounded-md border border-slate-200 bg-white px-3 py-1 text-sm placeholder:text-slate-400 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary"
+            placeholder={ti.searchPlaceholder}
+            className="flex h-9 w-full rounded-md border border-slate-200 bg-white px-3 py-1 text-sm placeholder:text-slate-400 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
           />
-          <Button type="submit" variant="secondary" className="shrink-0">Search</Button>
+          <Button type="submit" variant="secondary" className="shrink-0">{ti.search}</Button>
         </div>
       </form>
 
       {/* List */}
       <Card>
         <CardHeader>
-          <CardTitle>Invoices</CardTitle>
+          <CardTitle>{ti.title}</CardTitle>
         </CardHeader>
         <CardContent>
           {invoices.length === 0 ? (
             <div className="text-center py-10 text-slate-500 text-sm">
-              {search || statusFilter ? "No invoices match your filters." : "No invoices yet."}
+              {search || statusFilter ? ti.noMatch : ti.noInvoices}
               {!search && !statusFilter && (
                 <div className="mt-4">
                   <Link href="/dashboard/invoices/new">
-                    <Button>Create your first invoice</Button>
+                    <Button>{ti.createFirst}</Button>
                   </Link>
                 </div>
               )}
@@ -155,19 +170,19 @@ export default async function InvoicesPage({
               <table className="w-full text-sm">
                 <thead className="text-left text-xs uppercase text-slate-500 border-b border-slate-200">
                   <tr>
-                    <th className="pb-3 pr-4">Invoice #</th>
-                    <th className="pb-3 pr-4">Project</th>
-                    <th className="pb-3 pr-4">Client</th>
-                    <th className="pb-3 pr-4">Status</th>
-                    <th className="pb-3 pr-4 text-right">Total</th>
-                    <th className="pb-3 text-right">Date</th>
+                    <th className="pb-3 pr-4">{ti.invoiceNumber}</th>
+                    <th className="pb-3 pr-4">{ti.project}</th>
+                    <th className="pb-3 pr-4">{ti.client}</th>
+                    <th className="pb-3 pr-4">{ti.status}</th>
+                    <th className="pb-3 pr-4 text-right">{ti.total}</th>
+                    <th className="pb-3 text-right">{ti.date}</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100">
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                   {invoices.map((inv) => (
                     <tr
                       key={inv.id}
-                      className="hover:bg-slate-50 cursor-pointer transition-colors"
+                      className="hover:bg-slate-50 dark:hover:bg-slate-900 cursor-pointer transition-colors"
                     >
                       <td className="py-3 pr-4">
                         <Link
@@ -177,7 +192,7 @@ export default async function InvoicesPage({
                           {inv.invoice_number ?? inv.id.slice(0, 8)}
                         </Link>
                       </td>
-                      <td className="py-3 pr-4 text-slate-700">
+                      <td className="py-3 pr-4 text-slate-700 dark:text-slate-300">
                         {inv.projects?.name ?? "—"}
                       </td>
                       <td className="py-3 pr-4 text-slate-500">
@@ -188,11 +203,11 @@ export default async function InvoicesPage({
                           {inv.status}
                         </Badge>
                       </td>
-                      <td className="py-3 pr-4 text-right font-mono text-slate-800">
+                      <td className="py-3 pr-4 text-right font-mono text-slate-800 dark:text-slate-200">
                         {fmt(parseFloat(inv.total) || 0)}
                       </td>
                       <td className="py-3 text-right text-slate-400">
-                        {new Date(inv.created_at).toLocaleDateString("en-US")}
+                        {new Date(inv.created_at).toLocaleDateString()}
                       </td>
                     </tr>
                   ))}
@@ -210,7 +225,7 @@ function StatCard({ title, value }: { title: string; value: string }) {
   return (
     <Card className="p-4">
       <div className="text-sm text-slate-500">{title}</div>
-      <div className="mt-2 text-2xl font-semibold text-slate-900">{value}</div>
+      <div className="mt-2 text-2xl font-semibold text-slate-900 dark:text-slate-50">{value}</div>
     </Card>
   );
 }

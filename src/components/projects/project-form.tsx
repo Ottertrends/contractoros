@@ -8,6 +8,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
 
 import { supabase } from "@/lib/supabase/client";
+import { useLanguage } from "@/lib/i18n/client";
 import type { Project, ProjectStatus } from "@/lib/types/database";
 
 import { Button } from "@/components/ui/button";
@@ -45,7 +46,6 @@ function parseTags(tagsText: string | null | undefined): string[] | null {
 }
 
 function computeLocation(city: string | null, state: string | null, locationField?: string | null) {
-  // Prefer structured city/state; fall back to existing location if present.
   const parts = [city ?? "", state ?? ""].map((s) => s.trim()).filter(Boolean);
   if (parts.length > 0) return parts.join(", ");
   return locationField ?? null;
@@ -61,6 +61,8 @@ export function ProjectForm({
   project?: Project;
 }) {
   const router = useRouter();
+  const { t } = useLanguage();
+  const tp = t.projects;
 
   const defaultValues: FormValues = {
     name: project?.name ?? "",
@@ -95,7 +97,6 @@ export function ProjectForm({
       const tags = parseTags(values.tagsText);
       const city = normalizeNullable(values.city);
       const state = normalizeNullable(values.state);
-
       const quoted_amount = normalizeNullable(values.quoted_amount);
 
       const payload = {
@@ -108,7 +109,7 @@ export function ProjectForm({
         location: computeLocation(city, state, project?.location ?? null),
         notes: normalizeNullable(values.notes),
         current_work: normalizeNullable(values.current_work),
-        quoted_amount: quoted_amount,
+        quoted_amount,
         tags,
         status: values.status,
       };
@@ -116,10 +117,7 @@ export function ProjectForm({
       if (mode === "create") {
         const { data, error } = await supabase
           .from("projects")
-          .insert({
-            user_id: userId,
-            ...payload,
-          })
+          .insert({ user_id: userId, ...payload })
           .select("id")
           .single();
 
@@ -135,7 +133,6 @@ export function ProjectForm({
 
         if (error) throw error;
         toast.success("Project saved");
-        // Refresh data (server components) after save.
         router.refresh();
       }
     } catch (e: unknown) {
@@ -167,18 +164,18 @@ export function ProjectForm({
     <Card>
       <CardHeader>
         <CardTitle>
-          {mode === "create" ? "New Project" : "Edit Project"}
+          {mode === "create" ? tp.createProject : tp.editProject}
         </CardTitle>
       </CardHeader>
       <CardContent>
         <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-5">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="flex flex-col gap-2">
-              <Label htmlFor="name">Project name *</Label>
+              <Label htmlFor="name">{tp.projectName}</Label>
               <Input id="name" {...register("name")} />
             </div>
             <div className="flex flex-col gap-2">
-              <Label htmlFor="status">Status</Label>
+              <Label htmlFor="status">{t.dashboard.status}</Label>
               <Select
                 value={statusValue}
                 onValueChange={(v) =>
@@ -192,10 +189,10 @@ export function ProjectForm({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="active">Active</SelectItem>
-                  <SelectItem value="on_hold">On hold</SelectItem>
-                  <SelectItem value="completed">Completed</SelectItem>
-                  <SelectItem value="cancelled">Cancelled</SelectItem>
+                  <SelectItem value="active">{tp.active}</SelectItem>
+                  <SelectItem value="on_hold">{tp.onHold}</SelectItem>
+                  <SelectItem value="completed">{tp.completed}</SelectItem>
+                  <SelectItem value="cancelled">{tp.cancelled}</SelectItem>
                 </SelectContent>
               </Select>
               <input type="hidden" {...register("status")} />
@@ -203,47 +200,47 @@ export function ProjectForm({
           </div>
 
           <div className="flex flex-col gap-2">
-            <Label htmlFor="client_name">Client name</Label>
+            <Label htmlFor="client_name">{tp.clientName}</Label>
             <Input id="client_name" {...register("client_name")} />
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="flex flex-col gap-2">
-              <Label htmlFor="address">Address</Label>
+              <Label htmlFor="address">{tp.address}</Label>
               <Input id="address" {...register("address")} />
             </div>
             <div className="flex flex-col gap-2">
-              <Label htmlFor="zip">Zip</Label>
+              <Label htmlFor="zip">{tp.zip}</Label>
               <Input id="zip" {...register("zip")} />
             </div>
             <div className="flex flex-col gap-2">
-              <Label htmlFor="city">City</Label>
+              <Label htmlFor="city">{tp.city}</Label>
               <Input id="city" {...register("city")} />
             </div>
             <div className="flex flex-col gap-2">
-              <Label htmlFor="state">State</Label>
+              <Label htmlFor="state">{tp.state}</Label>
               <Input id="state" {...register("state")} />
             </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="flex flex-col gap-2">
-              <Label htmlFor="quoted_amount">Quoted amount</Label>
+              <Label htmlFor="quoted_amount">{tp.quotedAmount}</Label>
               <Input id="quoted_amount" {...register("quoted_amount")} placeholder="e.g. 25000" />
             </div>
             <div className="flex flex-col gap-2">
-              <Label htmlFor="tagsText">Tags (comma separated)</Label>
+              <Label htmlFor="tagsText">Tags (,)</Label>
               <Input id="tagsText" {...register("tagsText")} placeholder="e.g. concrete, remodel" />
             </div>
           </div>
 
           <div className="flex flex-col gap-2">
-            <Label htmlFor="current_work">Current work</Label>
+            <Label htmlFor="current_work">{tp.currentWork}</Label>
             <Textarea id="current_work" {...register("current_work")} />
           </div>
 
           <div className="flex flex-col gap-2">
-            <Label htmlFor="notes">Notes</Label>
+            <Label htmlFor="notes">{tp.notes}</Label>
             <Textarea id="notes" {...register("notes")} />
           </div>
 
@@ -252,22 +249,22 @@ export function ProjectForm({
               <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
                 <DialogTrigger asChild>
                   <Button type="button" variant="danger" onClick={() => setConfirmOpen(true)}>
-                    Delete project
+                    {tp.deleteProject}
                   </Button>
                 </DialogTrigger>
                 <DialogContent>
                   <DialogHeader>
-                    <DialogTitle>Delete this project?</DialogTitle>
+                    <DialogTitle>{tp.deleteConfirmTitle}</DialogTitle>
                     <DialogDescription>
-                      This will permanently remove the project and related records.
+                      {tp.deleteConfirmDesc}
                     </DialogDescription>
                   </DialogHeader>
                   <DialogFooter>
                     <Button type="button" variant="secondary" onClick={() => setConfirmOpen(false)}>
-                      Cancel
+                      {tp.cancel}
                     </Button>
                     <Button type="button" variant="danger" onClick={() => void onDelete()}>
-                      Delete
+                      {tp.delete}
                     </Button>
                   </DialogFooter>
                 </DialogContent>
@@ -278,7 +275,7 @@ export function ProjectForm({
 
             <div className="flex items-center gap-3">
               <Button type="submit" disabled={isSubmitting || (!isDirty && mode === "create")}>
-                {isSubmitting ? "Saving..." : "Save"}
+                {isSubmitting ? tp.saving : tp.saveProject}
               </Button>
             </div>
           </div>
@@ -287,4 +284,3 @@ export function ProjectForm({
     </Card>
   );
 }
-

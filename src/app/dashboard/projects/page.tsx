@@ -5,6 +5,8 @@ import { Card } from "@/components/ui/card";
 import { ProjectGrid } from "@/components/projects/project-grid";
 import { ProjectsToolbar } from "@/components/projects/projects-toolbar";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { getServerLang } from "@/lib/i18n/server";
+import { getT } from "@/lib/i18n/translations";
 import type { Project } from "@/lib/types/database";
 
 export default async function ProjectsPage({
@@ -26,6 +28,10 @@ export default async function ProjectsPage({
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return null;
+
+  const lang = await getServerLang();
+  const t = getT(lang);
+  const tp = t.projects;
 
   const pageSize = 9;
   const from = (page - 1) * pageSize;
@@ -60,7 +66,7 @@ export default async function ProjectsPage({
     return (
       <div className="p-4">
         <div className="text-red-600 font-medium">
-          Failed to load projects.
+          {t.dashboard.failedToLoad}
         </div>
       </div>
     );
@@ -79,16 +85,16 @@ export default async function ProjectsPage({
       <div className="flex flex-col gap-4">
         <div className="flex items-start justify-between gap-3 flex-wrap">
           <div>
-            <div className="text-lg font-semibold text-slate-900">
-              Projects
+            <div className="text-lg font-semibold text-slate-900 dark:text-slate-50">
+              {tp.title}
             </div>
             <div className="text-sm text-slate-500">
-              Search, filter, and manage your project quotes.
+              {tp.subtitle}
             </div>
           </div>
 
           <Link href="/dashboard/projects/new">
-            <Button>New Project</Button>
+            <Button>{tp.newProject}</Button>
           </Link>
         </div>
 
@@ -99,7 +105,7 @@ export default async function ProjectsPage({
       </div>
 
       {projects.length === 0 ? (
-        <EmptyState />
+        <EmptyState noProjects={tp.noProjects} adjustFilter={tp.adjustFilter} />
       ) : (
         <ProjectGrid projects={projects} />
       )}
@@ -119,9 +125,9 @@ export default async function ProjectsPage({
               page > 1 ? "text-primary hover:underline" : "text-slate-400 pointer-events-none"
             }`}
           >
-            Prev
+            {tp.prev}
           </Link>
-          <div className="text-sm text-slate-500">Page {page}</div>
+          <div className="text-sm text-slate-500">{tp.page} {page}</div>
           <Link
             href={
               hasNext
@@ -135,7 +141,7 @@ export default async function ProjectsPage({
               hasNext ? "text-primary hover:underline" : "text-slate-400 pointer-events-none"
             }`}
           >
-            Next
+            {tp.next}
           </Link>
         </div>
       </Card>
@@ -143,14 +149,13 @@ export default async function ProjectsPage({
   );
 }
 
-function EmptyState() {
+function EmptyState({ noProjects, adjustFilter }: { noProjects: string; adjustFilter: string }) {
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-8 text-center dark:border-slate-800 dark:bg-slate-950">
-      <div className="text-slate-900 font-semibold">No projects found</div>
-      <div className="mt-2 text-sm text-slate-600">
-        Adjust your search/filter or create your first project.
+      <div className="text-slate-900 dark:text-slate-50 font-semibold">{noProjects}</div>
+      <div className="mt-2 text-sm text-slate-600 dark:text-slate-400">
+        {adjustFilter}
       </div>
     </div>
   );
 }
-

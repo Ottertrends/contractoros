@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import type { AuthChangeEvent, Session } from "@supabase/supabase-js";
 
 import { supabase } from "@/lib/supabase/client";
+import { useLanguage } from "@/lib/i18n/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -23,6 +24,8 @@ type LoginValues = z.infer<typeof loginSchema>;
 
 export default function LoginPage() {
   const router = useRouter();
+  const { t } = useLanguage();
+  const ta = t.auth;
   const [redirected, setRedirected] = React.useState(false);
 
   const form = useForm<LoginValues>({
@@ -74,42 +77,37 @@ export default function LoginPage() {
     <div className="min-h-[calc(100vh-64px)] flex items-center justify-center px-4 py-10">
       <Card className="w-full max-w-md">
         <CardHeader>
-          <CardTitle>Log in to ContractorOS</CardTitle>
+          <CardTitle>{ta.loginTitle}</CardTitle>
         </CardHeader>
         <CardContent>
           {redirected ? (
             <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 dark:border-slate-800 dark:bg-slate-900">
-              Please log in to access your dashboard.
+              {ta.loginSubtitle}
             </div>
           ) : null}
 
-          <form
-            onSubmit={handleSubmit(onSubmit)}
-            className="flex flex-col gap-5"
-          >
+          <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-5">
             <div className="flex flex-col gap-2">
-              <Label htmlFor="email">Email</Label>
+              <Label htmlFor="email">{ta.email}</Label>
               <Input id="email" type="email" {...register("email")} />
               {errors.email ? (
                 <div className="text-sm text-danger">{errors.email.message}</div>
               ) : null}
             </div>
             <div className="flex flex-col gap-2">
-              <Label htmlFor="password">Password</Label>
+              <Label htmlFor="password">{ta.password}</Label>
               <Input id="password" type="password" {...register("password")} />
               {errors.password ? (
-                <div className="text-sm text-danger">
-                  {errors.password.message}
-                </div>
+                <div className="text-sm text-danger">{errors.password.message}</div>
               ) : null}
             </div>
             <Button type="submit" disabled={isSubmitting}>
-              {isSubmitting ? "Logging in..." : "Log In"}
+              {isSubmitting ? ta.loggingIn : ta.loginButton}
             </Button>
             <div className="text-sm text-slate-600 text-center">
-              New here?{" "}
+              {ta.noAccount}{" "}
               <a href="/auth/signup" className="text-primary hover:underline">
-                Create an account
+                {ta.createAccount}
               </a>
             </div>
           </form>
@@ -118,4 +116,3 @@ export default function LoginPage() {
     </div>
   );
 }
-

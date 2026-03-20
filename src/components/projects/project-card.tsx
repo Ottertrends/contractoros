@@ -1,7 +1,10 @@
+"use client";
+
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 
+import { useLanguage } from "@/lib/i18n/client";
 import type { Project } from "@/lib/types/database";
 
 function formatCurrency(value: string | null) {
@@ -30,6 +33,9 @@ function statusBadgeVariant(status: Project["status"]) {
 }
 
 export function ProjectCard({ project }: { project: Project }) {
+  const { t } = useLanguage();
+  const tp = t.projects;
+
   const lastUpdated = project.updated_at
     ? new Date(project.updated_at).toLocaleDateString()
     : "";
@@ -37,6 +43,14 @@ export function ProjectCard({ project }: { project: Project }) {
   const locationText = project.city
     ? `${project.city}${project.state ? ", " + project.state : ""}`
     : project.location ?? "";
+
+  // Translate status label
+  const statusLabel: Record<Project["status"], string> = {
+    active: tp.active,
+    on_hold: tp.onHold,
+    completed: tp.completed,
+    cancelled: tp.cancelled,
+  };
 
   return (
     <Link
@@ -63,13 +77,13 @@ export function ProjectCard({ project }: { project: Project }) {
               ) : null}
             </div>
             <Badge variant={statusBadgeVariant(project.status)}>
-              {project.status.replace("_", " ")}
+              {statusLabel[project.status] ?? project.status.replace("_", " ")}
             </Badge>
           </div>
 
           <div className="text-sm text-slate-700 dark:text-slate-200">
             <div className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-1">
-              Current work
+              {tp.currentWork}
             </div>
             <div className="overflow-hidden text-ellipsis [display:-webkit-box] [-webkit-line-clamp:2] [-webkit-box-orient:vertical]">
               {project.current_work ?? "—"}
@@ -78,13 +92,13 @@ export function ProjectCard({ project }: { project: Project }) {
 
           <div className="mt-auto flex items-end justify-between gap-3">
             <div>
-              <div className="text-xs text-slate-500">Quoted amount</div>
+              <div className="text-xs text-slate-500">{tp.quotedAmount}</div>
               <div className="text-lg font-semibold text-slate-900 dark:text-slate-50">
                 {formatCurrency(project.quoted_amount)}
               </div>
             </div>
             <div className="text-right">
-              <div className="text-xs text-slate-500">Last updated</div>
+              <div className="text-xs text-slate-500">{tp.lastUpdated}</div>
               <div className="text-sm text-slate-700 dark:text-slate-200">
                 {lastUpdated}
               </div>
@@ -95,4 +109,3 @@ export function ProjectCard({ project }: { project: Project }) {
     </Link>
   );
 }
-
