@@ -1,4 +1,5 @@
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
 
 import { LanguageProvider } from "@/lib/i18n/client";
@@ -18,8 +19,7 @@ export default async function DashboardLayout({
   } = await supabase.auth.getUser();
 
   if (!user) {
-    // Middleware should handle this, but keep a safe fallback.
-    throw new Error("Not authenticated");
+    redirect("/auth/login?redirected=true");
   }
 
   const { data: profile } = await supabase
@@ -28,9 +28,22 @@ export default async function DashboardLayout({
     .eq("id", user.id)
     .single();
 
-  if (!profile) {
-    throw new Error("Profile not found");
-  }
+  const safeProfile = profile ?? {
+    id: user.id,
+    full_name: (user.user_metadata?.full_name as string | undefined) ?? "User",
+    company_name:
+      (user.user_metadata?.company_name as string | undefined) ??
+      "ContractorOS",
+    email: user.email ?? "",
+    phone: (user.user_metadata?.phone as string | undefined) ?? "",
+    quotes_per_month: null,
+    business_areas: null,
+    services: null,
+    whatsapp_connected: false,
+    whatsapp_instance_id: null,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
 
   const lang = await getServerLang();
 
@@ -41,7 +54,7 @@ export default async function DashboardLayout({
           <Sidebar />
           <div className="flex-1 min-w-0">
             <DashboardRealtimeBridge userId={user.id} />
-            <TopBar profile={profile} />
+            <TopBar profile={safeProfile} />
             <main className="px-4 py-6 md:px-6">{children}</main>
           </div>
         </div>

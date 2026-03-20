@@ -7,14 +7,45 @@ import type {
 } from "@anthropic-ai/sdk/resources/messages";
 
 import { executeTool } from "@/lib/agent/tool-handlers";
+import { DEFAULT_ANTHROPIC_MODEL } from "@/lib/agent/model";
 import { SYSTEM_PROMPT } from "@/lib/agent/types";
 import { CONTRACTOR_TOOLS } from "@/lib/agent/tools";
 
-const DEFAULT_MODEL = "claude-sonnet-4-6";
-
 function getModel() {
-  return process.env.ANTHROPIC_MODEL?.trim() || DEFAULT_MODEL;
+  return process.env.ANTHROPIC_MODEL?.trim() || DEFAULT_ANTHROPIC_MODEL;
 }
+
+function formatAgentError(e: unknown): string {
+  if (e instanceof Error) {
+    const any = e as Error & {
+      status?: number;
+      body?: unknown;
+      error?: { message?: string; type?: string };
+    };
+    const parts: string[] = [any.message || "Error"];
+    if (typeof any.status === "number") parts.push(`http=${any.status}`);
+    if (any.error?.message) parts.push(`api=${any.error.message}`);
+    if (any.body !== undefined) {
+      try {
+        parts.push(`body=${JSON.stringify(any.body).slice(0, 400)}`);
+      } catch {
+        parts.push("body=(unserializable)");
+      }
+    }
+    return parts.join(" | ");
+  }
+  try {
+    return JSON.stringify(e);
+  } catch {
+    return String(e);
+  }
+}
+
+export type AgentRunResult = {
+  reply: string;
+  /** Set when Claude/API/tools failed; `reply` may still be a safe fallback string */
+  error?: string;
+};
 
 function getClient() {
   const key = process.env.ANTHROPIC_API_KEY?.trim();
@@ -49,18 +80,23 @@ export async function processContractorMessage(
   userId: string,
   messageText: string,
   history: { role: "user" | "assistant"; content: string }[],
-): Promise<string> {
+): Promise<AgentRunResult> {
   const fallback =
     "Sorry, I'm having trouble processing that. Please try again in a moment.";
 
   try {
+    const model = getModel();
+    console.log(
+      "[contractor-agent] start",
+      { model, userId: userId.slice(0, 8), historyLen: history.length },
+    );
     const client = getClient();
     let messages = buildMessageParams(history, messageText);
     const maxLoops = 8;
 
     for (let i = 0; i < maxLoops; i++) {
       const response = await client.messages.create({
-        model: getModel(),
+        model,
         max_tokens: 8192,
         system: SYSTEM_PROMPT,
         tools: CONTRACTOR_TOOLS,
@@ -69,7 +105,7 @@ export async function processContractorMessage(
 
       if (response.stop_reason === "end_turn") {
         const text = extractTextFromResponse(response.content);
-        return text || "✅ Done.";
+        return { reply: text || "✅ Done." };
       }
 
       if (response.stop_reason === "tool_use") {
@@ -88,12 +124,26 @@ export async function processContractorMessage(
                   typeof tu.input === "object" && tu.input !== null
                     ? (tu.input as Record<string, unknown>)
                     : {};
-                const result = await executeTool(userId, tu.name, input);
-                return {
-                  type: "tool_result" as const,
-                  tool_use_id: tu.id,
-                  content: result,
-                };
+                try {
+                  const result = await executeTool(userId, tu.name, input);
+                  return {
+                    type: "tool_result" as const,
+                    tool_use_id: tu.id,
+                    content: result,
+                  };
+                } catch (toolErr) {
+                  const msg = formatAgentError(toolErr);
+                  console.error(
+                    "[contractor-agent] tool error",
+                    tu.name,
+                    msg,
+                  );
+                  return {
+                    type: "tool_result" as const,
+                    tool_use_id: tu.id,
+                    content: `Tool error: ${msg}`,
+                  };
+                }
               }),
             ),
           },
@@ -102,13 +152,20 @@ export async function processContractorMessage(
       }
 
       const text = extractTextFromResponse(response.content);
-      if (text) return text;
-      return fallback;
+      if (text) return { reply: text };
+      return {
+        reply: fallback,
+        error: `Unexpected stop_reason=${response.stop_reason}`,
+      };
     }
 
-    return fallback;
+    return {
+      reply: fallback,
+      error: "Exceeded max tool loops",
+    };
   } catch (e) {
-    console.error("contractor-agent error:", e);
-    return fallback;
+    const detail = formatAgentError(e);
+    console.error("[contractor-agent] error:", detail, e);
+    return { reply: fallback, error: detail };
   }
 }

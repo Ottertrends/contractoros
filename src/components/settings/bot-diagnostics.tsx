@@ -24,6 +24,8 @@ interface DiagnosticResult {
     db: CheckResult;
     webhook: CheckResult;
   };
+  /** Tips when Claude works but WhatsApp bot does not */
+  whatsapp_hints?: string[];
 }
 
 // ─── Sub-components ──────────────────────────────────────────────────────────
@@ -61,6 +63,7 @@ export function BotDiagnostics() {
   const [testMessage, setTestMessage] = React.useState("");
   const [testLoading, setTestLoading] = React.useState(false);
   const [testReply, setTestReply] = React.useState<string | null>(null);
+  const [testAgentError, setTestAgentError] = React.useState<string | null>(null);
 
   const [resyncLoading, setResyncLoading] = React.useState(false);
 
@@ -84,15 +87,22 @@ export function BotDiagnostics() {
     if (!testMessage.trim()) return;
     setTestLoading(true);
     setTestReply(null);
+    setTestAgentError(null);
     try {
       const res = await fetch("/api/test/bot", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message: testMessage }),
       });
-      const data = (await res.json()) as { ok: boolean; reply?: string; error?: string };
+      const data = (await res.json()) as {
+        ok: boolean;
+        reply?: string;
+        error?: string;
+        agentError?: string | null;
+      };
       if (!res.ok || !data.ok) throw new Error(data.error ?? "Bot test failed");
       setTestReply(data.reply ?? "(no reply)");
+      if (data.agentError) setTestAgentError(data.agentError);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Bot test failed");
     } finally {
@@ -152,6 +162,21 @@ export function BotDiagnostics() {
         </div>
       )}
 
+      {result?.whatsapp_hints && result.whatsapp_hints.length > 0 ? (
+        <div className="rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
+          <div className="font-semibold mb-2">WhatsApp bot troubleshooting</div>
+          <ul className="list-disc pl-5 space-y-1.5 text-sky-900/90">
+            {result.whatsapp_hints.map((h, i) => (
+              <li key={i}>{h}</li>
+            ))}
+          </ul>
+          <p className="mt-3 text-xs text-sky-800/80">
+            If <strong>Test Claude Agent</strong> below returns a reply but WhatsApp stays silent,
+            the problem is webhook routing or self-chat rules — not the Claude API.
+          </p>
+        </div>
+      ) : null}
+
       {/* Resync webhook */}
       <div className="flex flex-col gap-2">
         <div className="text-sm font-medium text-slate-700">Webhook Registration</div>
@@ -210,6 +235,11 @@ export function BotDiagnostics() {
           <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
             <div className="text-xs uppercase text-slate-400 mb-1 font-medium">Agent reply</div>
             <div className="text-sm text-slate-800 whitespace-pre-wrap">{testReply}</div>
+            {testAgentError ? (
+              <div className="mt-3 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 break-words">
+                <span className="font-semibold">Agent warning / error:</span> {testAgentError}
+              </div>
+            ) : null}
           </div>
         )}
       </div>

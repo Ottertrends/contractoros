@@ -5,6 +5,7 @@ import { createEvolutionClient } from "@/lib/evolution/client";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { evolutionInstanceName } from "@/lib/whatsapp/instance-name";
+import { DEFAULT_ANTHROPIC_MODEL } from "@/lib/agent/model";
 
 export const dynamic = "force-dynamic";
 
@@ -19,7 +20,7 @@ async function checkAnthropic(): Promise<CheckResult> {
   if (!key) return { ok: false, message: "ANTHROPIC_API_KEY not set" };
   try {
     const client = new Anthropic({ apiKey: key });
-    const model = process.env.ANTHROPIC_MODEL?.trim() || "claude-sonnet-4-6";
+    const model = process.env.ANTHROPIC_MODEL?.trim() || DEFAULT_ANTHROPIC_MODEL;
     const res = await client.messages.create({
       model,
       max_tokens: 10,
@@ -102,6 +103,23 @@ function checkWebhookUrl(): CheckResult {
   return { ok: true, message: `Webhook URL: ${webhookUrl}` };
 }
 
+/** User-facing reminders when Claude is OK but WhatsApp bot seems silent */
+function buildWhatsappHints(): string[] {
+  const hints: string[] = [];
+  if (process.env.EVOLUTION_WEBHOOK_SECRET?.trim()) {
+    hints.push(
+      "Webhook secret is configured: Evolution must send the same value in header x-evolution-webhook-secret or x-webhook-secret on every POST, or events are ignored (no bot).",
+    );
+  }
+  hints.push(
+    "The bot only activates on self-chat: message your own WhatsApp number (same device). Messages to customers or inbound-only chats are ignored by design.",
+  );
+  hints.push(
+    "Use Resync Webhook after changing domain or env. Profile phone should match your WhatsApp number if Evolution omits sender on webhooks.",
+  );
+  return hints;
+}
+
 export async function GET() {
   const supabase = await createSupabaseServerClient();
   const {
@@ -132,5 +150,6 @@ export async function GET() {
     whatsapp_connected: !!profile?.whatsapp_connected,
     instance_name: instanceName,
     checks: { anthropic, evolution, db, webhook },
+    whatsapp_hints: buildWhatsappHints(),
   });
 }

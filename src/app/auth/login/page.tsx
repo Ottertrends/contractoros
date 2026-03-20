@@ -22,11 +22,45 @@ const loginSchema = z.object({
 
 type LoginValues = z.infer<typeof loginSchema>;
 
+function extractAuthErrorMessage(error: unknown): string {
+  if (error instanceof Error && error.message.trim()) {
+    return error.message;
+  }
+  if (typeof error === "string" && error.trim()) {
+    return error;
+  }
+  if (error && typeof error === "object") {
+    const maybe = error as Record<string, unknown>;
+    const candidates = [
+      maybe.message,
+      maybe.error_description,
+      maybe.error,
+      maybe.msg,
+      maybe.code,
+    ];
+    for (const candidate of candidates) {
+      if (typeof candidate === "string" && candidate.trim()) {
+        return candidate;
+      }
+    }
+    try {
+      const serialized = JSON.stringify(maybe);
+      if (serialized && serialized !== "{}") {
+        return serialized;
+      }
+    } catch {
+      // Ignore stringify errors and use generic fallback below.
+    }
+  }
+  return "Login failed";
+}
+
 export default function LoginPage() {
   const router = useRouter();
   const { t } = useLanguage();
   const ta = t.auth;
   const [redirected, setRedirected] = React.useState(false);
+  const [debugError, setDebugError] = React.useState<string | null>(null);
 
   const form = useForm<LoginValues>({
     resolver: zodResolver(loginSchema),
@@ -60,15 +94,82 @@ export default function LoginPage() {
 
   async function onSubmit(values: LoginValues) {
     try {
-      const { error } = await supabase.auth.signInWithPassword({
-        email: values.email,
-        password: values.password,
+      setDebugError(null);
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
+      const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim();
+      if (!supabaseUrl || !supabaseAnonKey) {
+        const message = "Missing Supabase URL or anon key in environment variables.";
+        setDebugError(message);
+        toast.error(message);
+        return;
+      }
+
+      const tokenRes = await fetch(
+        `${supabaseUrl.replace(/\/$/, "")}/auth/v1/token?grant_type=password`,
+        {
+          method: "POST",
+          headers: {
+            apikey: supabaseAnonKey,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            email: values.email,
+            password: values.password,
+          }),
+        },
+      );
+
+      const tokenJson = (await tokenRes.json().catch(() => ({}))) as Record<
+        string,
+        unknown
+      >;
+      if (!tokenRes.ok) {
+        const message = extractAuthErrorMessage(tokenJson);
+        setDebugError(message);
+        toast.error(message);
+        return;
+      }
+
+      const accessToken =
+        typeof tokenJson.access_token === "string" ? tokenJson.access_token : null;
+      const refreshToken =
+        typeof tokenJson.refresh_token === "string"
+          ? tokenJson.refresh_token
+          : null;
+      if (!accessToken || !refreshToken) {
+        const message = "Supabase auth response is missing access/refresh token.";
+        setDebugError(message);
+        toast.error(message);
+        return;
+      }
+
+      const { error: sessionError } = await supabase.auth.setSession({
+        access_token: accessToken,
+        refresh_token: refreshToken,
       });
-      if (error) throw error;
+      if (sessionError) {
+        const message = extractAuthErrorMessage(sessionError);
+        setDebugError(message);
+        toast.error(message);
+        return;
+      }
+
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (!session) {
+        const message =
+          "Login succeeded but no session was created. Check Supabase URL/anon key and Auth settings.";
+        setDebugError(message);
+        toast.error(message);
+        return;
+      }
       toast.success("Logged in");
       router.push("/dashboard");
     } catch (e: unknown) {
-      const message = e instanceof Error ? e.message : "Login failed";
+      console.error("Login error details:", e);
+      const message = extractAuthErrorMessage(e);
+      setDebugError(message);
       toast.error(message);
     }
   }
@@ -110,6 +211,11 @@ export default function LoginPage() {
                 {ta.createAccount}
               </a>
             </div>
+            {debugError ? (
+              <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 break-words">
+                {debugError}
+              </div>
+            ) : null}
           </form>
         </CardContent>
       </Card>

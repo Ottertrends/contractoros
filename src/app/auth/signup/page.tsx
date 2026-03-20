@@ -32,6 +32,39 @@ const signupSchema = z.object({
 
 type SignupValues = z.infer<typeof signupSchema>;
 
+function extractAuthErrorMessage(error: unknown): string {
+  if (error instanceof Error && error.message.trim()) {
+    return error.message;
+  }
+  if (typeof error === "string" && error.trim()) {
+    return error;
+  }
+  if (error && typeof error === "object") {
+    const maybe = error as Record<string, unknown>;
+    const candidates = [
+      maybe.message,
+      maybe.error_description,
+      maybe.error,
+      maybe.msg,
+      maybe.code,
+    ];
+    for (const candidate of candidates) {
+      if (typeof candidate === "string" && candidate.trim()) {
+        return candidate;
+      }
+    }
+    try {
+      const serialized = JSON.stringify(maybe);
+      if (serialized && serialized !== "{}") {
+        return serialized;
+      }
+    } catch {
+      // Ignore stringify errors and use generic fallback below.
+    }
+  }
+  return "Failed to create account";
+}
+
 export default function SignupPage() {
   const router = useRouter();
   const { t } = useLanguage();
@@ -121,8 +154,8 @@ export default function SignupPage() {
         router.push("/dashboard");
       }
     } catch (e: unknown) {
-      const message = e instanceof Error ? e.message : "Failed to create account";
-      toast.error(message);
+      console.error("Signup error details:", e);
+      toast.error(extractAuthErrorMessage(e));
     }
   }
 
