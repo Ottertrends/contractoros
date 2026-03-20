@@ -14,9 +14,10 @@ import { userIdFromInstanceName } from "@/lib/whatsapp/instance-name";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-/** Returns true only if the local part of a JID looks like a real phone number */
+/** Returns true only if the local part of a JID looks like a real phone number.
+ *  Handles multi-device JIDs like 17372969713:4@s.whatsapp.net by stripping :XX suffix. */
 function isPhoneJid(jid: string): boolean {
-  const local = jid.split("@")[0].replace(/\D/g, "");
+  const local = jid.split("@")[0].split(":")[0].replace(/\D/g, "");
   return local.length >= 7 && local.length <= 15;
 }
 
@@ -223,7 +224,8 @@ async function handleMessagesUpsert(
   }
 
   {
-    const normalizeJid = (j: string) => j.split("@")[0];
+    // Strip @domain and device suffix (:4 in multi-device JIDs like 17372969713:4@s.whatsapp.net)
+    const normalizeJid = (j: string) => j.split("@")[0].split(":")[0];
     const remoteUser = normalizeJid(jid);
     const ownerUser = normalizeJid(ownerJid);
     const match = whatsappDigitsLooselyEqual(remoteUser, ownerUser);
