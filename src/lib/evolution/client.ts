@@ -146,9 +146,10 @@ export function createEvolutionClient(): EvolutionClient {
         webhook_by_events: false,
         events,
       };
+      // Evolution v2 uses POST (not PUT) for webhook/set
       await evolutionFetch(
         `/webhook/set/${encodeURIComponent(instanceName)}`,
-        { method: "PUT", body: JSON.stringify(body) },
+        { method: "POST", body: JSON.stringify(body) },
       );
     },
   };
