@@ -7,11 +7,46 @@ import type {
 } from "@/lib/evolution/types";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { extractWhatsAppText } from "@/lib/webhooks/evolution-message";
+import { whatsappDigitsLooselyEqual } from "@/lib/webhooks/phone-match";
 import { allowWebhookEvent } from "@/lib/webhooks/rate-limit";
 import { userIdFromInstanceName } from "@/lib/whatsapp/instance-name";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
+
+/** Returns true only if the local part of a JID looks like a real phone number */
+function isPhoneJid(jid: string): boolean {
+  const local = jid.split("@")[0].replace(/\D/g, "");
+  return local.length >= 7 && local.length <= 15;
+}
+
+async function resolveOwnerWhatsappJid(
+  admin: ReturnType<typeof createSupabaseAdminClient>,
+  userId: string,
+  payloadSender: string | null,
+): Promise<string | null> {
+  const raw = payloadSender?.trim();
+  // Only trust payload.sender if it looks like an actual phone JID, not an instance name
+  if (raw && isPhoneJid(raw)) {
+    console.log("[evolution-webhook] ownerJid from payload.sender:", raw);
+    return raw;
+  }
+  if (raw) {
+    console.log("[evolution-webhook] payload.sender looks non-phone, ignoring:", raw);
+  }
+  const { data: prof } = await admin
+    .from("profiles")
+    .select("phone")
+    .eq("id", userId)
+    .maybeSingle();
+  const phone = prof?.phone;
+  if (!phone || typeof phone !== "string") return null;
+  const digits = phone.replace(/\D/g, "");
+  if (!digits) return null;
+  const jid = `${digits}@s.whatsapp.net`;
+  console.log("[evolution-webhook] ownerJid from DB phone:", jid);
+  return jid;
+}
 
 export async function POST(request: Request) {
   const bodyText = await request.text();
@@ -79,11 +114,25 @@ async function processPayload(payload: EvolutionWebhookPayload) {
   if (
     eventRaw.includes("messages.upsert") ||
     eventRaw.includes("messages_upsert") ||
-    eventRaw === "messages.upsert"
+    eventRaw === "messages.upsert" ||
+    eventRaw.includes("messagesupsert")
   ) {
     const chunks = normalizeMessagesUpsertData(payload.data);
-    const ownerJid = typeof payload.sender === "string" ? payload.sender.trim() : null;
-    console.log("[evolution-webhook] Message chunks to process:", chunks.length, "| ownerJid:", ownerJid ?? "(none — will use profile phone)");
+    const payloadSender =
+      typeof payload.sender === "string" ? payload.sender.trim() : null;
+    const ownerJid = await resolveOwnerWhatsappJid(
+      admin,
+      userId,
+      payloadSender,
+    );
+    console.log(
+      "[evolution-webhook] Message chunks to process:",
+      chunks.length,
+      "| ownerJid:",
+      ownerJid ?? "(none — cannot verify self-chat)",
+      "| payload.sender:",
+      payloadSender ?? "(empty)",
+    );
     for (const chunk of chunks) {
       await handleMessagesUpsert(admin, userId, instance, chunk, ownerJid);
     }
@@ -156,6 +205,14 @@ async function handleMessagesUpsert(
     return;
   }
 
+  if (!ownerJid) {
+    console.warn(
+      "[evolution-webhook] No owner JID — set profile phone or ensure Evolution sends payload.sender | userId:",
+      userId,
+    );
+    return;
+  }
+
   // Self-chat filter: only activate when the user messages THEMSELVES.
   // Conditions: message sent from the device (fromMe=true) AND the chat JID
   // matches the owner's own JID (payload.sender). This silences both inbound
@@ -165,17 +222,28 @@ async function handleMessagesUpsert(
     return;
   }
 
-  if (ownerJid) {
-    const normalizeJid = (j: string) => j.split("@")[0].replace(/\D/g, "");
-    const remoteDigits = normalizeJid(jid);
-    const ownerDigits = normalizeJid(ownerJid);
-    if (remoteDigits !== ownerDigits) {
-      console.log("[evolution-webhook] Outgoing to external contact — silent | remoteJid:", jid, "| owner:", ownerJid);
+  {
+    const normalizeJid = (j: string) => j.split("@")[0];
+    const remoteUser = normalizeJid(jid);
+    const ownerUser = normalizeJid(ownerJid);
+    const match = whatsappDigitsLooselyEqual(remoteUser, ownerUser);
+    console.log(
+      "[evolution-webhook] JID compare — remoteUser:", remoteUser,
+      "| ownerUser:", ownerUser,
+      "| match:", match,
+    );
+    if (!match) {
+      console.log(
+        "[evolution-webhook] Outgoing to external contact — silent | remoteJid:",
+        jid,
+        "| owner:",
+        ownerJid,
+      );
       return;
     }
   }
 
-  console.log("[evolution-webhook] Self-chat confirmed — activating bot | remoteJid:", jid, "| owner:", ownerJid ?? "(none)");
+  console.log("[evolution-webhook] Self-chat confirmed — activating bot | remoteJid:", jid, "| owner:", ownerJid);
 
   const waMsgId =
     typeof key.id === "string" && key.id.length > 0 ? key.id : null;
@@ -243,7 +311,14 @@ async function handleMessagesUpsert(
 
   let reply: string;
   try {
-    reply = await processContractorMessage(userId, text, history);
+    const agentResult = await processContractorMessage(userId, text, history);
+    reply = agentResult.reply;
+    if (agentResult.error) {
+      console.error(
+        "[evolution-webhook] Agent error detail:",
+        agentResult.error,
+      );
+    }
     // 4. AGENT RESPONSE
     console.log("[evolution-webhook] AGENT RESPONSE:", reply.slice(0, 200));
   } catch (e) {
