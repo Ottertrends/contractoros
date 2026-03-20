@@ -86,9 +86,10 @@ async function processPayload(payload: EvolutionWebhookPayload) {
     eventRaw === "messages.upsert"
   ) {
     const chunks = normalizeMessagesUpsertData(payload.data);
-    console.log("[evolution-webhook] Message chunks to process:", chunks.length);
+    const ownerJid = typeof payload.sender === "string" ? payload.sender.trim() : null;
+    console.log("[evolution-webhook] Message chunks to process:", chunks.length, "| ownerJid:", ownerJid ?? "(none — will use profile phone)");
     for (const chunk of chunks) {
-      await handleMessagesUpsert(admin, userId, instance, chunk);
+      await handleMessagesUpsert(admin, userId, instance, chunk, ownerJid);
     }
   }
 }
@@ -135,6 +136,7 @@ async function handleMessagesUpsert(
   userId: string,
   instance: string,
   data: unknown,
+  ownerJid: string | null,
 ) {
   const msgData = (data ?? {}) as MessagesUpsertData;
   const key = msgData.key;
@@ -148,21 +150,49 @@ async function handleMessagesUpsert(
 
   // 2. MESSAGE EXTRACTED
   console.log(
-    "[evolution-webhook] MESSAGE EXTRACTED — sender:", jid,
+    "[evolution-webhook] MESSAGE EXTRACTED — remoteJid:", jid,
     "| fromMe:", fromMe,
     "| messageId:", key.id,
   );
-
-  // TODO: re-enable fromMe filter in production
-  // if (key.fromMe === true) {
-  //   console.log("[evolution-webhook] fromMe=true — skipping outbound");
-  //   return;
-  // }
 
   if (jid.endsWith("@g.us")) {
     console.log("[evolution-webhook] Group message — skipping");
     return;
   }
+
+  // Resolve owner JID: prefer payload.sender, fallback to profile phone
+  let resolvedOwnerJid = ownerJid;
+  if (!resolvedOwnerJid) {
+    const { data: profile } = await admin
+      .from("profiles")
+      .select("phone")
+      .eq("id", userId)
+      .maybeSingle();
+    if (profile?.phone) {
+      const digits = String(profile.phone).replace(/\D/g, "");
+      resolvedOwnerJid = `${digits}@s.whatsapp.net`;
+    }
+  }
+
+  // Self-chat filter: only activate bot when the user messages themselves
+  if (!resolvedOwnerJid) {
+    console.log("[evolution-webhook] Cannot determine owner JID — skipping bot (safety)");
+    return;
+  }
+
+  const normalizedJid = jid.split("@")[0].replace(/\D/g, "") + "@s.whatsapp.net";
+  const normalizedOwner = resolvedOwnerJid.split("@")[0].replace(/\D/g, "") + "@s.whatsapp.net";
+  const isSelfChat = fromMe && normalizedJid === normalizedOwner;
+
+  if (!isSelfChat) {
+    console.log(
+      "[evolution-webhook] Not a self-chat — bot stays silent | fromMe:", fromMe,
+      "| remoteJid:", normalizedJid, "| owner:", normalizedOwner,
+    );
+    return;
+  }
+
+  console.log("[evolution-webhook] Self-chat confirmed — activating bot");
 
   const waMsgId =
     typeof key.id === "string" && key.id.length > 0 ? key.id : null;

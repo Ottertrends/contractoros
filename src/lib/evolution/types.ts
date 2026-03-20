@@ -64,6 +64,8 @@ export interface SetWebhookBody {
 export interface EvolutionWebhookPayload {
   event?: string;
   instance?: string;
+  /** Owner JID of the connected WhatsApp number, e.g. "17372969713@s.whatsapp.net" */
+  sender?: string;
   data?: unknown;
   [key: string]: unknown;
 }
