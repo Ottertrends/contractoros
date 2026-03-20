@@ -7,7 +7,6 @@ import type {
 } from "@/lib/evolution/types";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { extractWhatsAppText } from "@/lib/webhooks/evolution-message";
-import { whatsappDigitsLooselyEqual } from "@/lib/webhooks/phone-match";
 import { allowWebhookEvent } from "@/lib/webhooks/rate-limit";
 import { userIdFromInstanceName } from "@/lib/whatsapp/instance-name";
 
@@ -206,46 +205,14 @@ async function handleMessagesUpsert(
     return;
   }
 
-  if (!ownerJid) {
-    console.warn(
-      "[evolution-webhook] No owner JID — set profile phone or ensure Evolution sends payload.sender | userId:",
-      userId,
-    );
-    return;
-  }
-
-  // Self-chat filter: only activate when the user messages THEMSELVES.
-  // Conditions: message sent from the device (fromMe=true) AND the chat JID
-  // matches the owner's own JID (payload.sender). This silences both inbound
-  // messages from others AND outgoing messages sent to external contacts.
+  // Activate only for messages sent FROM the device (fromMe=true).
+  // Inbound messages from other people are ignored.
   if (!fromMe) {
-    console.log("[evolution-webhook] fromMe=false — inbound from other number, silent | remoteJid:", jid);
+    console.log("[evolution-webhook] fromMe=false — inbound from external, silent | remoteJid:", jid);
     return;
   }
 
-  {
-    // Strip @domain and device suffix (:4 in multi-device JIDs like 17372969713:4@s.whatsapp.net)
-    const normalizeJid = (j: string) => j.split("@")[0].split(":")[0];
-    const remoteUser = normalizeJid(jid);
-    const ownerUser = normalizeJid(ownerJid);
-    const match = whatsappDigitsLooselyEqual(remoteUser, ownerUser);
-    console.log(
-      "[evolution-webhook] JID compare — remoteUser:", remoteUser,
-      "| ownerUser:", ownerUser,
-      "| match:", match,
-    );
-    if (!match) {
-      console.log(
-        "[evolution-webhook] Outgoing to external contact — silent | remoteJid:",
-        jid,
-        "| owner:",
-        ownerJid,
-      );
-      return;
-    }
-  }
-
-  console.log("[evolution-webhook] Self-chat confirmed — activating bot | remoteJid:", jid, "| owner:", ownerJid);
+  console.log("[evolution-webhook] fromMe=true — activating bot | remoteJid:", jid, "| ownerJid:", ownerJid ?? "(none)");
 
   const waMsgId =
     typeof key.id === "string" && key.id.length > 0 ? key.id : null;
