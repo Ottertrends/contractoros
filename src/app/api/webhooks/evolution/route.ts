@@ -156,15 +156,26 @@ async function handleMessagesUpsert(
     return;
   }
 
-  // Self-chat filter: only respond when the message was sent FROM the connected device.
-  // fromMe=true covers self-messages (user → themselves) and silences inbound from others.
-  // TODO: re-add exact JID comparison once phone number format is confirmed working.
+  // Self-chat filter: only activate when the user messages THEMSELVES.
+  // Conditions: message sent from the device (fromMe=true) AND the chat JID
+  // matches the owner's own JID (payload.sender). This silences both inbound
+  // messages from others AND outgoing messages sent to external contacts.
   if (!fromMe) {
-    console.log("[evolution-webhook] fromMe=false — inbound from another number, bot stays silent | remoteJid:", jid);
+    console.log("[evolution-webhook] fromMe=false — inbound from other number, silent | remoteJid:", jid);
     return;
   }
 
-  console.log("[evolution-webhook] fromMe=true — activating bot | remoteJid:", jid, "| ownerJid from payload:", ownerJid ?? "(none)");
+  if (ownerJid) {
+    const normalizeJid = (j: string) => j.split("@")[0].replace(/\D/g, "");
+    const remoteDigits = normalizeJid(jid);
+    const ownerDigits = normalizeJid(ownerJid);
+    if (remoteDigits !== ownerDigits) {
+      console.log("[evolution-webhook] Outgoing to external contact — silent | remoteJid:", jid, "| owner:", ownerJid);
+      return;
+    }
+  }
+
+  console.log("[evolution-webhook] Self-chat confirmed — activating bot | remoteJid:", jid, "| owner:", ownerJid ?? "(none)");
 
   const waMsgId =
     typeof key.id === "string" && key.id.length > 0 ? key.id : null;
