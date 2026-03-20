@@ -1,4 +1,5 @@
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { syncDraftFromProject } from "@/lib/invoice/sync-draft";
 import type { ProjectStatus } from "@/lib/types/database";
 
 function jsonResult(data: unknown) {
@@ -47,6 +48,18 @@ export async function executeTool(
         .single();
 
       if (error) return jsonResult({ error: error.message });
+
+      // Auto-create matching draft invoice (app-layer, trigger handles DB-layer)
+      if (data) {
+        await syncDraftFromProject(admin, userId, {
+          id: data.id,
+          name: data.name,
+          notes: row.notes ?? null,
+          current_work: row.current_work ?? null,
+          quoted_amount: row.quoted_amount ?? null,
+        });
+      }
+
       return jsonResult({ ok: true, project: data });
     }
 
@@ -103,6 +116,18 @@ export async function executeTool(
         .single();
 
       if (error) return jsonResult({ error: error.message });
+
+      // Auto-sync draft invoice when project data changes
+      if (data) {
+        await syncDraftFromProject(admin, userId, {
+          id: data.id,
+          name: data.name,
+          notes: typeof data.notes === "string" ? data.notes : null,
+          current_work: typeof data.current_work === "string" ? data.current_work : null,
+          quoted_amount: typeof data.quoted_amount === "string" ? data.quoted_amount : null,
+        });
+      }
+
       return jsonResult({ ok: true, project: data });
     }
 
@@ -172,16 +197,18 @@ export async function executeTool(
 
       const { data: project, error: pErr } = await admin
         .from("projects")
-        .select("id, name")
+        .select("id, name, notes, current_work, quoted_amount")
         .eq("id", projectId)
         .eq("user_id", userId)
         .single();
       if (pErr || !project)
         return jsonResult({ error: "Project not found" });
 
+      // Build line items from agent input, falling back to project data
       const rawItems = Array.isArray(input.items) ? input.items : [];
       let subtotal = 0;
       const lineRows: {
+        name: string | null;
         description: string;
         quantity: string;
         unit_price: string;
@@ -192,12 +219,14 @@ export async function executeTool(
       rawItems.forEach((item, idx) => {
         if (!item || typeof item !== "object") return;
         const o = item as Record<string, unknown>;
+        const itemName = o.name != null ? String(o.name) : null;
         const desc = String(o.description ?? "");
-        const qty = Number(o.quantity ?? 0);
+        const qty = Number(o.quantity ?? 1);
         const unit = Number(o.unit_price ?? 0);
         const lineTotal = qty * unit;
         subtotal += lineTotal;
         lineRows.push({
+          name: itemName,
           description: desc,
           quantity: String(qty),
           unit_price: String(unit),
@@ -206,52 +235,87 @@ export async function executeTool(
         });
       });
 
+      // If no items provided, seed from project data
       if (lineRows.length === 0) {
-        return jsonResult({ error: "At least one line item is required" });
+        const quoted = Number(project.quoted_amount ?? 0);
+        subtotal = quoted;
+        lineRows.push({
+          name: project.name,
+          description: project.current_work ?? project.name,
+          quantity: "1",
+          unit_price: String(quoted),
+          total: String(quoted),
+          sort_order: 0,
+        });
       }
 
-      // Sequential invoice number: INV-001, INV-002, …
-      const { count: invCount } = await admin
-        .from("invoices")
-        .select("*", { count: "exact", head: true })
-        .eq("user_id", userId);
-      const invoice_number = `INV-${String((invCount ?? 0) + 1).padStart(3, "0")}`;
-      const notes =
-        input.notes != null ? String(input.notes) : null;
+      const notes = input.notes != null ? String(input.notes) : (project.notes ?? null);
 
-      const { data: invoice, error: iErr } = await admin
+      // Upsert: update existing draft if one exists, create new if not
+      const { data: existingDraft } = await admin
         .from("invoices")
-        .insert({
-          project_id: projectId,
-          user_id: userId,
-          invoice_number,
-          status: "draft",
+        .select("id, invoice_number")
+        .eq("project_id", projectId)
+        .eq("status", "draft")
+        .maybeSingle();
+
+      let invoiceId: string;
+      let invoice_number: string;
+
+      if (existingDraft) {
+        // Update existing draft
+        invoiceId = existingDraft.id;
+        invoice_number = existingDraft.invoice_number ?? `INV-${existingDraft.id.slice(0, 6)}`;
+
+        await admin.from("invoices").update({
           subtotal: String(subtotal),
           tax_rate: "0",
           tax_amount: "0",
           total: String(subtotal),
           notes,
-        })
-        .select("id, invoice_number, total, status")
-        .single();
+          date: new Date().toISOString().slice(0, 10),
+        }).eq("id", invoiceId);
 
-      if (iErr || !invoice)
-        return jsonResult({ error: iErr?.message ?? "Insert failed" });
+        // Replace line items
+        await admin.from("invoice_items").delete().eq("invoice_id", invoiceId);
+      } else {
+        // Create new draft
+        const { count: invCount } = await admin
+          .from("invoices")
+          .select("*", { count: "exact", head: true })
+          .eq("user_id", userId);
+        invoice_number = `INV-${String((invCount ?? 0) + 1).padStart(3, "0")}`;
 
-      const itemsPayload = lineRows.map((r) => ({
-        ...r,
-        invoice_id: invoice.id,
-      }));
+        const { data: newInv, error: iErr } = await admin
+          .from("invoices")
+          .insert({
+            project_id: projectId,
+            user_id: userId,
+            invoice_number,
+            status: "draft",
+            subtotal: String(subtotal),
+            tax_rate: "0",
+            tax_amount: "0",
+            total: String(subtotal),
+            notes,
+            date: new Date().toISOString().slice(0, 10),
+          })
+          .select("id")
+          .single();
 
-      const { error: liErr } = await admin
-        .from("invoice_items")
-        .insert(itemsPayload);
+        if (iErr || !newInv) return jsonResult({ error: iErr?.message ?? "Insert failed" });
+        invoiceId = newInv.id;
+      }
+
+      const itemsPayload = lineRows.map((r) => ({ ...r, invoice_id: invoiceId }));
+      const { error: liErr } = await admin.from("invoice_items").insert(itemsPayload);
       if (liErr) return jsonResult({ error: liErr.message });
 
       return jsonResult({
         ok: true,
-        invoice,
+        invoice: { id: invoiceId, invoice_number, total: String(subtotal), status: "draft" },
         project_name: project.name,
+        action: existingDraft ? "updated" : "created",
       });
     }
 

@@ -3,8 +3,11 @@ import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { DraftInvoiceCard } from "@/components/invoices/draft-invoice-card";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import type { Invoice, InvoiceStatus, Project } from "@/lib/types/database";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { ensureDraftInvoice } from "@/lib/invoice/sync-draft";
+import type { Invoice, InvoiceItem, InvoiceStatus, Project } from "@/lib/types/database";
 import { ProjectForm } from "@/components/projects/project-form";
 
 function statusVariant(s: InvoiceStatus) {
@@ -50,6 +53,9 @@ export default async function ProjectDetailPage({
     );
   }
 
+  const safeProject = project as Project;
+
+  // Load all invoices for the project
   const { data: invoices } = await supabase
     .from("invoices")
     .select("*")
@@ -57,13 +63,41 @@ export default async function ProjectDetailPage({
     .order("created_at", { ascending: false });
 
   const safeInvoices = (invoices ?? []) as Invoice[];
-  const safeProject = project as Project;
+
+  // Find or auto-create the draft invoice (app-layer fallback; DB trigger handles normal flow)
+  let draftInvoice = safeInvoices.find((inv) => inv.status === "draft") ?? null;
+
+  if (!draftInvoice) {
+    const admin = createSupabaseAdminClient();
+    const newId = await ensureDraftInvoice(admin, user.id, safeProject);
+    if (newId) {
+      const { data: fresh } = await supabase
+        .from("invoices")
+        .select("*")
+        .eq("id", newId)
+        .single();
+      if (fresh) draftInvoice = fresh as Invoice;
+    }
+  }
+
+  // Load draft invoice items
+  let draftItems: InvoiceItem[] = [];
+  if (draftInvoice) {
+    const { data: its } = await supabase
+      .from("invoice_items")
+      .select("*")
+      .eq("invoice_id", draftInvoice.id)
+      .order("sort_order");
+    draftItems = (its ?? []) as InvoiceItem[];
+  }
+
+  const nonDraftInvoices = safeInvoices.filter((inv) => inv.status !== "draft");
 
   return (
     <div className="flex flex-col gap-6">
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <Link href="/dashboard/projects" className="text-sm text-primary hover:underline">
-          Back to Projects
+          ← Back to Projects
         </Link>
         <div className="text-sm text-slate-500">
           Last updated:{" "}
@@ -73,23 +107,42 @@ export default async function ProjectDetailPage({
         </div>
       </div>
 
+      {/* Project edit form */}
       <ProjectForm mode="edit" userId={user.id} project={safeProject} />
 
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between gap-3 flex-wrap">
-            <CardTitle>Related Invoices</CardTitle>
-            <Link href={`/dashboard/invoices/new?projectId=${projectId}`}>
-              <Button variant="secondary" size="sm">
-                Create Invoice
-              </Button>
-            </Link>
-          </div>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-3">
-          {safeInvoices.length === 0 ? (
-            <div className="text-sm text-slate-500">No invoices yet.</div>
-          ) : (
+      {/* Draft Invoice — always visible, auto-created */}
+      {draftInvoice ? (
+        <DraftInvoiceCard
+          projectName={safeProject.name}
+          invoice={draftInvoice}
+          items={draftItems}
+        />
+      ) : (
+        <Card>
+          <CardHeader><CardTitle>Draft Invoice</CardTitle></CardHeader>
+          <CardContent>
+            <p className="text-sm text-slate-500">
+              No draft invoice yet.{" "}
+              <Link href={`/dashboard/invoices/new?projectId=${projectId}`} className="text-primary hover:underline">
+                Create one manually
+              </Link>
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Sent / Paid / Cancelled invoices */}
+      {nonDraftInvoices.length > 0 && (
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <CardTitle>Other Invoices</CardTitle>
+              <Link href={`/dashboard/invoices/new?projectId=${projectId}`}>
+                <Button variant="secondary" size="sm">New Invoice</Button>
+              </Link>
+            </div>
+          </CardHeader>
+          <CardContent>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead className="text-left text-xs uppercase text-slate-500 border-b border-slate-200">
@@ -101,8 +154,8 @@ export default async function ProjectDetailPage({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
-                  {safeInvoices.map((inv) => (
-                    <tr key={inv.id} className="hover:bg-slate-50">
+                  {nonDraftInvoices.map((inv) => (
+                    <tr key={inv.id} className="hover:bg-slate-50 dark:hover:bg-slate-900">
                       <td className="py-3 pr-3">
                         <Link
                           href={`/dashboard/invoices/${inv.id}`}
@@ -114,20 +167,22 @@ export default async function ProjectDetailPage({
                       <td className="py-3 pr-3">
                         <Badge variant={statusVariant(inv.status)}>{inv.status}</Badge>
                       </td>
-                      <td className="py-3 pr-3 text-right font-mono text-slate-700">
+                      <td className="py-3 pr-3 text-right font-mono text-slate-700 dark:text-slate-300">
                         {fmt(Number(inv.total ?? 0))}
                       </td>
                       <td className="py-3 text-right text-slate-400">
-                        {new Date(inv.created_at).toLocaleDateString("en-US")}
+                        {inv.date
+                          ? new Date(inv.date).toLocaleDateString("en-US")
+                          : new Date(inv.created_at).toLocaleDateString("en-US")}
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
-          )}
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

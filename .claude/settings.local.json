@@ -2,7 +2,15 @@
   "permissions": {
     "allow": [
       "Bash(pnpm add:*)",
-      "Bash(pnpm build:*)"
+      "Bash(pnpm build:*)",
+      "mcp__3b4fd466-24ab-4dd9-9000-4c242e7566cb__list_teams",
+      "mcp__3b4fd466-24ab-4dd9-9000-4c242e7566cb__list_projects",
+      "mcp__3b4fd466-24ab-4dd9-9000-4c242e7566cb__list_deployments",
+      "mcp__3b4fd466-24ab-4dd9-9000-4c242e7566cb__get_runtime_logs",
+      "mcp__3b4fd466-24ab-4dd9-9000-4c242e7566cb__get_project",
+      "mcp__3b4fd466-24ab-4dd9-9000-4c242e7566cb__get_deployment_build_logs",
+      "mcp__a81894a9-5e8c-48af-b14b-b4b6481b0477__execute_sql",
+      "mcp__a81894a9-5e8c-48af-b14b-b4b6481b0477__apply_migration"
     ]
   }
 }

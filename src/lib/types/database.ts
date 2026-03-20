@@ -50,6 +50,8 @@ export interface Invoice {
   tax_amount: string;
   total: string;
   notes: string | null;
+  /** Invoice date (ISO date string, e.g. "2026-03-20") */
+  date: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -57,6 +59,8 @@ export interface Invoice {
 export interface InvoiceItem {
   id: string;
   invoice_id: string;
+  /** Product / service name */
+  name: string | null;
   description: string;
   quantity: string;
   unit_price: string;

@@ -88,7 +88,7 @@ export const CONTRACTOR_TOOLS: Tool[] = [
   {
     name: "create_invoice_draft",
     description:
-      "Create a draft invoice for a project. Use when they ask to invoice, bill, or quote a project.",
+      "Create or update the draft invoice for a project. Each project has exactly one draft invoice. If one already exists it will be updated. Use when they ask to invoice, bill, or quote a project. If no items are provided the project's quoted_amount and current_work are used automatically.",
     input_schema: {
       type: "object",
       properties: {
@@ -98,17 +98,18 @@ export const CONTRACTOR_TOOLS: Tool[] = [
           items: {
             type: "object",
             properties: {
-              description: { type: "string" },
+              name: { type: "string", description: "Product or service name (short label)" },
+              description: { type: "string", description: "Detailed description of the work" },
               quantity: { type: "number" },
               unit_price: { type: "number" },
             },
             required: ["description", "quantity", "unit_price"],
           },
-          description: "Line items for the invoice",
+          description: "Line items — omit to auto-populate from project data",
         },
         notes: { type: "string", description: "Invoice notes" },
       },
-      required: ["project_id", "items"],
+      required: ["project_id"],
     },
   },
   {
