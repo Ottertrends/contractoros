@@ -56,7 +56,9 @@ export async function GET() {
   // 2. Attempt sendText (raw — do NOT throw)
   let sendResult: unknown = null;
   let sendHttpCode: number | null = null;
-  const sendTo = digits ?? "17372969713"; // fallback to known number if no profile phone
+  // Ensure country code — if 10 digits assume US (+1)
+  const normalizedDigits = digits && digits.length === 10 ? `1${digits}` : digits;
+  const sendTo = normalizedDigits ?? "17372969713";
   const sendUrl = `${baseUrl}/message/sendText/${encodeURIComponent(instanceName)}`;
   const sendBody = {
     number: sendTo,

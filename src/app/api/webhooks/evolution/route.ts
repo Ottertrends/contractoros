@@ -256,7 +256,10 @@ async function handleMessagesUpsert(
     .eq("id", inboundId);
 
   const evolution = createEvolutionClient();
-  const to = jid.includes("@") ? jid : `${jid}@s.whatsapp.net`;
+  // Prefer ownerJid (payload.sender) — it carries the full canonical JID with country code
+  // (e.g. "17372969713@s.whatsapp.net"). key.remoteJid can strip the country code prefix.
+  const sendTarget = ownerJid ?? jid;
+  const to = sendTarget.includes("@") ? sendTarget : `${sendTarget}@s.whatsapp.net`;
 
   // 5. SEND REPLY
   console.log("[evolution-webhook] SEND REPLY — to:", to, "| instance:", instance, "| text:", reply.slice(0, 80));
