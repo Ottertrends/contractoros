@@ -90,10 +90,13 @@ export default function SignupPage() {
 
   async function onSubmit(values: SignupValues) {
     try {
+      const appUrl = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") ?? "";
       const { data, error } = await supabase.auth.signUp({
         email: values.email,
         password: values.password,
         options: {
+          // Explicit redirect so Supabase email link points to production, not localhost
+          emailRedirectTo: `${appUrl}/auth/callback`,
           data: {
             full_name: values.full_name,
             company_name: values.company_name,

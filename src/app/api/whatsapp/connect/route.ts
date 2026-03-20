@@ -42,9 +42,8 @@ export async function POST() {
 
       const instanceExists =
         /\b409\b/.test(msg) ||
-        /\balready\b/i.test(msg) ||
-        /\bexist/i.test(msg) ||
-        /\bduplicate/i.test(msg);
+        /already\s+exist/i.test(msg) ||
+        /\bduplicate\b/i.test(msg);
 
       if (!instanceExists) throw e;
       console.log("[whatsapp/connect] instance already exists — will re-register webhook");
@@ -65,17 +64,22 @@ export async function POST() {
       );
     }
 
-    // Fetch QR code
-    let connect: unknown;
-    try {
-      connect = await evolution.getQRCode(instanceName);
-      console.log("[whatsapp/connect] QR fetched");
-    } catch (e) {
-      console.error("[whatsapp/connect] getQRCode error:", e instanceof Error ? e.message : e);
-      throw e;
-    }
+    // Evolution v2: createInstance response already contains the QR code.
+    // Try to extract it first. Only call getQRCode if the creation response had no QR.
+    let qr = await resolveQrDataUrl(created);
 
-    const qr = await resolveQrDataUrl(created, connect);
+    if (!qr) {
+      console.log("[whatsapp/connect] No QR in createInstance response — calling getQRCode");
+      try {
+        const connect = await evolution.getQRCode(instanceName);
+        console.log("[whatsapp/connect] QR fetched via getQRCode");
+        qr = await resolveQrDataUrl(connect, created);
+      } catch (e) {
+        // getQRCode can 404 on Evolution v2 when the instance is already connecting.
+        // Log but don't crash — the QR from createInstance (if any) is still usable.
+        console.warn("[whatsapp/connect] getQRCode failed (non-fatal):", e instanceof Error ? e.message : e);
+      }
+    }
     console.log("[whatsapp/connect] QR resolved:", qr ? "yes" : "no", "instanceAlreadyExisted:", instanceAlreadyExists);
 
     const { error: profileErr } = await supabase
