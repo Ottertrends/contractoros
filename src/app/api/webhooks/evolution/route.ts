@@ -1,5 +1,3 @@
-import { after } from "next/server";
-
 import { processContractorMessage } from "@/lib/agent/contractor-agent";
 import { createEvolutionClient } from "@/lib/evolution/client";
 import type {
@@ -45,14 +43,12 @@ export async function POST(request: Request) {
     }
   }
 
-  // Return 200 immediately so Evolution API doesn't timeout; process async
-  after(async () => {
-    try {
-      await processPayload(payload);
-    } catch (e) {
-      console.error("[evolution-webhook] Unhandled error in processPayload:", e);
-    }
-  });
+  // Process inline — after() suppresses Vercel logs; maxDuration=60 gives plenty of headroom
+  try {
+    await processPayload(payload);
+  } catch (e) {
+    console.error("[evolution-webhook] Unhandled error in processPayload:", e);
+  }
 
   return new Response("OK", { status: 200 });
 }
@@ -170,13 +166,16 @@ async function handleMessagesUpsert(
       .maybeSingle();
     if (profile?.phone) {
       const digits = String(profile.phone).replace(/\D/g, "");
-      resolvedOwnerJid = `${digits}@s.whatsapp.net`;
+      resolvedOwnerJid = digits.length >= 10 ? `${digits}@s.whatsapp.net` : null;
+      console.log("[evolution-webhook] Owner JID from profile phone:", resolvedOwnerJid ?? `(too short: "${profile.phone}")`);
+    } else {
+      console.log("[evolution-webhook] No profile phone found for userId:", userId);
     }
   }
 
   // Self-chat filter: only activate bot when the user messages themselves
   if (!resolvedOwnerJid) {
-    console.log("[evolution-webhook] Cannot determine owner JID — skipping bot (safety)");
+    console.log("[evolution-webhook] WARNING: Cannot determine owner JID. Make sure your phone number is saved in your profile (Settings). Skipping bot.");
     return;
   }
 
@@ -184,11 +183,16 @@ async function handleMessagesUpsert(
   const normalizedOwner = resolvedOwnerJid.split("@")[0].replace(/\D/g, "") + "@s.whatsapp.net";
   const isSelfChat = fromMe && normalizedJid === normalizedOwner;
 
+  console.log(
+    "[evolution-webhook] Self-chat check | fromMe:", fromMe,
+    "| remoteJid:", normalizedJid,
+    "| owner:", normalizedOwner,
+    "| match:", normalizedJid === normalizedOwner,
+    "| isSelfChat:", isSelfChat,
+  );
+
   if (!isSelfChat) {
-    console.log(
-      "[evolution-webhook] Not a self-chat — bot stays silent | fromMe:", fromMe,
-      "| remoteJid:", normalizedJid, "| owner:", normalizedOwner,
-    );
+    console.log("[evolution-webhook] Not a self-chat — bot stays silent");
     return;
   }
 
