@@ -42,7 +42,10 @@ export interface QRCodeResponse {
 
 export interface SendTextBody {
   number: string;
-  textMessage: {
+  /** Evolution v2: top-level text field */
+  text?: string;
+  /** Evolution v1 fallback: nested textMessage */
+  textMessage?: {
     text: string;
   };
 }

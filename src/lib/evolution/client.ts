@@ -125,13 +125,16 @@ export function createEvolutionClient(): EvolutionClient {
     },
 
     async sendText(instanceName: string, to: string, message: string) {
+      // Strip to digits only — Evolution v2 wants bare number, v1 accepts it too
       const digits = to.replace(/\D/g, "");
-      const number =
-        to.includes("@s.whatsapp.net") ? to : `${digits}@s.whatsapp.net`;
+      // Send both `text` (v2) and `textMessage` (v1) so the same payload works
+      // regardless of which Evolution major version is running on the VPS.
       const body: SendTextBody = {
-        number,
+        number: digits,
+        text: message,
         textMessage: { text: message },
       };
+      console.log("[evolution-client] sendText →", `/message/sendText/${instanceName}`, "| to:", digits, "| preview:", message.slice(0, 60));
       return evolutionFetch<SendMessageResponse>(
         `/message/sendText/${encodeURIComponent(instanceName)}`,
         { method: "POST", body: JSON.stringify(body) },
