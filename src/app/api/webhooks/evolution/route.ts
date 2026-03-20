@@ -205,14 +205,28 @@ async function handleMessagesUpsert(
     return;
   }
 
-  // Activate only for messages sent FROM the device (fromMe=true).
-  // Inbound messages from other people are ignored.
+  // Only activate for outgoing messages (fromMe=true).
   if (!fromMe) {
     console.log("[evolution-webhook] fromMe=false — inbound from external, silent | remoteJid:", jid);
     return;
   }
 
-  console.log("[evolution-webhook] fromMe=true — activating bot | remoteJid:", jid, "| ownerJid:", ownerJid ?? "(none)");
+  // Self-chat filter: only respond when the user messages their OWN number.
+  // This prevents the bot firing when they send a message to a customer.
+  // Strip @domain and :XX device suffix, then compare trailing digits.
+  if (ownerJid) {
+    const digits = (j: string) => j.split("@")[0].split(":")[0].replace(/\D/g, "");
+    const remote = digits(jid);
+    const owner = digits(ownerJid);
+    const isSelf = remote === owner || remote.endsWith(owner) || owner.endsWith(remote);
+    console.log("[evolution-webhook] self-chat check — remote:", remote, "| owner:", owner, "| isSelf:", isSelf);
+    if (!isSelf) {
+      console.log("[evolution-webhook] Outgoing to external — skipping | remoteJid:", jid);
+      return;
+    }
+  }
+
+  console.log("[evolution-webhook] Self-chat confirmed — activating bot | remoteJid:", jid, "| ownerJid:", ownerJid ?? "(none)");
 
   const waMsgId =
     typeof key.id === "string" && key.id.length > 0 ? key.id : null;

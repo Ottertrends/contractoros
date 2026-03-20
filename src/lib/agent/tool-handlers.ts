@@ -29,6 +29,8 @@ export async function executeTool(
         user_id: userId,
         name: nameVal,
         client_name: input.client_name != null ? String(input.client_name) : null,
+        client_phone: input.client_phone != null ? String(input.client_phone) : null,
+        client_email: input.client_email != null ? String(input.client_email) : null,
         location: input.location != null ? String(input.location) : null,
         address: input.address != null ? String(input.address) : null,
         city: input.city != null ? String(input.city) : null,
@@ -70,8 +72,9 @@ export async function executeTool(
       const patch: Record<string, unknown> = {};
 
       if (input.name != null) patch.name = String(input.name);
-      if (input.client_name != null)
-        patch.client_name = String(input.client_name);
+      if (input.client_name != null) patch.client_name = String(input.client_name);
+      if (input.client_phone != null) patch.client_phone = String(input.client_phone);
+      if (input.client_email != null) patch.client_email = String(input.client_email);
       if (input.location != null) patch.location = String(input.location);
       if (input.address != null) patch.address = String(input.address);
       if (input.city != null) patch.city = String(input.city);
