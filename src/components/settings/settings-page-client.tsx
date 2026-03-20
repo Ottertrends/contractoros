@@ -16,6 +16,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { WhatsAppConnection } from "@/components/settings/whatsapp-connection";
+import { BotDiagnostics } from "@/components/settings/bot-diagnostics";
 
 const businessAreaOptions = [
   { value: "residential", label: "Residential" },
@@ -265,6 +266,15 @@ export function SettingsPageClient({ userId, profile }: { userId: string; profil
             initiallyConnected={!!profile.whatsapp_connected}
             initialPhone={null}
           />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>AI Bot Diagnostics</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <BotDiagnostics />
         </CardContent>
       </Card>
 

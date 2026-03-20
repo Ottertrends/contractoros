@@ -16,20 +16,19 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 export async function POST(request: Request) {
-  // Read body first so we can log it
   const bodyText = await request.text();
-  console.log("[evolution-webhook] RECEIVED body:", bodyText.slice(0, 800));
 
   let payload: EvolutionWebhookPayload;
   try {
     payload = JSON.parse(bodyText) as EvolutionWebhookPayload;
   } catch {
-    console.error("[evolution-webhook] Invalid JSON");
+    console.error("[evolution-webhook] Invalid JSON body");
     return new Response("OK", { status: 200 });
   }
 
+  // 1. WEBHOOK RECEIVED
   console.log(
-    "[evolution-webhook] event:", payload.event,
+    "[evolution-webhook] WEBHOOK RECEIVED — event:", payload.event,
     "| instance:", payload.instance,
   );
 
@@ -42,12 +41,11 @@ export async function POST(request: Request) {
       "";
     if (header !== secret) {
       console.warn("[evolution-webhook] Secret mismatch — rejected");
-      // Return 200 to stop Evolution from retrying endlessly
       return new Response("OK", { status: 200 });
     }
   }
 
-  // Return 200 immediately; process asynchronously so Evolution API doesn't timeout
+  // Return 200 immediately so Evolution API doesn't timeout; process async
   after(async () => {
     try {
       await processPayload(payload);
@@ -64,7 +62,7 @@ async function processPayload(payload: EvolutionWebhookPayload) {
     typeof payload.instance === "string" ? payload.instance : "";
   const userId = userIdFromInstanceName(instance);
   if (!userId) {
-    console.log("[evolution-webhook] No userId from instance:", instance, "— skipping");
+    console.log("[evolution-webhook] No userId derived from instance:", instance, "— skipping");
     return;
   }
 
@@ -74,7 +72,7 @@ async function processPayload(payload: EvolutionWebhookPayload) {
   }
 
   const eventRaw = String(payload.event ?? "").toLowerCase();
-  console.log("[evolution-webhook] Processing event:", eventRaw, "userId:", userId);
+  console.log("[evolution-webhook] Processing event:", eventRaw, "| userId:", userId);
 
   const admin = createSupabaseAdminClient();
 
@@ -88,16 +86,14 @@ async function processPayload(payload: EvolutionWebhookPayload) {
     eventRaw === "messages.upsert"
   ) {
     const chunks = normalizeMessagesUpsertData(payload.data);
-    console.log("[evolution-webhook] Processing", chunks.length, "message chunk(s)");
+    console.log("[evolution-webhook] Message chunks to process:", chunks.length);
     for (const chunk of chunks) {
       await handleMessagesUpsert(admin, userId, instance, chunk);
     }
   }
 }
 
-function normalizeMessagesUpsertData(
-  data: unknown,
-): MessagesUpsertData[] {
+function normalizeMessagesUpsertData(data: unknown): MessagesUpsertData[] {
   if (data == null) return [];
   if (Array.isArray(data)) return data as MessagesUpsertData[];
   if (typeof data === "object" && data !== null && "messages" in data) {
@@ -115,7 +111,7 @@ async function handleConnectionUpdate(
 ) {
   const d = (data ?? {}) as ConnectionUpdateData;
   const state = String(d.state ?? d.status ?? "").toLowerCase();
-  console.log("[evolution-webhook] connectionUpdate state:", state, "instance:", instance);
+  console.log("[evolution-webhook] connectionUpdate state:", state, "| instance:", instance);
 
   if (state.includes("open") || state === "connected") {
     await admin
@@ -147,12 +143,22 @@ async function handleMessagesUpsert(
     return;
   }
 
-  if (key.fromMe === true) {
-    console.log("[evolution-webhook] fromMe=true — skipping outbound");
-    return;
-  }
-
   const jid = key.remoteJid ?? "";
+  const fromMe = key.fromMe === true;
+
+  // 2. MESSAGE EXTRACTED
+  console.log(
+    "[evolution-webhook] MESSAGE EXTRACTED — sender:", jid,
+    "| fromMe:", fromMe,
+    "| messageId:", key.id,
+  );
+
+  // TODO: re-enable fromMe filter in production
+  // if (key.fromMe === true) {
+  //   console.log("[evolution-webhook] fromMe=true — skipping outbound");
+  //   return;
+  // }
+
   if (jid.endsWith("@g.us")) {
     console.log("[evolution-webhook] Group message — skipping");
     return;
@@ -162,12 +168,14 @@ async function handleMessagesUpsert(
     typeof key.id === "string" && key.id.length > 0 ? key.id : null;
 
   const text = extractWhatsAppText(msgData);
-  if (!text) {
-    console.log("[evolution-webhook] No text extracted — skipping");
-    return;
-  }
 
-  console.log("[evolution-webhook] Inbound text from", jid, ":", text.slice(0, 100));
+  // 2b. Log extracted text
+  console.log(
+    "[evolution-webhook] MESSAGE TEXT:", text ? `"${text.slice(0, 120)}"` : "(none — skipping)",
+    "| fromMe:", fromMe,
+  );
+
+  if (!text) return;
 
   const { data: inserted, error: insErr } = await admin
     .from("messages")
@@ -185,7 +193,7 @@ async function handleMessagesUpsert(
 
   if (insErr) {
     if (insErr.code === "23505") {
-      console.log("[evolution-webhook] Duplicate message — skipping");
+      console.log("[evolution-webhook] Duplicate message (23505) — skipping");
       return;
     }
     console.error("[evolution-webhook] messages insert error:", insErr);
@@ -193,7 +201,10 @@ async function handleMessagesUpsert(
   }
 
   const inboundId = inserted?.id;
-  if (!inboundId) return;
+  if (!inboundId) {
+    console.log("[evolution-webhook] Insert returned no id — skipping agent");
+    return;
+  }
 
   const { data: prior } = await admin
     .from("messages")
@@ -203,17 +214,25 @@ async function handleMessagesUpsert(
     .order("created_at", { ascending: false })
     .limit(10);
 
-  const chronological = [...(prior ?? [])].reverse();
-  const history = chronological.map((m) => ({
-    role: m.direction === "inbound" ? ("user" as const) : ("assistant" as const),
-    content: m.content,
-  }));
+  const history = [...(prior ?? [])]
+    .reverse()
+    .map((m) => ({
+      role: m.direction === "inbound" ? ("user" as const) : ("assistant" as const),
+      content: m.content,
+    }));
 
-  console.log("[evolution-webhook] Calling Claude agent for userId:", userId);
+  // 3. AGENT CALLED
+  console.log(
+    "[evolution-webhook] AGENT CALLED — userId:", userId,
+    "| text:", text.slice(0, 80),
+    "| historyLen:", history.length,
+  );
+
   let reply: string;
   try {
     reply = await processContractorMessage(userId, text, history);
-    console.log("[evolution-webhook] Agent reply:", reply.slice(0, 100));
+    // 4. AGENT RESPONSE
+    console.log("[evolution-webhook] AGENT RESPONSE:", reply.slice(0, 200));
   } catch (e) {
     console.error("[evolution-webhook] Agent error:", e);
     reply = "Sorry, I'm having trouble processing that. Please try again in a moment.";
@@ -236,11 +255,16 @@ async function handleMessagesUpsert(
 
   const evolution = createEvolutionClient();
   const to = jid.includes("@") ? jid : `${jid}@s.whatsapp.net`;
-  console.log("[evolution-webhook] Sending reply to:", to, "via instance:", instance);
+
+  // 5. SEND REPLY
+  console.log("[evolution-webhook] SEND REPLY — to:", to, "| instance:", instance, "| text:", reply.slice(0, 80));
+
   try {
     await evolution.sendText(instance, to, reply);
-    console.log("[evolution-webhook] Reply sent successfully");
+    // 6. REPLY SENT
+    console.log("[evolution-webhook] REPLY SENT successfully to:", to);
   } catch (e) {
-    console.error("[evolution-webhook] sendText error:", e);
+    // 6. REPLY FAILED
+    console.error("[evolution-webhook] REPLY FAILED — to:", to, "| error:", e instanceof Error ? e.message : e);
   }
 }

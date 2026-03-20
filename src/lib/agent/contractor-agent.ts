@@ -10,7 +10,7 @@ import { executeTool } from "@/lib/agent/tool-handlers";
 import { SYSTEM_PROMPT } from "@/lib/agent/types";
 import { CONTRACTOR_TOOLS } from "@/lib/agent/tools";
 
-const DEFAULT_MODEL = "claude-sonnet-4-20250514";
+const DEFAULT_MODEL = "claude-sonnet-4-6";
 
 function getModel() {
   return process.env.ANTHROPIC_MODEL?.trim() || DEFAULT_MODEL;
