@@ -1,3 +1,5 @@
+import QRCode from "qrcode";
+
 import type {
   CreateInstanceBody,
   CreateInstanceResponse,
@@ -10,13 +12,27 @@ import type {
 
 function getBaseUrl(): string {
   const raw = process.env.EVOLUTION_API_URL?.trim();
-  if (!raw) throw new Error("Missing EVOLUTION_API_URL");
+  if (!raw) {
+    throw new Error(
+      "Missing EVOLUTION_API_URL. Add it to .env.local (then restart `pnpm dev`) or Vercel → Environment Variables. Example: http://YOUR_VPS_IP:8080",
+    );
+  }
   return raw.replace(/\/$/, "");
 }
 
+/**
+ * Global API key sent as the `apikey` header — must match Evolution’s configured auth key
+ * (same value as in Evolution Manager / Docker `AUTHENTICATION_API_KEY`).
+ */
 function getApiKey(): string {
-  const key = process.env.EVOLUTION_API_KEY?.trim();
-  if (!key) throw new Error("Missing EVOLUTION_API_KEY");
+  const key =
+    process.env.EVOLUTION_API_KEY?.trim() ||
+    process.env.EVOLUTION_GLOBAL_API_KEY?.trim();
+  if (!key) {
+    throw new Error(
+      "Missing EVOLUTION_API_KEY. Add to .env.local: EVOLUTION_API_KEY=your_global_key (restart dev server). On Vercel: Project → Settings → Environment Variables. Use the same API key as your Evolution API instance (often the value of AUTHENTICATION_API_KEY on the Evolution server).",
+    );
+  }
   return key;
 }
 
@@ -65,30 +81,21 @@ export interface EvolutionClient {
 export function createEvolutionClient(): EvolutionClient {
   return {
     async createInstance(instanceName: string, webhookUrl: string) {
+      // Evolution v1.8.x: pass webhook inside the create body.
+      // The separate PUT /webhook/set/{instance} endpoint does not exist in v1.
       const body: CreateInstanceBody = {
         instanceName,
         token: getApiKey(),
         qrcode: true,
         integration: "WHATSAPP-BAILEYS",
+        webhook: webhookUrl,
+        webhook_by_events: false,
+        events: ["MESSAGES_UPSERT", "CONNECTION_UPDATE", "QRCODE_UPDATED"],
       };
-      const created = await evolutionFetch<CreateInstanceResponse>(
+      return evolutionFetch<CreateInstanceResponse>(
         "/instance/create",
         { method: "POST", body: JSON.stringify(body) },
       );
-      const webhookBody: SetWebhookBody = {
-        url: webhookUrl,
-        webhook_by_events: false,
-        events: [
-          "MESSAGES_UPSERT",
-          "CONNECTION_UPDATE",
-          "QRCODE_UPDATED",
-        ],
-      };
-      await evolutionFetch(
-        `/webhook/set/${encodeURIComponent(instanceName)}`,
-        { method: "PUT", body: JSON.stringify(webhookBody) },
-      );
-      return created;
     },
 
     async deleteInstance(instanceName: string) {
@@ -165,6 +172,69 @@ export function extractQrBase64(payload: unknown): string | null {
   const instance = o.instance;
   if (instance && typeof instance === "object" && "qrcode" in instance) {
     return extractQrBase64((instance as { qrcode: unknown }).qrcode);
+  }
+  return null;
+}
+
+/**
+ * Evolution v1 `/instance/connect` returns `{ code, pairingCode, count }` — `code` is the
+ * WhatsApp Web session string and must be turned into a QR image (not raw base64 PNG).
+ */
+export function extractWhatsAppQrString(payload: unknown): string | null {
+  if (!payload || typeof payload !== "object") return null;
+  const o = payload as Record<string, unknown>;
+
+  const tryCode = (v: unknown): string | null => {
+    if (typeof v !== "string") return null;
+    const s = v.trim();
+    // Pairing codes are short; QR payloads are long (typ. 100+ chars)
+    if (s.length < 24) return null;
+    return s;
+  };
+
+  const direct = tryCode(o.code);
+  if (direct) return direct;
+
+  const qrcode = o.qrcode;
+  if (qrcode && typeof qrcode === "object") {
+    const nested = tryCode((qrcode as { code?: unknown }).code);
+    if (nested) return nested;
+  }
+
+  const instance = o.instance;
+  if (instance && typeof instance === "object") {
+    const inst = instance as Record<string, unknown>;
+    const fromInst = tryCode(inst.code);
+    if (fromInst) return fromInst;
+    if (inst.qrcode && typeof inst.qrcode === "object") {
+      const nested = tryCode((inst.qrcode as { code?: unknown }).code);
+      if (nested) return nested;
+    }
+  }
+
+  return null;
+}
+
+/** Prefer base64 from API; otherwise render Evolution's `code` field as a QR data URL. */
+export async function resolveQrDataUrl(
+  ...sources: unknown[]
+): Promise<string | null> {
+  for (const src of sources) {
+    const fromB64 = extractQrBase64(src);
+    if (fromB64) return fromB64;
+  }
+  for (const src of sources) {
+    const raw = extractWhatsAppQrString(src);
+    if (!raw) continue;
+    try {
+      return await QRCode.toDataURL(raw, {
+        width: 280,
+        margin: 2,
+        errorCorrectionLevel: "M",
+      });
+    } catch {
+      /* ignore */
+    }
   }
   return null;
 }

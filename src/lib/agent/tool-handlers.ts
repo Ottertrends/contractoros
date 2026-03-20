@@ -210,7 +210,12 @@ export async function executeTool(
         return jsonResult({ error: "At least one line item is required" });
       }
 
-      const invoice_number = `INV-${Date.now().toString(36).toUpperCase()}`;
+      // Sequential invoice number: INV-001, INV-002, …
+      const { count: invCount } = await admin
+        .from("invoices")
+        .select("*", { count: "exact", head: true })
+        .eq("user_id", userId);
+      const invoice_number = `INV-${String((invCount ?? 0) + 1).padStart(3, "0")}`;
       const notes =
         input.notes != null ? String(input.notes) : null;
 

@@ -103,18 +103,23 @@ export function WhatsAppConnection({
       const res = await fetch("/api/whatsapp/connect", { method: "POST" });
       const body = await res.json();
       if (!res.ok) throw new Error(body.error ?? "Connect failed");
-      const qr = body.qrCodeBase64 as string | null;
-      if (qr) setQrDataUrl(qr);
-      else {
+      let qr = body.qrCodeBase64 as string | null;
+      if (!qr) {
         const qrRes = await fetch("/api/whatsapp/qrcode");
         const qrBody = await qrRes.json();
         if (qrRes.ok && qrBody.qrCodeBase64)
-          setQrDataUrl(qrBody.qrCodeBase64 as string);
+          qr = qrBody.qrCodeBase64 as string;
       }
+      if (qr) setQrDataUrl(qr);
+      else
+        toast.error(
+          "No QR code returned. Check Evolution API logs and env (EVOLUTION_API_URL / KEY).",
+        );
       startPolling();
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : "Connect failed";
       toast.error(message);
+    } finally {
       setConnecting(false);
     }
   }
@@ -204,6 +209,10 @@ export function WhatsAppConnection({
             Scan this QR code with WhatsApp → Linked devices. Status checks
             every 3 seconds.
           </p>
+        </div>
+      ) : !connected && connecting ? (
+        <div className="rounded-xl border border-slate-200 bg-slate-50 px-6 py-10 text-center text-sm text-slate-600 dark:border-slate-800 dark:bg-slate-900">
+          Generating QR code…
         </div>
       ) : !connected && !qrDataUrl && !connecting ? (
         <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-6 py-8 text-center text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-900">

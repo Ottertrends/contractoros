@@ -1,10 +1,25 @@
 import Link from "next/link";
 
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import type { Invoice, Project } from "@/lib/types/database";
+import type { Invoice, InvoiceStatus, Project } from "@/lib/types/database";
 import { ProjectForm } from "@/components/projects/project-form";
+
+function statusVariant(s: InvoiceStatus) {
+  const map: Record<InvoiceStatus, "neutral" | "warning" | "success" | "danger"> = {
+    draft: "neutral",
+    sent: "warning",
+    paid: "success",
+    cancelled: "danger",
+  };
+  return map[s] ?? "neutral";
+}
+
+function fmt(n: number) {
+  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(n);
+}
 
 export default async function ProjectDetailPage({
   params,
@@ -52,7 +67,9 @@ export default async function ProjectDetailPage({
         </Link>
         <div className="text-sm text-slate-500">
           Last updated:{" "}
-          {safeProject.updated_at ? new Date(safeProject.updated_at).toLocaleDateString() : "—"}
+          {safeProject.updated_at
+            ? new Date(safeProject.updated_at).toLocaleDateString()
+            : "—"}
         </div>
       </div>
 
@@ -60,42 +77,48 @@ export default async function ProjectDetailPage({
 
       <Card>
         <CardHeader>
-          <CardTitle>Related Invoices</CardTitle>
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <CardTitle>Related Invoices</CardTitle>
+            <Link href={`/dashboard/invoices/new?projectId=${projectId}`}>
+              <Button variant="secondary" size="sm">
+                Create Invoice
+              </Button>
+            </Link>
+          </div>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
-          <div className="flex items-center justify-between gap-3 flex-wrap">
-            <div className="text-sm text-slate-600">
-              Phase 3 will add invoice creation.
-            </div>
-            <Button disabled variant="secondary">
-              Create Invoice (Phase 3)
-            </Button>
-          </div>
-
           {safeInvoices.length === 0 ? (
             <div className="text-sm text-slate-500">No invoices yet.</div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
-                <thead className="text-left text-xs uppercase text-slate-500">
+                <thead className="text-left text-xs uppercase text-slate-500 border-b border-slate-200">
                   <tr>
-                    <th className="py-2 pr-3">Invoice</th>
+                    <th className="py-2 pr-3">Invoice #</th>
                     <th className="py-2 pr-3">Status</th>
-                    <th className="py-2">Total</th>
+                    <th className="py-2 pr-3 text-right">Total</th>
+                    <th className="py-2 text-right">Date</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
                   {safeInvoices.map((inv) => (
-                    <tr key={inv.id} className="text-slate-800 dark:text-slate-50">
+                    <tr key={inv.id} className="hover:bg-slate-50">
                       <td className="py-3 pr-3">
-                        {inv.invoice_number ?? inv.id}
+                        <Link
+                          href={`/dashboard/invoices/${inv.id}`}
+                          className="font-mono text-primary hover:underline"
+                        >
+                          {inv.invoice_number ?? inv.id.slice(0, 8)}
+                        </Link>
                       </td>
-                      <td className="py-3 pr-3">{inv.status}</td>
-                      <td className="py-3">
-                        {new Intl.NumberFormat(undefined, {
-                          style: "currency",
-                          currency: "USD",
-                        }).format(Number(inv.total ?? 0))}
+                      <td className="py-3 pr-3">
+                        <Badge variant={statusVariant(inv.status)}>{inv.status}</Badge>
+                      </td>
+                      <td className="py-3 pr-3 text-right font-mono text-slate-700">
+                        {fmt(Number(inv.total ?? 0))}
+                      </td>
+                      <td className="py-3 text-right text-slate-400">
+                        {new Date(inv.created_at).toLocaleDateString("en-US")}
                       </td>
                     </tr>
                   ))}
@@ -108,4 +131,3 @@ export default async function ProjectDetailPage({
     </div>
   );
 }
-

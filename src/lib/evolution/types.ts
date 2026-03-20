@@ -5,6 +5,10 @@ export interface CreateInstanceBody {
   token?: string;
   qrcode?: boolean;
   integration?: string;
+  /** Evolution v1: webhook URL passed at create time (no separate set endpoint) */
+  webhook?: string;
+  webhook_by_events?: boolean;
+  events?: string[];
 }
 
 export interface CreateInstanceResponse {
