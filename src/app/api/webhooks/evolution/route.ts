@@ -220,12 +220,8 @@ async function handleMessagesUpsert(
   const jid = key.remoteJid ?? "";
   const fromMe = key.fromMe === true;
 
-  // 2. MESSAGE EXTRACTED
-  console.log(
-    "[evolution-webhook] MESSAGE EXTRACTED — remoteJid:", jid,
-    "| fromMe:", fromMe,
-    "| messageId:", key.id,
-  );
+  // 2. MESSAGE EXTRACTED — [MSGRAW] is searchable in Vercel logs to see exact JID format
+  console.log("[MSGRAW]", JSON.stringify({ remoteJid: jid, fromMe, messageId: key.id }));
 
   if (jid.endsWith("@g.us")) {
     console.log("[evolution-webhook] Group message — skipping");
@@ -240,8 +236,15 @@ async function handleMessagesUpsert(
 
   // Self-chat filter: only respond when the user messages their OWN number.
   // This prevents the bot firing when they send a message to a customer.
-  // Strip @domain and :XX device suffix, then compare trailing digits.
-  if (ownerJid) {
+  //
+  // WhatsApp Multi-Device uses two JID formats for self-messages:
+  //   @s.whatsapp.net  — standard phone-number JID (compare digits against owner)
+  //   @lid             — Linked Device ID (always a self/cross-device message, no comparison needed)
+  if (jid.endsWith("@lid")) {
+    // @lid JIDs are WhatsApp Linked Device IDs used for cross-device self-messages.
+    // fromMe=true + @lid = always a self-chat — allow through unconditionally.
+    console.log("[evolution-webhook] @lid JID (self-device message) — activating bot:", jid);
+  } else if (ownerJid) {
     const digits = (j: string) => j.split("@")[0].split(":")[0].replace(/\D/g, "");
     const remote = digits(jid);
     const owner = digits(ownerJid);
