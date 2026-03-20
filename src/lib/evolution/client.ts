@@ -51,6 +51,8 @@ async function evolutionFetch<T>(
   });
   if (!res.ok) {
     const text = await res.text();
+    // Log with a unique tag so we can search for it in Vercel runtime logs
+    console.error("[evolution-api-error]", "status:", res.status, "| path:", path, "| body:", text.slice(0, 600));
     throw new Error(`Evolution API ${path} failed: ${res.status} ${text}`);
   }
   if (res.status === 204) return undefined as T;
