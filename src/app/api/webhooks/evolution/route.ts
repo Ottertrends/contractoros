@@ -20,34 +20,35 @@ function isPhoneJid(jid: string): boolean {
   return local.length >= 7 && local.length <= 15;
 }
 
-async function resolveOwnerWhatsappJid(
+async function resolveOwnerJids(
   admin: ReturnType<typeof createSupabaseAdminClient>,
   userId: string,
   payloadSender: string | null,
-): Promise<string | null> {
+): Promise<{ ownerJid: string | null; ownerLid: string | null }> {
   const raw = payloadSender?.trim();
 
-  // Query profile for stored canonical JID AND phone in one call
+  // Query profile for stored JIDs, LID, and phone in one call
   const { data: prof } = await admin
     .from("profiles")
-    .select("phone, whatsapp_owner_jid")
+    .select("phone, whatsapp_owner_jid, whatsapp_owner_lid")
     .eq("id", userId)
     .maybeSingle();
 
+  const ownerLid = (prof?.whatsapp_owner_lid as string | null) ?? null;
+
+  // Resolve ownerJid (phone-based JID)
   // 1. Prefer stored canonical JID — set from a previous validated sender, most reliable
   if (prof?.whatsapp_owner_jid && typeof prof.whatsapp_owner_jid === "string") {
     console.log("[evolution-webhook] ownerJid from stored whatsapp_owner_jid:", prof.whatsapp_owner_jid);
-    return prof.whatsapp_owner_jid;
+    return { ownerJid: prof.whatsapp_owner_jid, ownerLid };
   }
 
   // 2. Trust payload.sender if it looks like a real phone JID (not an instance UUID)
   if (raw && isPhoneJid(raw)) {
-    // Normalize: strip device suffix (:XX) so "17372969713:4@s.whatsapp.net" → "17372969713@s.whatsapp.net"
     const canonical = `${raw.split("@")[0].split(":")[0]}@s.whatsapp.net`;
     console.log("[evolution-webhook] ownerJid from payload.sender:", raw, "→ canonical:", canonical);
-    // Persist so future calls use exact match — no more digit guessing
     await admin.from("profiles").update({ whatsapp_owner_jid: canonical }).eq("id", userId);
-    return canonical;
+    return { ownerJid: canonical, ownerLid };
   }
 
   if (raw) {
@@ -56,13 +57,13 @@ async function resolveOwnerWhatsappJid(
 
   // 3. Last resort: DB phone. For US 10-digit numbers prepend country code 1.
   const phone = prof?.phone;
-  if (!phone || typeof phone !== "string") return null;
+  if (!phone || typeof phone !== "string") return { ownerJid: null, ownerLid };
   const digits = phone.replace(/\D/g, "");
-  if (!digits) return null;
+  if (!digits) return { ownerJid: null, ownerLid };
   const normalized = digits.length === 10 ? `1${digits}` : digits;
-  const jid = `${normalized}@s.whatsapp.net`;
-  console.log("[evolution-webhook] ownerJid from DB phone (normalized):", jid);
-  return jid;
+  const ownerJid = `${normalized}@s.whatsapp.net`;
+  console.log("[evolution-webhook] ownerJid from DB phone (normalized):", ownerJid);
+  return { ownerJid, ownerLid };
 }
 
 export async function POST(request: Request) {
@@ -139,7 +140,7 @@ async function processPayload(payload: EvolutionWebhookPayload) {
     const chunks = normalizeMessagesUpsertData(payload.data);
     const payloadSender =
       typeof payload.sender === "string" ? payload.sender.trim() : null;
-    const ownerJid = await resolveOwnerWhatsappJid(
+    const { ownerJid, ownerLid } = await resolveOwnerJids(
       admin,
       userId,
       payloadSender,
@@ -148,12 +149,14 @@ async function processPayload(payload: EvolutionWebhookPayload) {
       "[evolution-webhook] Message chunks to process:",
       chunks.length,
       "| ownerJid:",
-      ownerJid ?? "(none — cannot verify self-chat)",
+      ownerJid ?? "(none)",
+      "| ownerLid:",
+      ownerLid ?? "(none — will learn on first @lid)",
       "| payload.sender:",
       payloadSender ?? "(empty)",
     );
     for (const chunk of chunks) {
-      await handleMessagesUpsert(admin, userId, instance, chunk, ownerJid);
+      await handleMessagesUpsert(admin, userId, instance, chunk, ownerJid, ownerLid);
     }
   }
 }
@@ -209,6 +212,7 @@ async function handleMessagesUpsert(
   instance: string,
   data: unknown,
   ownerJid: string | null,
+  ownerLid: string | null,
 ) {
   const msgData = (data ?? {}) as MessagesUpsertData;
   const key = msgData.key;
@@ -234,36 +238,43 @@ async function handleMessagesUpsert(
     return;
   }
 
-  // @lid = WhatsApp linked-device SYNC events — fire for ALL outgoing messages (not just self-chat).
-  // Must be skipped entirely, otherwise every client message also activates the bot.
+  // Self-chat filter: only activate when the message is from the user to themselves.
+  //
+  // WhatsApp Multi-Device sends self-chat as @lid (Linked Device ID) JIDs — never @s.whatsapp.net.
+  // Client messages also generate @lid sync events (with the CLIENT's LID), so we can't
+  // blindly allow all @lid through. Instead we learn and store the owner's own LID on first hit.
   if (jid.endsWith("@lid")) {
-    console.log("[evolution-webhook] @lid sync event — skipping:", jid);
-    return;
-  }
-
-  // Self-chat filter: only respond when remoteJid digits match the owner's phone.
-  // Use endsWith to tolerate country-code prefix differences:
-  //   remoteJid "7372969713@s.whatsapp.net" → digits "7372969713"
-  //   ownerJid  "17372969713@s.whatsapp.net" → digits "17372969713"
-  //   "17372969713".endsWith("7372969713") → true ✅
-  if (!ownerJid) {
-    console.log("[evolution-webhook] No ownerJid stored — skipping");
-    return;
-  }
-
-  const ownerDigits = ownerJid.split("@")[0].split(":")[0].replace(/\D/g, "");
-  const remoteDigits = jid.split("@")[0].split(":")[0].replace(/\D/g, "");
-  const isSelfChat =
-    ownerDigits.length >= 7 &&
-    (remoteDigits === ownerDigits ||
-      remoteDigits.endsWith(ownerDigits) ||
-      ownerDigits.endsWith(remoteDigits));
-
-  console.log("[SELFCHAT-CHECK]", JSON.stringify({ remoteJid: jid, ownerJid, remoteDigits, ownerDigits, isSelfChat }));
-
-  if (!isSelfChat) {
-    console.log("[evolution-webhook] Not self-chat — skipping | remoteJid:", jid);
-    return;
+    if (ownerLid) {
+      // Known LID: only activate if this exact LID matches the stored owner LID.
+      if (jid !== ownerLid) {
+        console.log("[evolution-webhook] @lid — not owner LID, skipping | jid:", jid, "| ownerLid:", ownerLid);
+        return;
+      }
+      console.log("[evolution-webhook] @lid — owner LID match ✅ | jid:", jid);
+    } else {
+      // First time: learn the owner's LID from this message, then proceed.
+      console.log("[evolution-webhook] @lid — no ownerLid stored yet, learning:", jid);
+      await admin.from("profiles").update({ whatsapp_owner_lid: jid }).eq("id", userId);
+    }
+  } else {
+    // @s.whatsapp.net path: compare phone digits.
+    // Use endsWith to tolerate country-code prefix differences (e.g. "7372969713" vs "17372969713").
+    if (!ownerJid) {
+      console.log("[evolution-webhook] No ownerJid stored — skipping");
+      return;
+    }
+    const ownerDigits = ownerJid.split("@")[0].split(":")[0].replace(/\D/g, "");
+    const remoteDigits = jid.split("@")[0].split(":")[0].replace(/\D/g, "");
+    const isSelfChat =
+      ownerDigits.length >= 7 &&
+      (remoteDigits === ownerDigits ||
+        remoteDigits.endsWith(ownerDigits) ||
+        ownerDigits.endsWith(remoteDigits));
+    console.log("[SELFCHAT-CHECK]", JSON.stringify({ remoteJid: jid, ownerJid, remoteDigits, ownerDigits, isSelfChat }));
+    if (!isSelfChat) {
+      console.log("[evolution-webhook] Not self-chat — skipping | remoteJid:", jid);
+      return;
+    }
   }
 
   console.log("[evolution-webhook] Self-chat confirmed — activating bot | remoteJid:", jid, "| ownerJid:", ownerJid ?? "(none)");
@@ -365,10 +376,12 @@ async function handleMessagesUpsert(
     .eq("id", inboundId);
 
   const evolution = createEvolutionClient();
-  // Prefer ownerJid (payload.sender) — it carries the full canonical JID with country code
-  // (e.g. "17372969713@s.whatsapp.net"). key.remoteJid can strip the country code prefix.
+  // Always reply to the owner's phone JID (@s.whatsapp.net), not the @lid JID.
+  // @lid JIDs are internal device identifiers — replies must go to the phone number JID.
   const sendTarget = ownerJid ?? jid;
-  const to = sendTarget.includes("@") ? sendTarget : `${sendTarget}@s.whatsapp.net`;
+  const to = sendTarget.endsWith("@lid")
+    ? (ownerJid ?? jid)
+    : (sendTarget.includes("@") ? sendTarget : `${sendTarget}@s.whatsapp.net`);
 
   // 5. SEND REPLY
   console.log("[evolution-webhook] SEND REPLY — to:", to, "| instance:", instance, "| text:", reply.slice(0, 80));
