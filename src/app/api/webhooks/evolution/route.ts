@@ -234,8 +234,18 @@ async function handleMessagesUpsert(
     return;
   }
 
-  // Self-chat filter: only respond when remoteJid digits exactly match the owner's number.
-  // @lid JIDs (linked device IDs) can represent messages to clients — cannot trust them as self-chat.
+  // @lid = WhatsApp linked-device SYNC events — fire for ALL outgoing messages (not just self-chat).
+  // Must be skipped entirely, otherwise every client message also activates the bot.
+  if (jid.endsWith("@lid")) {
+    console.log("[evolution-webhook] @lid sync event — skipping:", jid);
+    return;
+  }
+
+  // Self-chat filter: only respond when remoteJid digits match the owner's phone.
+  // Use endsWith to tolerate country-code prefix differences:
+  //   remoteJid "7372969713@s.whatsapp.net" → digits "7372969713"
+  //   ownerJid  "17372969713@s.whatsapp.net" → digits "17372969713"
+  //   "17372969713".endsWith("7372969713") → true ✅
   if (!ownerJid) {
     console.log("[evolution-webhook] No ownerJid stored — skipping");
     return;
@@ -243,7 +253,11 @@ async function handleMessagesUpsert(
 
   const ownerDigits = ownerJid.split("@")[0].split(":")[0].replace(/\D/g, "");
   const remoteDigits = jid.split("@")[0].split(":")[0].replace(/\D/g, "");
-  const isSelfChat = ownerDigits.length >= 7 && remoteDigits === ownerDigits;
+  const isSelfChat =
+    ownerDigits.length >= 7 &&
+    (remoteDigits === ownerDigits ||
+      remoteDigits.endsWith(ownerDigits) ||
+      ownerDigits.endsWith(remoteDigits));
 
   console.log("[SELFCHAT-CHECK]", JSON.stringify({ remoteJid: jid, ownerJid, remoteDigits, ownerDigits, isSelfChat }));
 
