@@ -234,27 +234,22 @@ async function handleMessagesUpsert(
     return;
   }
 
-  // Self-chat filter: only respond when the user messages their OWN number.
-  // This prevents the bot firing when they send a message to a customer.
-  //
-  // WhatsApp Multi-Device uses two JID formats for self-messages:
-  //   @s.whatsapp.net  — standard phone-number JID (compare digits against owner)
-  //   @lid             — Linked Device ID (always a self/cross-device message, no comparison needed)
-  if (jid.endsWith("@lid")) {
-    // @lid JIDs are WhatsApp Linked Device IDs used for cross-device self-messages.
-    // fromMe=true + @lid = always a self-chat — allow through unconditionally.
-    console.log("[evolution-webhook] @lid JID (self-device message) — activating bot:", jid);
-  } else if (ownerJid) {
-    const digits = (j: string) => j.split("@")[0].split(":")[0].replace(/\D/g, "");
-    const remote = digits(jid);
-    const owner = digits(ownerJid);
-    const isSelf = remote === owner || remote.endsWith(owner) || owner.endsWith(remote);
-    // Unique searchable tag — search "[SELFCHAT-DEBUG]" in Vercel logs to see actual values
-    console.log("[SELFCHAT-DEBUG]", JSON.stringify({ remote, owner, isSelf, jid, ownerJid }));
-    if (!isSelf) {
-      console.log("[evolution-webhook] Outgoing to external — skipping | remoteJid:", jid);
-      return;
-    }
+  // Self-chat filter: only respond when remoteJid digits exactly match the owner's number.
+  // @lid JIDs (linked device IDs) can represent messages to clients — cannot trust them as self-chat.
+  if (!ownerJid) {
+    console.log("[evolution-webhook] No ownerJid stored — skipping");
+    return;
+  }
+
+  const ownerDigits = ownerJid.split("@")[0].split(":")[0].replace(/\D/g, "");
+  const remoteDigits = jid.split("@")[0].split(":")[0].replace(/\D/g, "");
+  const isSelfChat = ownerDigits.length >= 7 && remoteDigits === ownerDigits;
+
+  console.log("[SELFCHAT-CHECK]", JSON.stringify({ remoteJid: jid, ownerJid, remoteDigits, ownerDigits, isSelfChat }));
+
+  if (!isSelfChat) {
+    console.log("[evolution-webhook] Not self-chat — skipping | remoteJid:", jid);
+    return;
   }
 
   console.log("[evolution-webhook] Self-chat confirmed — activating bot | remoteJid:", jid, "| ownerJid:", ownerJid ?? "(none)");
