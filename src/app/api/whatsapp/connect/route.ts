@@ -106,6 +106,10 @@ export async function POST() {
       .update({
         whatsapp_instance_id: instanceName,
         whatsapp_connected: false,
+        // Reset LID on every fresh connection so the next self-message re-bootstraps
+        // the correct owner LID. Prevents stale or wrong LIDs from a previous session.
+        whatsapp_owner_lid: null,
+        whatsapp_lid_pending: true,
       })
       .eq("id", user.id);
 

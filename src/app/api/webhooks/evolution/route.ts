@@ -24,23 +24,24 @@ async function resolveOwnerJids(
   admin: ReturnType<typeof createSupabaseAdminClient>,
   userId: string,
   payloadSender: string | null,
-): Promise<{ ownerJid: string | null; ownerLid: string | null }> {
+): Promise<{ ownerJid: string | null; ownerLid: string | null; lidPending: boolean }> {
   const raw = payloadSender?.trim();
 
-  // Query profile for stored JIDs, LID, and phone in one call
+  // Query profile for stored JIDs, LID, pending flag, and phone in one call
   const { data: prof } = await admin
     .from("profiles")
-    .select("phone, whatsapp_owner_jid, whatsapp_owner_lid")
+    .select("phone, whatsapp_owner_jid, whatsapp_owner_lid, whatsapp_lid_pending")
     .eq("id", userId)
     .maybeSingle();
 
   const ownerLid = (prof?.whatsapp_owner_lid as string | null) ?? null;
+  const lidPending = (prof?.whatsapp_lid_pending as boolean | null) ?? false;
 
   // Resolve ownerJid (phone-based JID)
   // 1. Prefer stored canonical JID — set from a previous validated sender, most reliable
   if (prof?.whatsapp_owner_jid && typeof prof.whatsapp_owner_jid === "string") {
     console.log("[evolution-webhook] ownerJid from stored whatsapp_owner_jid:", prof.whatsapp_owner_jid);
-    return { ownerJid: prof.whatsapp_owner_jid, ownerLid };
+    return { ownerJid: prof.whatsapp_owner_jid, ownerLid, lidPending };
   }
 
   // 2. Trust payload.sender if it looks like a real phone JID (not an instance UUID)
@@ -48,7 +49,7 @@ async function resolveOwnerJids(
     const canonical = `${raw.split("@")[0].split(":")[0]}@s.whatsapp.net`;
     console.log("[evolution-webhook] ownerJid from payload.sender:", raw, "→ canonical:", canonical);
     await admin.from("profiles").update({ whatsapp_owner_jid: canonical }).eq("id", userId);
-    return { ownerJid: canonical, ownerLid };
+    return { ownerJid: canonical, ownerLid, lidPending };
   }
 
   if (raw) {
@@ -57,13 +58,13 @@ async function resolveOwnerJids(
 
   // 3. Last resort: DB phone. For US 10-digit numbers prepend country code 1.
   const phone = prof?.phone;
-  if (!phone || typeof phone !== "string") return { ownerJid: null, ownerLid };
+  if (!phone || typeof phone !== "string") return { ownerJid: null, ownerLid, lidPending };
   const digits = phone.replace(/\D/g, "");
-  if (!digits) return { ownerJid: null, ownerLid };
+  if (!digits) return { ownerJid: null, ownerLid, lidPending };
   const normalized = digits.length === 10 ? `1${digits}` : digits;
   const ownerJid = `${normalized}@s.whatsapp.net`;
   console.log("[evolution-webhook] ownerJid from DB phone (normalized):", ownerJid);
-  return { ownerJid, ownerLid };
+  return { ownerJid, ownerLid, lidPending };
 }
 
 export async function POST(request: Request) {
@@ -140,7 +141,7 @@ async function processPayload(payload: EvolutionWebhookPayload) {
     const chunks = normalizeMessagesUpsertData(payload.data);
     const payloadSender =
       typeof payload.sender === "string" ? payload.sender.trim() : null;
-    const { ownerJid, ownerLid } = await resolveOwnerJids(
+    const { ownerJid, ownerLid, lidPending } = await resolveOwnerJids(
       admin,
       userId,
       payloadSender,
@@ -148,15 +149,13 @@ async function processPayload(payload: EvolutionWebhookPayload) {
     console.log(
       "[evolution-webhook] Message chunks to process:",
       chunks.length,
-      "| ownerJid:",
-      ownerJid ?? "(none)",
-      "| ownerLid:",
-      ownerLid ?? "(none — will learn on first @lid)",
-      "| payload.sender:",
-      payloadSender ?? "(empty)",
+      "| ownerJid:", ownerJid ?? "(none)",
+      "| ownerLid:", ownerLid ?? "(none)",
+      "| lidPending:", lidPending,
+      "| payload.sender:", payloadSender ?? "(empty)",
     );
     for (const chunk of chunks) {
-      await handleMessagesUpsert(admin, userId, instance, chunk, ownerJid, ownerLid);
+      await handleMessagesUpsert(admin, userId, instance, chunk, ownerJid, ownerLid, lidPending);
     }
   }
 }
@@ -213,6 +212,7 @@ async function handleMessagesUpsert(
   data: unknown,
   ownerJid: string | null,
   ownerLid: string | null,
+  lidPending: boolean,
 ) {
   const msgData = (data ?? {}) as MessagesUpsertData;
   const key = msgData.key;
@@ -244,17 +244,25 @@ async function handleMessagesUpsert(
   // Client messages also generate @lid sync events (with the CLIENT's LID), so we can't
   // blindly allow all @lid through. Instead we learn and store the owner's own LID on first hit.
   if (jid.endsWith("@lid")) {
-    if (ownerLid) {
-      // Known LID: only activate if this exact LID matches the stored owner LID.
+    if (lidPending) {
+      // Controlled bootstrap: the user just connected WhatsApp and sent their first self-message.
+      // Capture this @lid as the owner's self-chat LID and clear the pending flag.
+      console.log("[evolution-webhook] @lid — lid_pending bootstrap, storing LID:", jid);
+      await admin.from("profiles")
+        .update({ whatsapp_owner_lid: jid, whatsapp_lid_pending: false })
+        .eq("id", userId);
+      // Proceed to activate bot for this first self-message
+    } else if (ownerLid) {
+      // Known LID: only activate if this exact @lid matches the stored owner LID.
       if (jid !== ownerLid) {
         console.log("[evolution-webhook] @lid — not owner LID, skipping | jid:", jid, "| ownerLid:", ownerLid);
         return;
       }
       console.log("[evolution-webhook] @lid — owner LID match ✅ | jid:", jid);
     } else {
-      // First time: learn the owner's LID from this message, then proceed.
-      console.log("[evolution-webhook] @lid — no ownerLid stored yet, learning:", jid);
-      await admin.from("profiles").update({ whatsapp_owner_lid: jid }).eq("id", userId);
+      // No LID stored and not pending — skip. User needs to reconnect to trigger LID setup.
+      console.log("[evolution-webhook] @lid — no ownerLid and not pending, skipping");
+      return;
     }
   } else {
     // @s.whatsapp.net path: compare phone digits.
