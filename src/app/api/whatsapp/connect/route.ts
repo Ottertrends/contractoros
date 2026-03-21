@@ -53,7 +53,9 @@ export async function POST() {
       const msg = e instanceof Error ? e.message : String(e);
       const alreadyExists =
         /\b409\b/.test(msg) ||
+        /\b403\b/.test(msg) ||             // Evolution returns 403 (not 409) for duplicate instance names
         /already\s+exist/i.test(msg) ||
+        /already\s+in\s+use/i.test(msg) || // Evolution's exact wording
         /\bduplicate\b/i.test(msg);
 
       if (!alreadyExists) throw e;
