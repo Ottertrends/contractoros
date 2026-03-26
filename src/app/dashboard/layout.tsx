@@ -41,6 +41,8 @@ export default async function DashboardLayout({
     services: null,
     whatsapp_connected: false,
     whatsapp_instance_id: null,
+    whatsapp_secondary_connected: false,
+    whatsapp_secondary_instance_id: null,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   };

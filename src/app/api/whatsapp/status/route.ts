@@ -5,7 +5,10 @@ import {
   mapConnectionState,
 } from "@/lib/evolution/client";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { evolutionInstanceName } from "@/lib/whatsapp/instance-name";
+import {
+  evolutionInstanceName,
+  evolutionSecondaryInstanceName,
+} from "@/lib/whatsapp/instance-name";
 
 export async function GET() {
   try {
@@ -18,46 +21,65 @@ export async function GET() {
 
     const { data: profile } = await supabase
       .from("profiles")
-      .select("whatsapp_instance_id, whatsapp_connected")
+      .select(
+        "whatsapp_instance_id, whatsapp_secondary_instance_id, whatsapp_connected, whatsapp_secondary_connected",
+      )
       .eq("id", user.id)
       .single();
 
-    const instanceName =
+    const primaryName =
       profile?.whatsapp_instance_id ?? evolutionInstanceName(user.id);
+    const secondaryName =
+      profile?.whatsapp_secondary_instance_id ??
+      evolutionSecondaryInstanceName(user.id);
 
     const evolution = createEvolutionClient();
-    let raw: unknown;
-    try {
-      raw = await evolution.getInstanceStatus(instanceName);
-    } catch {
-      return NextResponse.json({
-        status: "close" as const,
-        connected: false,
-        phone: null as string | null,
-      });
+
+    const primaryState = await fetchInstanceState(evolution, primaryName);
+    const secondaryState = await fetchInstanceState(evolution, secondaryName);
+
+    const patch: Record<string, unknown> = {};
+    if (primaryState.connected) {
+      patch.whatsapp_connected = true;
+      patch.whatsapp_instance_id = primaryName;
     }
-
-    const mapped = mapConnectionState(raw);
-    const phone = extractPhoneFromStatus(raw);
-
-    if (mapped.connected) {
-      await supabase
-        .from("profiles")
-        .update({
-          whatsapp_connected: true,
-          whatsapp_instance_id: instanceName,
-        })
-        .eq("id", user.id);
+    if (secondaryState.connected) {
+      patch.whatsapp_secondary_connected = true;
+      patch.whatsapp_secondary_instance_id = secondaryName;
+    }
+    if (Object.keys(patch).length > 0) {
+      await supabase.from("profiles").update(patch).eq("id", user.id);
     }
 
     return NextResponse.json({
-      status: mapped.status,
-      connected: mapped.connected,
-      phone,
+      status: primaryState.status,
+      connected: primaryState.connected,
+      phone: primaryState.phone,
+      secondary_status: secondaryState.status,
+      secondary_connected: secondaryState.connected,
+      secondary_phone: secondaryState.phone,
     });
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : "Status failed";
     return NextResponse.json({ error: message }, { status: 500 });
+  }
+}
+
+async function fetchInstanceState(
+  evolution: ReturnType<typeof createEvolutionClient>,
+  instanceName: string,
+): Promise<{ status: string; connected: boolean; phone: string | null }> {
+  try {
+    const raw = await evolution.getInstanceStatus(instanceName);
+    const mapped = mapConnectionState(raw);
+    const phone = extractPhoneFromStatus(raw);
+    return {
+      status: mapped.status,
+      connected: mapped.connected,
+      phone,
+    };
+  } catch {
+    return { status: "close", connected: false, phone: null };
   }
 }
 

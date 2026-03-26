@@ -4,7 +4,10 @@ import Anthropic from "@anthropic-ai/sdk";
 import { createEvolutionClient } from "@/lib/evolution/client";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { evolutionInstanceName } from "@/lib/whatsapp/instance-name";
+import {
+  evolutionInstanceName,
+  evolutionSecondaryInstanceName,
+} from "@/lib/whatsapp/instance-name";
 import { DEFAULT_ANTHROPIC_MODEL } from "@/lib/agent/model";
 
 export const dynamic = "force-dynamic";
@@ -115,6 +118,9 @@ function buildWhatsappHints(): string[] {
     "The bot only activates on self-chat: message your own WhatsApp number (same device). Messages to customers or inbound-only chats are ignored by design.",
   );
   hints.push(
+    "Second line: connect “Line 2” in Settings, scan with the other phone, then self-chat on that WhatsApp account. Instance name is user_<yourUserId>_2.",
+  );
+  hints.push(
     "Use Resync Webhook after changing domain or env. Profile phone should match your WhatsApp number if Evolution omits sender on webhooks.",
   );
   return hints;
@@ -130,25 +136,45 @@ export async function GET() {
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("whatsapp_instance_id, whatsapp_connected")
+    .select(
+      "whatsapp_instance_id, whatsapp_secondary_instance_id, whatsapp_connected, whatsapp_secondary_connected",
+    )
     .eq("id", user.id)
     .single();
 
-  const instanceName = (profile?.whatsapp_instance_id as string | null) ?? evolutionInstanceName(user.id);
+  const primaryName =
+    (profile?.whatsapp_instance_id as string | null) ?? evolutionInstanceName(user.id);
+  const secondaryName =
+    (profile?.whatsapp_secondary_instance_id as string | null) ??
+    evolutionSecondaryInstanceName(user.id);
 
-  const [anthropic, evolution, db, webhook] = await Promise.all([
+  const [anthropic, evPrimary, evSecondary, db, webhook] = await Promise.all([
     checkAnthropic(),
-    checkEvolution(instanceName),
+    checkEvolution(primaryName),
+    checkEvolution(secondaryName),
     checkSupabase(user.id),
     Promise.resolve(checkWebhookUrl()),
   ]);
+
+  const evolution =
+    evPrimary.ok && evSecondary.ok
+      ? {
+          ok: true,
+          message: `Evolution: primary + secondary instances OK (${primaryName}, ${secondaryName})`,
+          detail: `${evPrimary.detail ?? ""} | ${evSecondary.detail ?? ""}`.trim(),
+        }
+      : !evPrimary.ok
+        ? { ...evPrimary, message: `Primary (${primaryName}): ${evPrimary.message}` }
+        : { ...evSecondary, message: `Secondary (${secondaryName}): ${evSecondary.message}` };
 
   const allOk = anthropic.ok && evolution.ok && db.ok && webhook.ok;
 
   return NextResponse.json({
     ok: allOk,
     whatsapp_connected: !!profile?.whatsapp_connected,
-    instance_name: instanceName,
+    whatsapp_secondary_connected: !!profile?.whatsapp_secondary_connected,
+    instance_name: primaryName,
+    secondary_instance_name: secondaryName,
     checks: { anthropic, evolution, db, webhook },
     whatsapp_hints: buildWhatsappHints(),
   });

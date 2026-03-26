@@ -4,10 +4,15 @@ import {
   createEvolutionClient,
   resolveQrDataUrl,
 } from "@/lib/evolution/client";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { evolutionInstanceName } from "@/lib/whatsapp/instance-name";
+import {
+  evolutionInstanceName,
+  evolutionSecondaryInstanceName,
+} from "@/lib/whatsapp/instance-name";
+import { mergeWaSession } from "@/lib/whatsapp/session-store";
 
-export async function POST() {
+export async function POST(request: Request) {
   try {
     const supabase = await createSupabaseServerClient();
     const {
@@ -15,6 +20,17 @@ export async function POST() {
     } = await supabase.auth.getUser();
     if (!user)
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+    let slot: "primary" | "secondary" = "primary";
+    try {
+      const ct = request.headers.get("content-type") ?? "";
+      if (ct.includes("application/json")) {
+        const j = (await request.json()) as { slot?: string };
+        if (j.slot === "secondary") slot = "secondary";
+      }
+    } catch {
+      /* default primary */
+    }
 
     const appUrl = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "");
     if (!appUrl) {
@@ -24,15 +40,17 @@ export async function POST() {
       );
     }
 
-    const instanceName = evolutionInstanceName(user.id);
+    const instanceName =
+      slot === "secondary"
+        ? evolutionSecondaryInstanceName(user.id)
+        : evolutionInstanceName(user.id);
     const webhookUrl = `${appUrl}/api/webhooks/evolution`;
-    console.log("[whatsapp/connect] instanceName:", instanceName);
+    console.log("[whatsapp/connect] slot:", slot, "instanceName:", instanceName);
     console.log("[whatsapp/connect] webhookUrl:", webhookUrl);
 
     const evolution = createEvolutionClient();
     const WEBHOOK_EVENTS = ["MESSAGES_UPSERT", "CONNECTION_UPDATE", "QRCODE_UPDATED"];
 
-    // Helper: create instance fresh, set webhook, return raw response
     async function createFresh(): Promise<unknown> {
       const res = await evolution.createInstance(instanceName, webhookUrl);
       console.log("[whatsapp/connect] instance created successfully");
@@ -40,7 +58,10 @@ export async function POST() {
         await evolution.setWebhook(instanceName, webhookUrl, WEBHOOK_EVENTS);
         console.log("[whatsapp/connect] webhook registered:", webhookUrl);
       } catch (we) {
-        console.warn("[whatsapp/connect] setWebhook failed (non-fatal):", we instanceof Error ? we.message : we);
+        console.warn(
+          "[whatsapp/connect] setWebhook failed (non-fatal):",
+          we instanceof Error ? we.message : we,
+        );
       }
       return res;
     }
@@ -53,9 +74,9 @@ export async function POST() {
       const msg = e instanceof Error ? e.message : String(e);
       const alreadyExists =
         /\b409\b/.test(msg) ||
-        /\b403\b/.test(msg) ||             // Evolution returns 403 (not 409) for duplicate instance names
+        /\b403\b/.test(msg) ||
         /already\s+exist/i.test(msg) ||
-        /already\s+in\s+use/i.test(msg) || // Evolution's exact wording
+        /already\s+in\s+use/i.test(msg) ||
         /\bduplicate\b/i.test(msg);
 
       if (!alreadyExists) throw e;
@@ -64,11 +85,13 @@ export async function POST() {
       try {
         await evolution.setWebhook(instanceName, webhookUrl, WEBHOOK_EVENTS);
       } catch (we) {
-        console.warn("[whatsapp/connect] setWebhook failed (non-fatal):", we instanceof Error ? we.message : we);
+        console.warn(
+          "[whatsapp/connect] setWebhook failed (non-fatal):",
+          we instanceof Error ? we.message : we,
+        );
       }
     }
 
-    // Try to get QR — first from createInstance response, then via getQRCode endpoint
     let qr = await resolveQrDataUrl(created);
 
     if (!qr) {
@@ -81,10 +104,13 @@ export async function POST() {
         const msg = e instanceof Error ? e.message : String(e);
         console.warn("[whatsapp/connect] getQRCode failed:", msg);
 
-        // If instance is broken (404 after "already exists"), delete and recreate
         if (/404|not found|does not exist/i.test(msg)) {
           console.log("[whatsapp/connect] Broken instance detected — deleting and recreating");
-          try { await evolution.deleteInstance(instanceName); } catch (_) { /* ignore */ }
+          try {
+            await evolution.deleteInstance(instanceName);
+          } catch {
+            /* ignore */
+          }
           try {
             created = await createFresh();
             qr = await resolveQrDataUrl(created);
@@ -101,24 +127,38 @@ export async function POST() {
 
     console.log("[whatsapp/connect] QR resolved:", qr ? "yes" : "no");
 
+    const profilePatch =
+      slot === "secondary"
+        ? {
+            whatsapp_secondary_instance_id: instanceName,
+            whatsapp_secondary_connected: false,
+          }
+        : {
+            whatsapp_instance_id: instanceName,
+            whatsapp_connected: false,
+            whatsapp_owner_lid: null,
+            whatsapp_lid_pending: true,
+          };
+
     const { error: profileErr } = await supabase
       .from("profiles")
-      .update({
-        whatsapp_instance_id: instanceName,
-        whatsapp_connected: false,
-        // Reset LID on every fresh connection so the next self-message re-bootstraps
-        // the correct owner LID. Prevents stale or wrong LIDs from a previous session.
-        whatsapp_owner_lid: null,
-        whatsapp_lid_pending: true,
-      })
+      .update(profilePatch)
       .eq("id", user.id);
 
     if (profileErr) {
       return NextResponse.json({ error: profileErr.message }, { status: 500 });
     }
 
+    const admin = createSupabaseAdminClient();
+    await mergeWaSession(admin, user.id, instanceName, {
+      owner_jid: null,
+      owner_lid: null,
+      lid_pending: true,
+    });
+
     return NextResponse.json({
       instanceName,
+      slot,
       qrCodeBase64: qr,
     });
   } catch (e: unknown) {

@@ -2,9 +2,12 @@ import { NextResponse } from "next/server";
 
 import { createEvolutionClient, resolveQrDataUrl } from "@/lib/evolution/client";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { evolutionInstanceName } from "@/lib/whatsapp/instance-name";
+import {
+  evolutionInstanceName,
+  evolutionSecondaryInstanceName,
+} from "@/lib/whatsapp/instance-name";
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     const supabase = await createSupabaseServerClient();
     const {
@@ -13,20 +16,26 @@ export async function GET() {
     if (!user)
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
+    const url = new URL(request.url);
+    const slot = url.searchParams.get("slot") === "secondary" ? "secondary" : "primary";
+
     const { data: profile } = await supabase
       .from("profiles")
-      .select("whatsapp_instance_id")
+      .select("whatsapp_instance_id, whatsapp_secondary_instance_id")
       .eq("id", user.id)
       .single();
 
     const instanceName =
-      profile?.whatsapp_instance_id ?? evolutionInstanceName(user.id);
+      slot === "secondary"
+        ? (profile?.whatsapp_secondary_instance_id ??
+            evolutionSecondaryInstanceName(user.id))
+        : (profile?.whatsapp_instance_id ?? evolutionInstanceName(user.id));
 
     const evolution = createEvolutionClient();
     const connect = await evolution.getQRCode(instanceName);
     const qr = await resolveQrDataUrl(connect);
 
-    return NextResponse.json({ qrCodeBase64: qr });
+    return NextResponse.json({ qrCodeBase64: qr, slot, instanceName });
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : "QR failed";
     return NextResponse.json({ error: message }, { status: 500 });

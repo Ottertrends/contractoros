@@ -17,7 +17,7 @@ Create `.env.local` (never commit secrets) with:
 - `NEXT_PUBLIC_APP_URL` — Public app URL for webhooks (Vercel URL or ngrok in dev)
 - `ANTHROPIC_API_KEY` — Claude API key
 - `EVOLUTION_WEBHOOK_SECRET` *(optional)* — if set, webhook requests must send matching `x-evolution-webhook-secret` or `x-webhook-secret`
-- `ANTHROPIC_MODEL` *(optional)* — overrides default Claude model for the agent
+- `ANTHROPIC_MODEL` *(optional)* — overrides default (`claude-sonnet-4-6`) for the agent and diagnostics
 
 Apply migration `supabase/migrations/002_enable_realtime.sql` in Supabase so `projects`, `invoices`, and `messages` publish to Realtime.
 

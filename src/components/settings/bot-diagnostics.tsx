@@ -114,9 +114,24 @@ export function BotDiagnostics() {
     setResyncLoading(true);
     try {
       const res = await fetch("/api/whatsapp/resync-webhook", { method: "POST" });
-      const data = (await res.json()) as { ok: boolean; webhookUrl?: string; error?: string };
+      const data = (await res.json()) as {
+        ok: boolean;
+        webhookUrl?: string;
+        syncedInstances?: string[];
+        warnings?: string[];
+        error?: string;
+      };
       if (!res.ok || !data.ok) throw new Error(data.error ?? "Resync failed");
-      toast.success(`Webhook synced → ${data.webhookUrl}`);
+      const list =
+        data.syncedInstances?.length ?
+          data.syncedInstances.join(", ")
+          : (data.webhookUrl ?? "");
+      toast.success(`Webhook synced (${list})`);
+      if (data.warnings?.length) {
+        toast.message("Some instances had warnings — check logs", {
+          description: data.warnings.join("\n"),
+        });
+      }
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Resync failed");
     } finally {

@@ -257,8 +257,8 @@ export function SettingsPageClient({ userId, profile }: { userId: string; profil
         <CardContent>
           <WhatsAppConnection
             userId={userId}
-            initiallyConnected={!!profile.whatsapp_connected}
-            initialPhone={null}
+            primaryInitiallyConnected={!!profile.whatsapp_connected}
+            secondaryInitiallyConnected={!!profile.whatsapp_secondary_connected}
           />
         </CardContent>
       </Card>
