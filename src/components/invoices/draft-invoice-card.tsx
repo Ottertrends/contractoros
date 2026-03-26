@@ -132,15 +132,25 @@ export function DraftInvoiceCard({ projectName, invoice, items, priceBook, proje
   });
 
   React.useEffect(() => {
+    // Fetch basic profile info first — this query always works
     supabase
       .from("profiles")
-      .select("company_name, phone, email, invoice_logo_url, invoice_primary_color, invoice_title_font, invoice_body_font, invoice_footer")
+      .select("company_name, phone, email")
+      .eq("id", userId)
+      .single()
+      .then(({ data }: { data: { company_name: string | null; phone: string | null; email: string | null } | null }) => {
+        if (data) {
+          setProfile({ company_name: data.company_name, phone: data.phone, email: data.email });
+        }
+      });
+
+    // Fetch design settings separately — if design columns don't exist yet it won't break the profile
+    supabase
+      .from("profiles")
+      .select("invoice_logo_url, invoice_primary_color, invoice_title_font, invoice_body_font, invoice_footer")
       .eq("id", userId)
       .single()
       .then(({ data }: { data: {
-        company_name: string | null;
-        phone: string | null;
-        email: string | null;
         invoice_logo_url: string | null;
         invoice_primary_color: string | null;
         invoice_title_font: string | null;
@@ -148,7 +158,6 @@ export function DraftInvoiceCard({ projectName, invoice, items, priceBook, proje
         invoice_footer: string | null;
       } | null }) => {
         if (data) {
-          setProfile({ company_name: data.company_name, phone: data.phone, email: data.email });
           setDesign({
             logoUrl: data.invoice_logo_url,
             primaryColor: data.invoice_primary_color ?? "#111827",

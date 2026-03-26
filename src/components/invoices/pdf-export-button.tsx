@@ -71,6 +71,50 @@ async function loadImageBase64(url: string): Promise<{ data: string; format: "PN
   }
 }
 
+/**
+ * Fetch a logo, resize it to fit within maxPtW × maxPtH points (maintaining aspect ratio),
+ * and return the resized base64 data + actual pt dimensions for correct PDF placement.
+ * Renders at 2× pixel density for crisp output.
+ */
+async function resizeLogoForPdf(
+  url: string,
+  maxPtW: number,
+  maxPtH: number,
+): Promise<{ data: string; format: "PNG" | "JPEG"; ptW: number; ptH: number } | null> {
+  const raw = await loadImageBase64(url);
+  if (!raw) return null;
+
+  const scale = 2; // 2× for sharp rendering on HiDPI / print
+  const maxPxW = maxPtW * scale;
+  const maxPxH = maxPtH * scale;
+
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      // Scale down only if larger than the max box; never upscale
+      const ratio = Math.min(maxPxW / img.naturalWidth, maxPxH / img.naturalHeight, 1);
+      const pxW = Math.round(img.naturalWidth * ratio);
+      const pxH = Math.round(img.naturalHeight * ratio);
+
+      const canvas = document.createElement("canvas");
+      canvas.width = pxW;
+      canvas.height = pxH;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        // Canvas unavailable — return original image, clamped to max box
+        resolve({ ...raw, ptW: maxPtW, ptH: maxPtH });
+        return;
+      }
+      ctx.drawImage(img, 0, 0, pxW, pxH);
+      const mime = raw.format === "PNG" ? "image/png" : "image/jpeg";
+      const data = canvas.toDataURL(mime, 0.92);
+      resolve({ data, format: raw.format, ptW: pxW / scale, ptH: pxH / scale });
+    };
+    img.onerror = () => resolve({ ...raw, ptW: maxPtW, ptH: maxPtH });
+    img.src = raw.data;
+  });
+}
+
 async function generatePDF({ invoice, project, profile, design, items }: Props) {
   const doc = new jsPDF({ unit: "pt", format: "letter" });
   const margin = 40;
@@ -89,13 +133,13 @@ async function generatePDF({ invoice, project, profile, design, items }: Props) 
   // ── LEFT COLUMN: Logo → Company Name → Address → Email | Phone ─────────────
   let leftY = 36;
 
-  // Logo (top-left)
+  // Logo (top-left) — auto-resized to fit within 120×50 pt, aspect ratio preserved
   if (design?.logoUrl) {
-    const img = await loadImageBase64(design.logoUrl);
+    const img = await resizeLogoForPdf(design.logoUrl, 120, 50);
     if (img) {
       try {
-        doc.addImage(img.data, img.format, margin, leftY, 120, 44, undefined, "FAST");
-        leftY += 52;
+        doc.addImage(img.data, img.format, margin, leftY, img.ptW, img.ptH, undefined, "FAST");
+        leftY += img.ptH + 14; // 14 pt gap between logo bottom and company name
       } catch { /* skip bad image */ }
     }
   }

@@ -1,30 +1,15 @@
 import Link from "next/link";
 
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { getServerLang } from "@/lib/i18n/server";
 import { getT } from "@/lib/i18n/translations";
 import type { Invoice, InvoiceStatus } from "@/lib/types/database";
-
-function statusVariant(s: InvoiceStatus) {
-  const map: Record<InvoiceStatus, "neutral" | "warning" | "success" | "danger"> = {
-    draft: "neutral",
-    sent: "warning",
-    paid: "success",
-    cancelled: "danger",
-  };
-  return map[s] ?? "neutral";
-}
+import { InvoiceTableRows } from "@/components/invoices/invoice-table-rows";
 
 function fmt(n: number) {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(n);
-}
-
-function fmtDate(d: string | null | undefined) {
-  if (!d) return "—";
-  return new Date(d).toLocaleDateString();
 }
 
 type InvoiceRow = Invoice & { projects: { name: string; client_name: string | null } | null };
@@ -229,48 +214,7 @@ export default async function InvoicesPage({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                  {invoices.map((inv) => (
-                    <tr
-                      key={inv.id}
-                      className="hover:bg-slate-50 dark:hover:bg-slate-900 cursor-pointer transition-colors"
-                    >
-                      <td className="py-3 pr-4">
-                        <Link
-                          href={`/dashboard/invoices/${inv.id}`}
-                          className="font-mono text-primary hover:underline"
-                        >
-                          {inv.invoice_number ?? inv.id.slice(0, 8)}
-                        </Link>
-                      </td>
-                      <td className="py-3 pr-4 text-slate-700 dark:text-slate-300">
-                        {inv.project_id ? (
-                          <Link
-                            href={`/dashboard/projects/${inv.project_id}`}
-                            className="hover:underline"
-                          >
-                            {inv.projects?.name ?? "—"}
-                          </Link>
-                        ) : (
-                          inv.projects?.name ?? "—"
-                        )}
-                      </td>
-                      <td className="py-3 pr-4 text-slate-500">
-                        {inv.projects?.client_name ?? "—"}
-                      </td>
-                      <td className="py-3 pr-4">
-                        <Badge variant={statusVariant(inv.status)}>{inv.status}</Badge>
-                      </td>
-                      <td className="py-3 pr-4 text-right font-mono text-slate-800 dark:text-slate-200">
-                        {fmt(parseFloat(inv.total) || 0)}
-                      </td>
-                      <td className="py-3 pr-4 text-right text-slate-400 text-xs">
-                        {fmtDate(inv.created_at)}
-                      </td>
-                      <td className="py-3 text-right text-slate-400 text-xs">
-                        {fmtDate(inv.updated_at)}
-                      </td>
-                    </tr>
-                  ))}
+                  <InvoiceTableRows invoices={invoices} />
                 </tbody>
               </table>
             </div>

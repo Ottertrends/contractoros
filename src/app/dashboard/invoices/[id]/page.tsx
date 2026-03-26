@@ -1,11 +1,11 @@
-import Link from "next/link";
+import { redirect } from "next/navigation";
 
-import { InvoiceFormClient } from "@/components/invoices/invoice-form-client";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { getServerLang } from "@/lib/i18n/server";
-import { getT } from "@/lib/i18n/translations";
-import type { Invoice, InvoiceItem, PriceBookItem, Project } from "@/lib/types/database";
 
+/**
+ * Invoices no longer have a standalone edit page.
+ * Redirect to the parent project, which already contains the invoice editor.
+ */
 export default async function InvoiceDetailPage({
   params,
 }: {
@@ -15,56 +15,21 @@ export default async function InvoiceDetailPage({
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) return null;
-
-  const lang = await getServerLang();
-  const t = getT(lang);
-  const ti = t.invoices;
+  if (!user) redirect("/login");
 
   const { id } = await params;
 
-  const [
-    { data: invoiceRaw, error: invErr },
-    { data: itemsRaw },
-    { data: projectsRaw },
-    { data: priceBookRaw },
-  ] = await Promise.all([
-    supabase.from("invoices").select("*").eq("id", id).eq("user_id", user.id).single(),
-    supabase.from("invoice_items").select("*").eq("invoice_id", id).order("sort_order"),
-    supabase.from("projects").select("*").eq("user_id", user.id).order("name"),
-    supabase.from("price_book").select("*").eq("user_id", user.id).order("item_name"),
-  ]);
+  const { data: invoice } = await supabase
+    .from("invoices")
+    .select("project_id")
+    .eq("id", id)
+    .eq("user_id", user.id)
+    .single();
 
-  if (invErr || !invoiceRaw) {
-    return (
-      <div className="p-4">
-        <Link href="/dashboard/invoices" className="text-sm text-primary hover:underline">
-          {ti.backToInvoices}
-        </Link>
-        <div className="mt-4 text-slate-900 dark:text-slate-50 font-semibold">{t.common.noResults}</div>
-      </div>
-    );
+  if (invoice?.project_id) {
+    redirect(`/dashboard/projects/${invoice.project_id}`);
   }
 
-  const invoice = invoiceRaw as Invoice;
-  const items = (itemsRaw ?? []) as InvoiceItem[];
-  const projects = (projectsRaw ?? []) as Project[];
-  const priceBook = (priceBookRaw ?? []) as PriceBookItem[];
-
-  return (
-    <div className="flex flex-col gap-4">
-      <Link href="/dashboard/invoices" className="text-sm text-primary hover:underline">
-        {ti.backToInvoices}
-      </Link>
-      <InvoiceFormClient
-        mode="edit"
-        userId={user.id}
-        projects={projects}
-        priceBook={priceBook}
-        nextInvoiceNumber={invoice.invoice_number ?? ""}
-        invoice={invoice}
-        existingItems={items}
-      />
-    </div>
-  );
+  // Fallback — invoice has no project or wasn't found
+  redirect("/dashboard/invoices");
 }

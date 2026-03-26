@@ -154,6 +154,16 @@ export function InvoiceDesignClient({ userId, companyName, initialDesign }: Prop
       <Card>
         <CardHeader><CardTitle className="text-sm">Company Logo</CardTitle></CardHeader>
         <CardContent className="flex flex-col gap-4">
+          {/* Size recommendation */}
+          <div className="flex items-start gap-2 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 px-3 py-2.5 text-xs text-slate-500">
+            <span className="mt-0.5 text-base leading-none">💡</span>
+            <div>
+              <span className="font-medium text-slate-700 dark:text-slate-300">Best size: 400 × 150 px</span>
+              {" "}— PNG with transparent background works best.
+              Images are automatically resized to fit the PDF header. Tall or square logos may appear smaller than wide ones.
+            </div>
+          </div>
+
           {design.logoUrl ? (
             <div className="flex items-start gap-4">
               {/* eslint-disable-next-line @next/next/no-img-element */}
