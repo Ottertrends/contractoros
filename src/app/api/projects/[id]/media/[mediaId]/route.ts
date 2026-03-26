@@ -3,8 +3,9 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 export async function DELETE(
   _request: Request,
-  { params }: { params: { id: string; mediaId: string } },
+  { params }: { params: Promise<{ id: string; mediaId: string }> },
 ) {
+  const { mediaId } = await params;
   const supabase = await createSupabaseServerClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return new Response("Unauthorized", { status: 401 });
@@ -14,7 +15,7 @@ export async function DELETE(
   const { data: media, error: fetchErr } = await admin
     .from("project_media")
     .select("storage_path")
-    .eq("id", params.mediaId)
+    .eq("id", mediaId)
     .eq("user_id", user.id)
     .single();
 
@@ -24,7 +25,7 @@ export async function DELETE(
   await admin.storage.from("project-media").remove([media.storage_path]);
 
   // Delete DB record
-  await admin.from("project_media").delete().eq("id", params.mediaId).eq("user_id", user.id);
+  await admin.from("project_media").delete().eq("id", mediaId).eq("user_id", user.id);
 
   return new Response(null, { status: 204 });
 }
