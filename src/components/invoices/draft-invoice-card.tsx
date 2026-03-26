@@ -8,7 +8,8 @@ import { Trash2, Plus, BookOpen, X } from "lucide-react";
 
 import { supabase } from "@/lib/supabase/client";
 import { useLanguage } from "@/lib/i18n/client";
-import type { Invoice, InvoiceItem, InvoiceStatus, PriceBookItem, Project } from "@/lib/types/database";
+import type { Invoice, InvoiceDesign, InvoiceItem, InvoiceStatus, PriceBookItem, Project } from "@/lib/types/database";
+import { PriceBookLineInput } from "./price-book-line-input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -116,21 +117,43 @@ export function DraftInvoiceCard({ projectName, invoice, items, priceBook, proje
   const [pbOpen, setPbOpen] = React.useState(false);
   const [pbSearch, setPbSearch] = React.useState("");
 
-  // Profile for PDF (fetched once)
+  // Profile + design settings (fetched once)
   const [profile, setProfile] = React.useState<{
     company_name: string | null;
     phone: string | null;
     email: string | null;
   } | null>(null);
+  const [design, setDesign] = React.useState<InvoiceDesign>({
+    logoUrl: null,
+    primaryColor: "#111827",
+    font: "helvetica",
+    footer: null,
+  });
 
   React.useEffect(() => {
     supabase
       .from("profiles")
-      .select("company_name, phone, email")
+      .select("company_name, phone, email, invoice_logo_url, invoice_primary_color, invoice_font, invoice_footer")
       .eq("id", userId)
       .single()
-      .then(({ data }: { data: { company_name: string | null; phone: string | null; email: string | null } | null }) => {
-        if (data) setProfile(data);
+      .then(({ data }: { data: {
+        company_name: string | null;
+        phone: string | null;
+        email: string | null;
+        invoice_logo_url: string | null;
+        invoice_primary_color: string | null;
+        invoice_font: string | null;
+        invoice_footer: string | null;
+      } | null }) => {
+        if (data) {
+          setProfile({ company_name: data.company_name, phone: data.phone, email: data.email });
+          setDesign({
+            logoUrl: data.invoice_logo_url,
+            primaryColor: data.invoice_primary_color ?? "#111827",
+            font: (data.invoice_font as InvoiceDesign["font"]) ?? "helvetica",
+            footer: data.invoice_footer,
+          });
+        }
       });
   }, [userId]);
 
@@ -166,21 +189,18 @@ export function DraftInvoiceCard({ projectName, invoice, items, priceBook, proje
     setRows((prev) => (prev.length > 1 ? prev.filter((r) => r._id !== id) : prev));
   }
 
-  // Apply price book suggestion when user blurs the description field
-  function applyPriceBookSuggestion(rowId: string, descValue: string) {
-    const match = priceBook.find(
-      (pb) => pb.item_name.toLowerCase() === descValue.trim().toLowerCase(),
-    );
-    if (!match) return;
+  // Select a price book item → fill description + unit price in one shot
+  function selectPriceBookItem(rowId: string, item: PriceBookItem) {
+    const label = item.unit ? `${item.item_name} (${item.unit})` : item.item_name;
+    const price = String(parseFloat(item.unit_price) || 0);
     setRows((prev) =>
       prev.map((r) => {
         if (r._id !== rowId) return r;
-        const price = String(parseFloat(match.unit_price) || 0);
-        const qty = r.quantity;
         return {
           ...r,
+          description: label,
           unit_price: price,
-          total: calcRowTotal(qty, price),
+          total: calcRowTotal(r.quantity, price),
         };
       }),
     );
@@ -409,15 +429,6 @@ export function DraftInvoiceCard({ projectName, invoice, items, priceBook, proje
               )}
             </div>
 
-            {/* datalist for autocomplete while typing */}
-            {priceBook.length > 0 && (
-              <datalist id="pricebook-suggest">
-                {priceBook.map((pb) => (
-                  <option key={pb.id} value={pb.item_name} />
-                ))}
-              </datalist>
-            )}
-
             {/* Column headers */}
             <div className="hidden sm:grid sm:grid-cols-[3fr_1fr_1.2fr_1fr_auto] gap-2 text-xs text-slate-400 px-1">
               <span>Product / Service</span>
@@ -434,13 +445,11 @@ export function DraftInvoiceCard({ projectName, invoice, items, priceBook, proje
               >
                 <div>
                   <Label className="sm:hidden text-xs text-slate-400">Product / Service</Label>
-                  <Input
-                    list="pricebook-suggest"
-                    placeholder="Product or service name"
+                  <PriceBookLineInput
                     value={row.description}
-                    onChange={(e) => updateRow(row._id, "description", e.target.value)}
-                    onBlur={(e) => applyPriceBookSuggestion(row._id, e.target.value)}
-                    className="text-sm"
+                    onChange={(v) => updateRow(row._id, "description", v)}
+                    onSelect={(item) => selectPriceBookItem(row._id, item)}
+                    priceBook={priceBook}
                   />
                 </div>
                 <div>
@@ -561,6 +570,7 @@ export function DraftInvoiceCard({ projectName, invoice, items, priceBook, proje
                 }}
                 project={project}
                 profile={profile}
+                design={design}
                 items={rows.map((r) => ({
                   description: r.description,
                   quantity: r.quantity,

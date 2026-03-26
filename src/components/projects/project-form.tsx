@@ -9,7 +9,7 @@ import { toast } from "sonner";
 
 import { supabase } from "@/lib/supabase/client";
 import { useLanguage } from "@/lib/i18n/client";
-import type { Project, ProjectStatus } from "@/lib/types/database";
+import type { Client, Project, ProjectStatus } from "@/lib/types/database";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -63,6 +63,29 @@ export function ProjectForm({
   const router = useRouter();
   const { t } = useLanguage();
   const tp = t.projects;
+
+  // Client picker state
+  const [clients, setClients] = React.useState<Client[]>([]);
+  const [clientSearch, setClientSearch] = React.useState("");
+  const [clientPickerOpen, setClientPickerOpen] = React.useState(false);
+
+  React.useEffect(() => {
+    supabase
+      .from("clients")
+      .select("*")
+      .order("client_name")
+      .then(({ data }: { data: Client[] | null }) => { if (data) setClients(data); });
+  }, []);
+
+  const filteredClients = React.useMemo(() => {
+    if (!clientSearch.trim()) return clients;
+    const lower = clientSearch.toLowerCase();
+    return clients.filter(
+      (c) =>
+        c.client_name.toLowerCase().includes(lower) ||
+        (c.address ?? "").toLowerCase().includes(lower),
+    );
+  }, [clients, clientSearch]);
 
   const defaultValues: FormValues = {
     name: project?.name ?? "",
@@ -200,7 +223,64 @@ export function ProjectForm({
           </div>
 
           <div className="flex flex-col gap-2">
-            <Label htmlFor="client_name">{tp.clientName}</Label>
+            <div className="flex items-center justify-between">
+              <Label htmlFor="client_name">{tp.clientName}</Label>
+              {clients.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setClientPickerOpen((o) => !o)}
+                  className="text-xs text-primary hover:underline"
+                >
+                  {clientPickerOpen ? "Close" : "Select saved client →"}
+                </button>
+              )}
+            </div>
+
+            {clientPickerOpen && (
+              <div className="border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-950 shadow-sm overflow-hidden">
+                <div className="p-2 border-b border-slate-100 dark:border-slate-800">
+                  <input
+                    autoFocus
+                    value={clientSearch}
+                    onChange={(e) => setClientSearch(e.target.value)}
+                    placeholder="Search clients…"
+                    className="flex h-8 w-full rounded-md border border-slate-200 bg-white px-3 py-1 text-sm placeholder:text-slate-400 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                  />
+                </div>
+                <div className="max-h-48 overflow-y-auto">
+                  {filteredClients.length === 0 ? (
+                    <div className="p-3 text-sm text-slate-400 text-center">No clients found</div>
+                  ) : (
+                    filteredClients.map((c) => (
+                      <button
+                        key={c.id}
+                        type="button"
+                        onClick={() => {
+                          setValue("client_name", c.client_name, { shouldDirty: true });
+                          if (c.address) setValue("address", c.address, { shouldDirty: true });
+                          setClientPickerOpen(false);
+                          setClientSearch("");
+                        }}
+                        className="w-full flex items-start gap-3 px-3 py-2.5 text-left hover:bg-slate-50 dark:hover:bg-slate-900 border-b border-slate-50 dark:border-slate-800 last:border-0"
+                      >
+                        <div className="min-w-0">
+                          <div className="text-sm font-medium text-slate-900 dark:text-slate-50">
+                            {c.client_name}
+                          </div>
+                          {c.address && (
+                            <div className="text-xs text-slate-400 truncate">{c.address}</div>
+                          )}
+                        </div>
+                        {c.phone && (
+                          <div className="ml-auto shrink-0 text-xs text-slate-400">{c.phone}</div>
+                        )}
+                      </button>
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
+
             <Input id="client_name" {...register("client_name")} />
           </div>
 
@@ -240,11 +320,6 @@ export function ProjectForm({
             <p className="text-xs text-slate-400">Private — not shown on invoices.</p>
           </div>
 
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="notes">{tp.notes}</Label>
-            <Textarea id="notes" {...register("notes")} />
-            <p className="text-xs text-slate-400">Appears on the invoice PDF.</p>
-          </div>
 
           <div className="flex items-center justify-between gap-4 pt-2 flex-wrap">
             {mode === "edit" ? (

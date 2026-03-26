@@ -19,8 +19,31 @@ export interface Profile {
   whatsapp_instance_id: string | null;
   whatsapp_secondary_connected: boolean;
   whatsapp_secondary_instance_id: string | null;
+  invoice_logo_url: string | null;
+  invoice_primary_color: string | null;
+  invoice_font: string | null;
+  invoice_footer: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface Client {
+  id: string;
+  user_id: string;
+  client_name: string;
+  address: string | null;
+  phone: string | null;
+  email: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface InvoiceDesign {
+  logoUrl: string | null;
+  primaryColor: string;
+  font: "helvetica" | "times" | "courier";
+  footer: string | null;
 }
 
 export interface Project {

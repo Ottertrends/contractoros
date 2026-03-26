@@ -7,6 +7,8 @@ import {
   FileText,
   MessageSquare,
   Boxes,
+  Users,
+  Palette,
   Settings as SettingsIcon,
 } from "lucide-react";
 
@@ -21,6 +23,8 @@ export function Sidebar() {
     { href: "/dashboard/messages", label: t.nav.messages, icon: MessageSquare },
     { href: "/dashboard/invoices", label: t.nav.invoices, icon: FileText },
     { href: "/dashboard/price-book", label: t.nav.priceBook, icon: Boxes },
+    { href: "/dashboard/clients", label: t.nav.clients, icon: Users },
+    { href: "/dashboard/invoice-design", label: t.nav.invoiceDesign, icon: Palette },
     { href: "/dashboard/settings", label: t.nav.settings, icon: SettingsIcon },
   ];
 
