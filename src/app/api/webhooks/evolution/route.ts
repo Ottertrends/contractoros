@@ -18,6 +18,12 @@ import { getSessionSlice, mergeWaSession } from "@/lib/whatsapp/session-store";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
+export async function GET() {
+  return new Response(JSON.stringify({ ok: true, service: "evolution-webhook" }), {
+    headers: { "content-type": "application/json" },
+  });
+}
+
 /** Returns true only if the local part of a JID looks like a real phone number.
  *  Handles multi-device JIDs like 17372969713:4@s.whatsapp.net by stripping :XX suffix. */
 function isPhoneJid(jid: string): boolean {
@@ -312,7 +318,7 @@ async function handleMessagesUpsert(
   const jid = key.remoteJid ?? "";
   const fromMe = key.fromMe === true;
 
-  console.log("[MSGRAW]", JSON.stringify({ remoteJid: jid, fromMe, messageId: key.id }));
+  console.log("[evolution-webhook] Message | remoteJid:", jid, "| fromMe:", fromMe);
 
   if (jid.endsWith("@g.us")) {
     console.log("[evolution-webhook] Group message — skipping");
@@ -373,10 +379,7 @@ async function handleMessagesUpsert(
       (remoteDigits === ownerDigits ||
         remoteDigits.endsWith(ownerDigits) ||
         ownerDigits.endsWith(remoteDigits));
-    console.log(
-      "[SELFCHAT-CHECK]",
-      JSON.stringify({ remoteJid: jid, ownerJid, remoteDigits, ownerDigits, isSelfChat }),
-    );
+    console.log("[evolution-webhook] Self-chat check | remoteDigits:", remoteDigits, "| ownerDigits:", ownerDigits, "| match:", isSelfChat);
     if (!isSelfChat) {
       console.log("[evolution-webhook] Not self-chat — skipping | remoteJid:", jid);
       return;
@@ -458,12 +461,21 @@ async function handleMessagesUpsert(
     } catch (mediaErr) {
       console.error("[evolution-webhook] Media processing error:", mediaErr instanceof Error ? mediaErr.message : mediaErr);
     }
+
+    // If upload failed (or getMediaBase64 failed), still build a fallback so the agent can respond
+    if (!mediaContext) {
+      const emoji = mediaInfo.type === "video" ? "🎥" : "📸";
+      const label = mediaInfo.type === "video" ? "Video" : "Image";
+      const captionPart = mediaInfo.caption ? `: "${mediaInfo.caption}"` : "";
+      mediaContext = `${emoji} ${label} received${captionPart}. (Media could not be saved — please resend if needed.)`;
+      console.log("[evolution-webhook] Using fallback mediaContext (upload failed)");
+    }
   }
 
   // Build the agent message: combine text + media context
   const agentText = [text, mediaContext].filter(Boolean).join("\n\n");
   if (!agentText) {
-    console.log("[evolution-webhook] No agent text after media processing — skipping");
+    console.log("[evolution-webhook] No text or media — skipping");
     return;
   }
 
