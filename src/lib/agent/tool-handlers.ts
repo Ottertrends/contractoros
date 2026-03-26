@@ -322,6 +322,24 @@ export async function executeTool(
       });
     }
 
+    case "attach_media_to_project": {
+      const mediaId = String(input.media_id ?? "").trim();
+      const projectId = String(input.project_id ?? "").trim();
+      if (!mediaId || !projectId) return jsonResult({ error: "media_id and project_id are required" });
+
+      const patch: Record<string, unknown> = { project_id: projectId };
+      if (input.description != null) patch.description = String(input.description);
+
+      const { error } = await admin
+        .from("project_media")
+        .update(patch)
+        .eq("id", mediaId)
+        .eq("user_id", userId);
+
+      if (error) return jsonResult({ error: error.message });
+      return jsonResult({ ok: true, media_id: mediaId, project_id: projectId });
+    }
+
     default:
       return jsonResult({ error: `Unknown tool: ${name}` });
   }

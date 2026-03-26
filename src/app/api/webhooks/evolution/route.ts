@@ -6,9 +6,14 @@ import type {
   MessagesUpsertData,
 } from "@/lib/evolution/types";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { extractWhatsAppText } from "@/lib/webhooks/evolution-message";
+import { extractWhatsAppText, extractWhatsAppMedia } from "@/lib/webhooks/evolution-message";
 import { allowWebhookEvent } from "@/lib/webhooks/rate-limit";
-import { userIdFromInstanceName } from "@/lib/whatsapp/instance-name";
+import {
+  evolutionInstanceName,
+  evolutionSecondaryInstanceName,
+} from "@/lib/whatsapp/instance-name";
+import { resolveUserIdFromWebhookInstance } from "@/lib/whatsapp/resolve-user";
+import { getSessionSlice, mergeWaSession } from "@/lib/whatsapp/session-store";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -20,35 +25,74 @@ function isPhoneJid(jid: string): boolean {
   return local.length >= 7 && local.length <= 15;
 }
 
+function connectionSlot(
+  instance: string,
+  primaryStored: string | null | undefined,
+  secondaryStored: string | null | undefined,
+  userId: string,
+): "primary" | "secondary" {
+  const primaryId = primaryStored ?? evolutionInstanceName(userId);
+  const secondaryId = secondaryStored ?? evolutionSecondaryInstanceName(userId);
+  if (instance === primaryId) return "primary";
+  if (instance === secondaryId) return "secondary";
+  if (secondaryStored && instance === secondaryStored) return "secondary";
+  if (primaryStored && instance === primaryStored) return "primary";
+  return instance.endsWith("_2") ? "secondary" : "primary";
+}
+
+function isPrimaryInstance(
+  instance: string,
+  prof: { whatsapp_instance_id?: string | null } | null | undefined,
+  userId: string,
+): boolean {
+  return instance === (prof?.whatsapp_instance_id ?? evolutionInstanceName(userId));
+}
+
 async function resolveOwnerJids(
   admin: ReturnType<typeof createSupabaseAdminClient>,
   userId: string,
+  instanceName: string,
   payloadSender: string | null,
 ): Promise<{ ownerJid: string | null; ownerLid: string | null; lidPending: boolean }> {
   const raw = payloadSender?.trim();
 
-  // Query profile for stored JIDs, LID, pending flag, and phone in one call
   const { data: prof } = await admin
     .from("profiles")
-    .select("phone, whatsapp_owner_jid, whatsapp_owner_lid, whatsapp_lid_pending")
+    .select(
+      "phone, whatsapp_instance_id, whatsapp_sessions, whatsapp_owner_jid, whatsapp_owner_lid, whatsapp_lid_pending",
+    )
     .eq("id", userId)
     .maybeSingle();
 
-  const ownerLid = (prof?.whatsapp_owner_lid as string | null) ?? null;
-  const lidPending = (prof?.whatsapp_lid_pending as boolean | null) ?? false;
+  const { ownerJid: storedJid, ownerLid, lidPending } = getSessionSlice(
+    prof,
+    instanceName,
+    evolutionInstanceName(userId),
+  );
 
-  // Resolve ownerJid (phone-based JID)
-  // 1. Prefer stored canonical JID — set from a previous validated sender, most reliable
-  if (prof?.whatsapp_owner_jid && typeof prof.whatsapp_owner_jid === "string") {
-    console.log("[evolution-webhook] ownerJid from stored whatsapp_owner_jid:", prof.whatsapp_owner_jid);
-    return { ownerJid: prof.whatsapp_owner_jid, ownerLid, lidPending };
+  // 1. Prefer stored canonical JID for this Evolution instance
+  if (storedJid && typeof storedJid === "string") {
+    console.log(
+      "[evolution-webhook] ownerJid from session:",
+      instanceName,
+      storedJid,
+    );
+    return { ownerJid: storedJid, ownerLid, lidPending };
   }
 
-  // 2. Trust payload.sender if it looks like a real phone JID (not an instance UUID)
+  // 2. Trust payload.sender if it looks like a real phone JID
   if (raw && isPhoneJid(raw)) {
     const canonical = `${raw.split("@")[0].split(":")[0]}@s.whatsapp.net`;
-    console.log("[evolution-webhook] ownerJid from payload.sender:", raw, "→ canonical:", canonical);
-    await admin.from("profiles").update({ whatsapp_owner_jid: canonical }).eq("id", userId);
+    console.log(
+      "[evolution-webhook] ownerJid from payload.sender:",
+      raw,
+      "→ canonical:",
+      canonical,
+    );
+    await mergeWaSession(admin, userId, instanceName, { owner_jid: canonical });
+    if (isPrimaryInstance(instanceName, prof, userId)) {
+      await admin.from("profiles").update({ whatsapp_owner_jid: canonical }).eq("id", userId);
+    }
     return { ownerJid: canonical, ownerLid, lidPending };
   }
 
@@ -56,9 +100,10 @@ async function resolveOwnerJids(
     console.log("[evolution-webhook] payload.sender looks non-phone, ignoring:", raw);
   }
 
-  // 3. Last resort: DB phone. For US 10-digit numbers prepend country code 1.
+  // 3. Last resort: profile phone (shared). US 10-digit → prepend 1.
   const phone = prof?.phone;
-  if (!phone || typeof phone !== "string") return { ownerJid: null, ownerLid, lidPending };
+  if (!phone || typeof phone !== "string")
+    return { ownerJid: null, ownerLid, lidPending };
   const digits = phone.replace(/\D/g, "");
   if (!digits) return { ownerJid: null, ownerLid, lidPending };
   const normalized = digits.length === 10 ? `1${digits}` : digits;
@@ -78,13 +123,13 @@ export async function POST(request: Request) {
     return new Response("OK", { status: 200 });
   }
 
-  // 1. WEBHOOK RECEIVED
   console.log(
-    "[evolution-webhook] WEBHOOK RECEIVED — event:", payload.event,
-    "| instance:", payload.instance,
+    "[evolution-webhook] WEBHOOK RECEIVED — event:",
+    payload.event,
+    "| instance:",
+    payload.instance,
   );
 
-  // Verify optional webhook secret
   const secret = process.env.EVOLUTION_WEBHOOK_SECRET?.trim();
   if (secret) {
     const header =
@@ -97,7 +142,6 @@ export async function POST(request: Request) {
     }
   }
 
-  // Process inline — after() suppresses Vercel logs; maxDuration=60 gives plenty of headroom
   try {
     await processPayload(payload);
   } catch (e) {
@@ -110,9 +154,15 @@ export async function POST(request: Request) {
 async function processPayload(payload: EvolutionWebhookPayload) {
   const instance =
     typeof payload.instance === "string" ? payload.instance : "";
-  const userId = userIdFromInstanceName(instance);
+
+  const admin = createSupabaseAdminClient();
+  const userId = await resolveUserIdFromWebhookInstance(admin, instance);
   if (!userId) {
-    console.log("[evolution-webhook] No userId derived from instance:", instance, "— skipping");
+    console.log(
+      "[evolution-webhook] No userId derived from instance:",
+      instance,
+      "— skipping",
+    );
     return;
   }
 
@@ -124,12 +174,16 @@ async function processPayload(payload: EvolutionWebhookPayload) {
   const eventRaw = String(payload.event ?? "").toLowerCase();
   console.log("[evolution-webhook] Processing event:", eventRaw, "| userId:", userId);
 
-  const admin = createSupabaseAdminClient();
-
   if (eventRaw.includes("connection")) {
     const payloadSenderForConn =
       typeof payload.sender === "string" ? payload.sender.trim() : null;
-    await handleConnectionUpdate(admin, userId, instance, payload.data, payloadSenderForConn);
+    await handleConnectionUpdate(
+      admin,
+      userId,
+      instance,
+      payload.data,
+      payloadSenderForConn,
+    );
   }
 
   if (
@@ -144,18 +198,31 @@ async function processPayload(payload: EvolutionWebhookPayload) {
     const { ownerJid, ownerLid, lidPending } = await resolveOwnerJids(
       admin,
       userId,
+      instance,
       payloadSender,
     );
     console.log(
       "[evolution-webhook] Message chunks to process:",
       chunks.length,
-      "| ownerJid:", ownerJid ?? "(none)",
-      "| ownerLid:", ownerLid ?? "(none)",
-      "| lidPending:", lidPending,
-      "| payload.sender:", payloadSender ?? "(empty)",
+      "| ownerJid:",
+      ownerJid ?? "(none)",
+      "| ownerLid:",
+      ownerLid ?? "(none)",
+      "| lidPending:",
+      lidPending,
+      "| payload.sender:",
+      payloadSender ?? "(empty)",
     );
     for (const chunk of chunks) {
-      await handleMessagesUpsert(admin, userId, instance, chunk, ownerJid, ownerLid, lidPending);
+      await handleMessagesUpsert(
+        admin,
+        userId,
+        instance,
+        chunk,
+        ownerJid,
+        ownerLid,
+        lidPending,
+      );
     }
   }
 }
@@ -181,16 +248,36 @@ async function handleConnectionUpdate(
   const state = String(d.state ?? d.status ?? "").toLowerCase();
   console.log("[evolution-webhook] connectionUpdate state:", state, "| instance:", instance);
 
+  const { data: prof } = await admin
+    .from("profiles")
+    .select("whatsapp_instance_id, whatsapp_secondary_instance_id")
+    .eq("id", userId)
+    .maybeSingle();
+
+  const slot = connectionSlot(
+    instance,
+    prof?.whatsapp_instance_id,
+    prof?.whatsapp_secondary_instance_id,
+    userId,
+  );
+
   if (state.includes("open") || state === "connected") {
-    const patch: Record<string, unknown> = {
-      whatsapp_connected: true,
-      whatsapp_instance_id: instance,
-    };
-    // When connection opens, also store the canonical owner JID from payload.sender
+    const patch: Record<string, unknown> =
+      slot === "primary"
+        ? { whatsapp_connected: true, whatsapp_instance_id: instance }
+        : { whatsapp_secondary_connected: true, whatsapp_secondary_instance_id: instance };
+
     if (payloadSender && isPhoneJid(payloadSender)) {
       const canonical = `${payloadSender.split("@")[0].split(":")[0]}@s.whatsapp.net`;
-      patch.whatsapp_owner_jid = canonical;
-      console.log("[evolution-webhook] connectionUpdate: storing whatsapp_owner_jid:", canonical);
+      await mergeWaSession(admin, userId, instance, { owner_jid: canonical });
+      if (slot === "primary") {
+        patch.whatsapp_owner_jid = canonical;
+      }
+      console.log(
+        "[evolution-webhook] connectionUpdate: storing owner_jid for",
+        instance,
+        canonical,
+      );
     }
     await admin.from("profiles").update(patch).eq("id", userId);
   } else if (
@@ -198,10 +285,11 @@ async function handleConnectionUpdate(
     state.includes("logout") ||
     state === "disconnected"
   ) {
-    await admin
-      .from("profiles")
-      .update({ whatsapp_connected: false })
-      .eq("id", userId);
+    const patch: Record<string, unknown> =
+      slot === "primary"
+        ? { whatsapp_connected: false }
+        : { whatsapp_secondary_connected: false };
+    await admin.from("profiles").update(patch).eq("id", userId);
   }
 }
 
@@ -224,7 +312,6 @@ async function handleMessagesUpsert(
   const jid = key.remoteJid ?? "";
   const fromMe = key.fromMe === true;
 
-  // 2. MESSAGE EXTRACTED — [MSGRAW] is searchable in Vercel logs to see exact JID format
   console.log("[MSGRAW]", JSON.stringify({ remoteJid: jid, fromMe, messageId: key.id }));
 
   if (jid.endsWith("@g.us")) {
@@ -232,41 +319,49 @@ async function handleMessagesUpsert(
     return;
   }
 
-  // Only activate for outgoing messages (fromMe=true).
   if (!fromMe) {
-    console.log("[evolution-webhook] fromMe=false — inbound from external, silent | remoteJid:", jid);
+    console.log(
+      "[evolution-webhook] fromMe=false — inbound from external, silent | remoteJid:",
+      jid,
+    );
     return;
   }
 
-  // Self-chat filter: only activate when the message is from the user to themselves.
-  //
-  // WhatsApp Multi-Device sends self-chat as @lid (Linked Device ID) JIDs — never @s.whatsapp.net.
-  // Client messages also generate @lid sync events (with the CLIENT's LID), so we can't
-  // blindly allow all @lid through. Instead we learn and store the owner's own LID on first hit.
+  const { data: prof } = await admin
+    .from("profiles")
+    .select("whatsapp_instance_id")
+    .eq("id", userId)
+    .maybeSingle();
+
   if (jid.endsWith("@lid")) {
     if (lidPending) {
-      // Controlled bootstrap: the user just connected WhatsApp and sent their first self-message.
-      // Capture this @lid as the owner's self-chat LID and clear the pending flag.
       console.log("[evolution-webhook] @lid — lid_pending bootstrap, storing LID:", jid);
-      await admin.from("profiles")
-        .update({ whatsapp_owner_lid: jid, whatsapp_lid_pending: false })
-        .eq("id", userId);
-      // Proceed to activate bot for this first self-message
+      await mergeWaSession(admin, userId, instance, {
+        owner_lid: jid,
+        lid_pending: false,
+      });
+      if (isPrimaryInstance(instance, prof, userId)) {
+        await admin
+          .from("profiles")
+          .update({ whatsapp_owner_lid: jid, whatsapp_lid_pending: false })
+          .eq("id", userId);
+      }
     } else if (ownerLid) {
-      // Known LID: only activate if this exact @lid matches the stored owner LID.
       if (jid !== ownerLid) {
-        console.log("[evolution-webhook] @lid — not owner LID, skipping | jid:", jid, "| ownerLid:", ownerLid);
+        console.log(
+          "[evolution-webhook] @lid — not owner LID, skipping | jid:",
+          jid,
+          "| ownerLid:",
+          ownerLid,
+        );
         return;
       }
       console.log("[evolution-webhook] @lid — owner LID match ✅ | jid:", jid);
     } else {
-      // No LID stored and not pending — skip. User needs to reconnect to trigger LID setup.
       console.log("[evolution-webhook] @lid — no ownerLid and not pending, skipping");
       return;
     }
   } else {
-    // @s.whatsapp.net path: compare phone digits.
-    // Use endsWith to tolerate country-code prefix differences (e.g. "7372969713" vs "17372969713").
     if (!ownerJid) {
       console.log("[evolution-webhook] No ownerJid stored — skipping");
       return;
@@ -278,27 +373,99 @@ async function handleMessagesUpsert(
       (remoteDigits === ownerDigits ||
         remoteDigits.endsWith(ownerDigits) ||
         ownerDigits.endsWith(remoteDigits));
-    console.log("[SELFCHAT-CHECK]", JSON.stringify({ remoteJid: jid, ownerJid, remoteDigits, ownerDigits, isSelfChat }));
+    console.log(
+      "[SELFCHAT-CHECK]",
+      JSON.stringify({ remoteJid: jid, ownerJid, remoteDigits, ownerDigits, isSelfChat }),
+    );
     if (!isSelfChat) {
       console.log("[evolution-webhook] Not self-chat — skipping | remoteJid:", jid);
       return;
     }
   }
 
-  console.log("[evolution-webhook] Self-chat confirmed — activating bot | remoteJid:", jid, "| ownerJid:", ownerJid ?? "(none)");
+  console.log(
+    "[evolution-webhook] Self-chat confirmed — activating bot | remoteJid:",
+    jid,
+    "| ownerJid:",
+    ownerJid ?? "(none)",
+  );
 
   const waMsgId =
     typeof key.id === "string" && key.id.length > 0 ? key.id : null;
 
   const text = extractWhatsAppText(msgData);
+  const mediaInfo = extractWhatsAppMedia(msgData);
 
-  // 2b. Log extracted text
   console.log(
-    "[evolution-webhook] MESSAGE TEXT:", text ? `"${text.slice(0, 120)}"` : "(none — skipping)",
+    "[evolution-webhook] MESSAGE TEXT:",
+    text ? `"${text.slice(0, 120)}"` : "(none)",
+    "| MEDIA:", mediaInfo ? `${mediaInfo.type} (${mediaInfo.mimeType})` : "none",
     "| fromMe:", fromMe,
   );
 
-  if (!text) return;
+  if (!text && !mediaInfo) {
+    console.log("[evolution-webhook] No text or media — skipping");
+    return;
+  }
+
+  // Handle media upload if present
+  let mediaContext: string | null = null;
+  if (mediaInfo) {
+    try {
+      const evolution = createEvolutionClient();
+      const { base64, mimetype } = await evolution.getMediaBase64(instance, msgData);
+      const mimeToUse = mimetype || mediaInfo.mimeType;
+
+      const extMap: Record<string, string> = {
+        "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "image/gif": "gif",
+        "video/mp4": "mp4", "video/quicktime": "mov", "video/webm": "webm", "video/3gpp": "3gp",
+      };
+      const ext = extMap[mimeToUse] ?? (mediaInfo.type === "image" ? "jpg" : "mp4");
+      const mediaUuid = crypto.randomUUID();
+      const storagePath = `${userId}/${mediaUuid}.${ext}`;
+
+      const buffer = Buffer.from(base64, "base64");
+      const { error: uploadErr } = await admin.storage
+        .from("project-media")
+        .upload(storagePath, buffer, { contentType: mimeToUse });
+
+      if (uploadErr) {
+        console.error("[evolution-webhook] Storage upload error:", uploadErr.message);
+      } else {
+        const { data: mediaRow } = await admin
+          .from("project_media")
+          .insert({
+            user_id: userId,
+            project_id: null,
+            storage_path: storagePath,
+            media_type: mediaInfo.type,
+            mime_type: mimeToUse,
+            description: mediaInfo.caption,
+            whatsapp_message_id: waMsgId,
+            file_size_bytes: buffer.length,
+          })
+          .select("id")
+          .single();
+
+        if (mediaRow?.id) {
+          const emoji = mediaInfo.type === "video" ? "🎥" : "📸";
+          const label = mediaInfo.type === "video" ? "Video" : "Image";
+          const captionPart = mediaInfo.caption ? `: "${mediaInfo.caption}"` : " (no caption)";
+          mediaContext = `${emoji} ${label} received${captionPart}. Media ID: ${mediaRow.id}`;
+          console.log("[evolution-webhook] Media uploaded:", storagePath, "| mediaId:", mediaRow.id);
+        }
+      }
+    } catch (mediaErr) {
+      console.error("[evolution-webhook] Media processing error:", mediaErr instanceof Error ? mediaErr.message : mediaErr);
+    }
+  }
+
+  // Build the agent message: combine text + media context
+  const agentText = [text, mediaContext].filter(Boolean).join("\n\n");
+  if (!agentText) {
+    console.log("[evolution-webhook] No agent text after media processing — skipping");
+    return;
+  }
 
   const { data: inserted, error: insErr } = await admin
     .from("messages")
@@ -306,8 +473,8 @@ async function handleMessagesUpsert(
       user_id: userId,
       project_id: null,
       direction: "inbound",
-      content: text,
-      message_type: "text",
+      content: agentText,
+      message_type: mediaInfo ? "image" : "text",
       whatsapp_message_id: waMsgId,
       processed: false,
     })
@@ -344,24 +511,22 @@ async function handleMessagesUpsert(
       content: m.content,
     }));
 
-  // 3. AGENT CALLED
   console.log(
-    "[evolution-webhook] AGENT CALLED — userId:", userId,
-    "| text:", text.slice(0, 80),
-    "| historyLen:", history.length,
+    "[evolution-webhook] AGENT CALLED — userId:",
+    userId,
+    "| text:",
+    agentText.slice(0, 80),
+    "| historyLen:",
+    history.length,
   );
 
   let reply: string;
   try {
-    const agentResult = await processContractorMessage(userId, text, history);
+    const agentResult = await processContractorMessage(userId, agentText, history);
     reply = agentResult.reply;
     if (agentResult.error) {
-      console.error(
-        "[evolution-webhook] Agent error detail:",
-        agentResult.error,
-      );
+      console.error("[evolution-webhook] Agent error detail:", agentResult.error);
     }
-    // 4. AGENT RESPONSE
     console.log("[evolution-webhook] AGENT RESPONSE:", reply.slice(0, 200));
   } catch (e) {
     console.error("[evolution-webhook] Agent error:", e);
@@ -378,28 +543,34 @@ async function handleMessagesUpsert(
     processed: true,
   });
 
-  await admin
-    .from("messages")
-    .update({ processed: true })
-    .eq("id", inboundId);
+  await admin.from("messages").update({ processed: true }).eq("id", inboundId);
 
   const evolution = createEvolutionClient();
-  // Always reply to the owner's phone JID (@s.whatsapp.net), not the @lid JID.
-  // @lid JIDs are internal device identifiers — replies must go to the phone number JID.
   const sendTarget = ownerJid ?? jid;
   const to = sendTarget.endsWith("@lid")
     ? (ownerJid ?? jid)
-    : (sendTarget.includes("@") ? sendTarget : `${sendTarget}@s.whatsapp.net`);
+    : sendTarget.includes("@")
+      ? sendTarget
+      : `${sendTarget}@s.whatsapp.net`;
 
-  // 5. SEND REPLY
-  console.log("[evolution-webhook] SEND REPLY — to:", to, "| instance:", instance, "| text:", reply.slice(0, 80));
+  console.log(
+    "[evolution-webhook] SEND REPLY — to:",
+    to,
+    "| instance:",
+    instance,
+    "| text:",
+    reply.slice(0, 80),
+  );
 
   try {
     await evolution.sendText(instance, to, reply);
-    // 6. REPLY SENT
     console.log("[evolution-webhook] REPLY SENT successfully to:", to);
   } catch (e) {
-    // 6. REPLY FAILED
-    console.error("[evolution-webhook] REPLY FAILED — to:", to, "| error:", e instanceof Error ? e.message : e);
+    console.error(
+      "[evolution-webhook] REPLY FAILED — to:",
+      to,
+      "| error:",
+      e instanceof Error ? e.message : e,
+    );
   }
 }

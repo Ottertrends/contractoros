@@ -128,4 +128,18 @@ export const CONTRACTOR_TOOLS: Tool[] = [
       required: ["project_id"],
     },
   },
+  {
+    name: "attach_media_to_project",
+    description:
+      "Associates a recently uploaded image or video with a specific project. Use after the user confirms which project a photo/video belongs to.",
+    input_schema: {
+      type: "object",
+      properties: {
+        media_id: { type: "string", description: "UUID of the project_media record" },
+        project_id: { type: "string", description: "UUID of the project to attach to" },
+        description: { type: "string", description: "Optional description override for the media" },
+      },
+      required: ["media_id", "project_id"],
+    },
+  },
 ];

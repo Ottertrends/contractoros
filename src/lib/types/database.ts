@@ -1,4 +1,5 @@
 export type QuotesPerMonth = "1-5" | "6-15" | "16-30" | "30+";
+export type MediaType = "image" | "video";
 
 export type ProjectStatus = "active" | "completed" | "on_hold" | "cancelled";
 export type InvoiceStatus = "draft" | "sent" | "paid" | "cancelled";
@@ -16,6 +17,8 @@ export interface Profile {
   services: string[] | null;
   whatsapp_connected: boolean;
   whatsapp_instance_id: string | null;
+  whatsapp_secondary_connected: boolean;
+  whatsapp_secondary_instance_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -94,6 +97,20 @@ export interface MessageLog {
   created_at: string;
 }
 
+export interface ProjectMedia {
+  id: string;
+  user_id: string;
+  project_id: string | null;
+  storage_path: string;
+  media_type: MediaType;
+  mime_type: string | null;
+  description: string | null;
+  whatsapp_message_id: string | null;
+  file_size_bytes: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface Database {
   public: {
     profiles: Profile;
@@ -102,6 +119,7 @@ export interface Database {
     invoice_items: InvoiceItem;
     price_book: PriceBookItem;
     messages: MessageLog;
+    project_media: ProjectMedia;
   };
 }
 

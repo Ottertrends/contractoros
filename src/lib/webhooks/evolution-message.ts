@@ -1,5 +1,11 @@
 import type { MessagesUpsertData } from "@/lib/evolution/types";
 
+export type WhatsAppMediaInfo = {
+  type: "image" | "video";
+  mimeType: string;
+  caption: string | null;
+};
+
 /** Unwrap viewOnce / ephemeral / edited wrappers to inner Baileys message */
 function unwrapMessageNode(
   msg: Record<string, unknown> | null | undefined,
@@ -64,5 +70,29 @@ export function extractWhatsAppText(data: MessagesUpsertData): string | null {
     const c = (doc as { caption?: string }).caption;
     if (typeof c === "string" && c.trim()) return c.trim();
   }
+  return null;
+}
+
+/** Returns media info if the message contains an image or video, null otherwise. */
+export function extractWhatsAppMedia(data: MessagesUpsertData): WhatsAppMediaInfo | null {
+  const msg = data.message;
+  if (!msg || typeof msg !== "object") return null;
+  const m = unwrapMessageNode(msg as Record<string, unknown>);
+  if (!m) return null;
+
+  const img = m.imageMessage;
+  if (img && typeof img === "object") {
+    const caption = (img as { caption?: string }).caption ?? null;
+    const mime = (img as { mimetype?: string }).mimetype ?? "image/jpeg";
+    return { type: "image", mimeType: mime, caption: caption?.trim() || null };
+  }
+
+  const vid = m.videoMessage;
+  if (vid && typeof vid === "object") {
+    const caption = (vid as { caption?: string }).caption ?? null;
+    const mime = (vid as { mimetype?: string }).mimetype ?? "video/mp4";
+    return { type: "video", mimeType: mime, caption: caption?.trim() || null };
+  }
+
   return null;
 }

@@ -59,6 +59,11 @@ async function evolutionFetch<T>(
   return (await res.json()) as T;
 }
 
+export interface MediaBase64Response {
+  base64: string;
+  mimetype: string;
+}
+
 export interface EvolutionClient {
   createInstance(
     instanceName: string,
@@ -78,6 +83,10 @@ export interface EvolutionClient {
     webhookUrl: string,
     events: string[],
   ): Promise<void>;
+  getMediaBase64(
+    instanceName: string,
+    messageData: unknown,
+  ): Promise<MediaBase64Response>;
 }
 
 export function createEvolutionClient(): EvolutionClient {
@@ -151,6 +160,14 @@ export function createEvolutionClient(): EvolutionClient {
         `/webhook/set/${encodeURIComponent(instanceName)}`,
         { method: "POST", body: JSON.stringify(body) },
       );
+    },
+
+    async getMediaBase64(instanceName: string, messageData: unknown) {
+      const result = await evolutionFetch<MediaBase64Response>(
+        `/chat/getBase64FromMediaMessage/${encodeURIComponent(instanceName)}`,
+        { method: "POST", body: JSON.stringify({ message: messageData }) },
+      );
+      return result;
     },
   };
 }

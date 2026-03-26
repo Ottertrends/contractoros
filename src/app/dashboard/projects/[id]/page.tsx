@@ -4,12 +4,14 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DraftInvoiceCard } from "@/components/invoices/draft-invoice-card";
+import { MediaGallery } from "@/components/projects/media-gallery";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { ensureDraftInvoice } from "@/lib/invoice/sync-draft";
 import { getServerLang } from "@/lib/i18n/server";
 import { getT } from "@/lib/i18n/translations";
-import type { Invoice, InvoiceItem, InvoiceStatus, Project } from "@/lib/types/database";
+import type { Invoice, InvoiceItem, InvoiceStatus, Project, ProjectMedia } from "@/lib/types/database";
+import type { MediaWithUrl } from "@/components/projects/media-gallery";
 import { ProjectForm } from "@/components/projects/project-form";
 
 function statusVariant(s: InvoiceStatus) {
@@ -100,6 +102,23 @@ export default async function ProjectDetailPage({
 
   const nonDraftInvoices = safeInvoices.filter((inv) => inv.status !== "draft");
 
+  // Load project media and generate signed URLs
+  const { data: mediaRows } = await supabase
+    .from("project_media")
+    .select("*")
+    .eq("project_id", projectId)
+    .order("created_at", { ascending: false });
+
+  const adminForMedia = createSupabaseAdminClient();
+  const mediaWithUrls: MediaWithUrl[] = await Promise.all(
+    ((mediaRows ?? []) as ProjectMedia[]).map(async (m) => {
+      const { data: signed } = await adminForMedia.storage
+        .from("project-media")
+        .createSignedUrl(m.storage_path, 3600);
+      return { ...m, signedUrl: signed?.signedUrl ?? null };
+    }),
+  );
+
   return (
     <div className="flex flex-col gap-6">
       <div className="flex items-center justify-between gap-3 flex-wrap">
@@ -138,16 +157,16 @@ export default async function ProjectDetailPage({
         </Card>
       )}
 
+      {/* Media gallery */}
+      {mediaWithUrls.length > 0 && (
+        <MediaGallery items={mediaWithUrls} projectId={projectId} />
+      )}
+
       {/* Sent / Paid / Cancelled invoices */}
       {nonDraftInvoices.length > 0 && (
         <Card>
           <CardHeader>
-            <div className="flex items-center justify-between gap-3 flex-wrap">
-              <CardTitle>{tp.otherInvoices}</CardTitle>
-              <Link href={`/dashboard/invoices/new?projectId=${projectId}`}>
-                <Button variant="secondary" size="sm">{tp.newInvoice}</Button>
-              </Link>
-            </div>
+            <CardTitle>{tp.otherInvoices}</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="overflow-x-auto">

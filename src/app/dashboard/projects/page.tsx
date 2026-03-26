@@ -7,7 +7,7 @@ import { ProjectsToolbar } from "@/components/projects/projects-toolbar";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { getServerLang } from "@/lib/i18n/server";
 import { getT } from "@/lib/i18n/translations";
-import type { Project } from "@/lib/types/database";
+import type { InvoiceStatus, Project } from "@/lib/types/database";
 
 export default async function ProjectsPage({
   searchParams,
@@ -76,6 +76,23 @@ export default async function ProjectsPage({
   const projects = all.slice(0, pageSize);
   const hasNext = all.length > pageSize;
 
+  // Fetch latest invoice status per project for the current page
+  const projectIds = projects.map((p) => p.id);
+  const invoiceStatusMap: Record<string, InvoiceStatus> = {};
+  if (projectIds.length > 0) {
+    const { data: invoicesForPage } = await supabase
+      .from("invoices")
+      .select("project_id, status")
+      .in("project_id", projectIds)
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false });
+    for (const inv of invoicesForPage ?? []) {
+      if (!invoiceStatusMap[inv.project_id]) {
+        invoiceStatusMap[inv.project_id] = inv.status as InvoiceStatus;
+      }
+    }
+  }
+
   const params = new URLSearchParams();
   if (q.trim()) params.set("q", q.trim());
   if (status !== "all") params.set("status", status);
@@ -107,7 +124,7 @@ export default async function ProjectsPage({
       {projects.length === 0 ? (
         <EmptyState noProjects={tp.noProjects} adjustFilter={tp.adjustFilter} />
       ) : (
-        <ProjectGrid projects={projects} />
+        <ProjectGrid projects={projects} invoiceStatusMap={invoiceStatusMap} />
       )}
 
       <Card className="p-4">
