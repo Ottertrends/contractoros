@@ -203,6 +203,7 @@ export default async function DashboardHome({
                     <th className="pb-2 pr-4">{t.dashboard.project}</th>
                     <th className="pb-2 pr-4">{t.dashboard.status}</th>
                     <th className="pb-2 pr-4">Created</th>
+                    <th className="pb-2 pr-4">Updated</th>
                     <th className="pb-2 text-right">{t.dashboard.total}</th>
                   </tr>
                 </thead>
@@ -230,6 +231,9 @@ export default async function DashboardHome({
                       </td>
                       <td className="py-2 pr-4 text-slate-400 text-xs">
                         {fmtDate(inv.created_at)}
+                      </td>
+                      <td className="py-2 pr-4 text-slate-400 text-xs">
+                        {fmtDate(inv.updated_at)}
                       </td>
                       <td className="py-2 text-right font-mono text-slate-800 dark:text-slate-200">
                         {fmt(parseFloat(inv.total) || 0)}

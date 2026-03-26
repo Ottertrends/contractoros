@@ -10,7 +10,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { ensureDraftInvoice } from "@/lib/invoice/sync-draft";
 import { getServerLang } from "@/lib/i18n/server";
 import { getT } from "@/lib/i18n/translations";
-import type { Invoice, InvoiceItem, InvoiceStatus, Project, ProjectMedia } from "@/lib/types/database";
+import type { Invoice, InvoiceItem, InvoiceStatus, PriceBookItem, Project, ProjectMedia } from "@/lib/types/database";
 import type { MediaWithUrl } from "@/components/projects/media-gallery";
 import { ProjectForm } from "@/components/projects/project-form";
 
@@ -100,6 +100,14 @@ export default async function ProjectDetailPage({
     draftItems = (its ?? []) as InvoiceItem[];
   }
 
+  // Load price book for invoice autocomplete
+  const { data: priceBookRaw } = await supabase
+    .from("price_book")
+    .select("*")
+    .eq("user_id", user.id)
+    .order("item_name");
+  const priceBook = (priceBookRaw ?? []) as PriceBookItem[];
+
   const nonDraftInvoices = safeInvoices.filter((inv) => inv.status !== "draft");
 
   // Load project media and generate signed URLs
@@ -142,6 +150,9 @@ export default async function ProjectDetailPage({
           projectName={safeProject.name}
           invoice={draftInvoice}
           items={draftItems}
+          priceBook={priceBook}
+          project={safeProject}
+          userId={user.id}
         />
       ) : (
         <Card>

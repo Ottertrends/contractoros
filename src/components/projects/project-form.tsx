@@ -234,14 +234,16 @@ export function ProjectForm({
             </div>
           </div>
 
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-1.5">
             <Label htmlFor="current_work">{tp.currentWork}</Label>
             <Textarea id="current_work" {...register("current_work")} />
+            <p className="text-xs text-slate-400">Private — not shown on invoices.</p>
           </div>
 
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-1.5">
             <Label htmlFor="notes">{tp.notes}</Label>
             <Textarea id="notes" {...register("notes")} />
+            <p className="text-xs text-slate-400">Appears on the invoice PDF.</p>
           </div>
 
           <div className="flex items-center justify-between gap-4 pt-2 flex-wrap">
