@@ -38,7 +38,8 @@ export function getSessionSlice(
     return {
       ownerJid: (slice.owner_jid as string | null) ?? null,
       ownerLid: (slice.owner_lid as string | null) ?? null,
-      lidPending: slice.lid_pending ?? false,
+      // Profile-level whatsapp_lid_pending=true always wins (e.g. after a manual reset)
+      lidPending: !!(profile?.whatsapp_lid_pending) || !!(slice.lid_pending ?? false),
     };
   }
 
@@ -78,6 +79,34 @@ export async function mergeWaSession(
   sessions[instanceName] = { ...cur, ...patch };
 
   await admin.from("profiles").update({ whatsapp_sessions: sessions }).eq("id", userId);
+}
+
+/** Write a single event row to bot_events for in-app diagnostics. Fire-and-forget safe. */
+export async function logBotEvent(
+  admin: ReturnType<typeof createSupabaseAdminClient>,
+  userId: string,
+  eventType: "received" | "skipped" | "bootstrap" | "agent" | "replied" | "error",
+  result: string,
+  jid?: string,
+  summary?: string,
+): Promise<void> {
+  try {
+    await admin.from("bot_events").insert({
+      user_id: userId,
+      event_type: eventType,
+      result,
+      jid: jid ? jid.slice(0, 64) : null,
+      summary: summary ? summary.slice(0, 200) : null,
+    });
+    // Prune events older than 7 days for this user (on every insert is fine given low volume)
+    await admin
+      .from("bot_events")
+      .delete()
+      .eq("user_id", userId)
+      .lt("created_at", new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString());
+  } catch {
+    // never let logging break the webhook
+  }
 }
 
 /** Remove one instance key from whatsapp_sessions (e.g. after disconnect). */

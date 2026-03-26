@@ -13,7 +13,7 @@ import {
   evolutionSecondaryInstanceName,
 } from "@/lib/whatsapp/instance-name";
 import { resolveUserIdFromWebhookInstance } from "@/lib/whatsapp/resolve-user";
-import { getSessionSlice, mergeWaSession } from "@/lib/whatsapp/session-store";
+import { getSessionSlice, logBotEvent, mergeWaSession } from "@/lib/whatsapp/session-store";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -342,6 +342,7 @@ async function handleMessagesUpsert(
   if (jid.endsWith("@lid")) {
     if (lidPending) {
       console.log("[evolution-webhook] @lid — lid_pending bootstrap, storing LID:", jid);
+      await logBotEvent(admin, userId, "bootstrap", "lid-bootstrap", jid);
       await mergeWaSession(admin, userId, instance, {
         owner_lid: jid,
         lid_pending: false,
@@ -356,6 +357,7 @@ async function handleMessagesUpsert(
       if (jid !== ownerLid) {
         // LID rotated (WhatsApp update / session change) — re-bootstrap with new LID
         console.log("[evolution-webhook] @lid — LID changed, re-bootstrapping | old:", ownerLid, "| new:", jid);
+        await logBotEvent(admin, userId, "bootstrap", "lid-rotated", jid, `old: ${ownerLid}`);
         await mergeWaSession(admin, userId, instance, { owner_lid: jid, lid_pending: false });
         if (isPrimaryInstance(instance, prof, userId)) {
           await admin.from("profiles")
@@ -368,11 +370,13 @@ async function handleMessagesUpsert(
       }
     } else {
       console.log("[evolution-webhook] @lid — no ownerLid and not pending, skipping");
+      await logBotEvent(admin, userId, "skipped", "no-lid-pending", jid);
       return;
     }
   } else {
     if (!ownerJid) {
       console.log("[evolution-webhook] No ownerJid stored — skipping");
+      await logBotEvent(admin, userId, "skipped", "no-owner-jid", jid);
       return;
     }
     const ownerDigits = ownerJid.split("@")[0].split(":")[0].replace(/\D/g, "");
@@ -385,6 +389,7 @@ async function handleMessagesUpsert(
     console.log("[evolution-webhook] Self-chat check | remoteDigits:", remoteDigits, "| ownerDigits:", ownerDigits, "| match:", isSelfChat);
     if (!isSelfChat) {
       console.log("[evolution-webhook] Not self-chat — skipping | remoteJid:", jid);
+      await logBotEvent(admin, userId, "skipped", "not-self-chat", jid, `remote:${remoteDigits} owner:${ownerDigits}`);
       return;
     }
   }
@@ -395,6 +400,7 @@ async function handleMessagesUpsert(
     "| ownerJid:",
     ownerJid ?? "(none)",
   );
+  await logBotEvent(admin, userId, "received", "self-chat-confirmed", jid);
 
   const waMsgId =
     typeof key.id === "string" && key.id.length > 0 ? key.id : null;
@@ -534,6 +540,7 @@ async function handleMessagesUpsert(
     "| historyLen:",
     history.length,
   );
+  await logBotEvent(admin, userId, "agent", "agent-called", jid, agentText.slice(0, 200));
 
   let reply: string;
   try {
@@ -545,6 +552,8 @@ async function handleMessagesUpsert(
     console.log("[evolution-webhook] AGENT RESPONSE:", reply.slice(0, 200));
   } catch (e) {
     console.error("[evolution-webhook] Agent error:", e);
+    const errMsg = e instanceof Error ? e.message : String(e);
+    await logBotEvent(admin, userId, "error", "agent-error", jid, errMsg.slice(0, 200));
     reply = "Sorry, I'm having trouble processing that. Please try again in a moment.";
   }
 
@@ -580,12 +589,10 @@ async function handleMessagesUpsert(
   try {
     await evolution.sendText(instance, to, reply);
     console.log("[evolution-webhook] REPLY SENT successfully to:", to);
+    await logBotEvent(admin, userId, "replied", "reply-sent", jid, reply.slice(0, 200));
   } catch (e) {
-    console.error(
-      "[evolution-webhook] REPLY FAILED — to:",
-      to,
-      "| error:",
-      e instanceof Error ? e.message : e,
-    );
+    const errMsg = e instanceof Error ? e.message : String(e);
+    console.error("[evolution-webhook] REPLY FAILED — to:", to, "| error:", errMsg);
+    await logBotEvent(admin, userId, "error", "reply-failed", jid, errMsg.slice(0, 200));
   }
 }

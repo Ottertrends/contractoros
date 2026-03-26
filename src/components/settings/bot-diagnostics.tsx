@@ -6,6 +6,24 @@ import { CheckCircle, XCircle, Loader2, RefreshCw, Send } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 
+interface BotEvent {
+  id: string;
+  created_at: string;
+  event_type: string;
+  result: string | null;
+  jid: string | null;
+  summary: string | null;
+}
+
+const EVENT_COLORS: Record<string, string> = {
+  received:  "bg-blue-100 text-blue-800",
+  bootstrap: "bg-purple-100 text-purple-800",
+  agent:     "bg-yellow-100 text-yellow-800",
+  replied:   "bg-green-100 text-green-800",
+  skipped:   "bg-slate-100 text-slate-600",
+  error:     "bg-red-100 text-red-700",
+};
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface CheckResult {
@@ -66,6 +84,22 @@ export function BotDiagnostics() {
   const [testAgentError, setTestAgentError] = React.useState<string | null>(null);
 
   const [resyncLoading, setResyncLoading] = React.useState(false);
+
+  const [events, setEvents] = React.useState<BotEvent[] | null>(null);
+  const [eventsLoading, setEventsLoading] = React.useState(false);
+
+  async function loadBotEvents() {
+    setEventsLoading(true);
+    try {
+      const res = await fetch("/api/debug/bot-events");
+      const data = (await res.json()) as { events?: BotEvent[]; error?: string };
+      setEvents(data.events ?? []);
+    } catch {
+      setEvents([]);
+    } finally {
+      setEventsLoading(false);
+    }
+  }
 
   async function runDiagnostics() {
     setLoading(true);
@@ -256,6 +290,63 @@ export function BotDiagnostics() {
               </div>
             ) : null}
           </div>
+        )}
+      </div>
+
+      {/* Bot event log */}
+      <div className="flex flex-col gap-2">
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="text-sm font-medium text-slate-700">WhatsApp Bot Event Log</div>
+            <div className="text-xs text-slate-500">Last 50 bot events — what happened to each message</div>
+          </div>
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={() => void loadBotEvents()}
+            disabled={eventsLoading}
+          >
+            {eventsLoading ? (
+              <><Loader2 className="w-4 h-4 animate-spin" /> Loading…</>
+            ) : (
+              <><RefreshCw className="w-4 h-4" /> Load Events</>
+            )}
+          </Button>
+        </div>
+
+        {events !== null && (
+          events.length === 0 ? (
+            <div className="text-sm text-slate-500 py-2">No bot events yet. Send yourself a WhatsApp message to see what happens.</div>
+          ) : (
+            <div className="rounded-lg border border-slate-200 overflow-hidden">
+              <table className="w-full text-xs">
+                <thead className="bg-slate-50 text-slate-500">
+                  <tr>
+                    <th className="text-left px-3 py-2 font-medium">Time</th>
+                    <th className="text-left px-3 py-2 font-medium">Type</th>
+                    <th className="text-left px-3 py-2 font-medium">Result</th>
+                    <th className="text-left px-3 py-2 font-medium hidden sm:table-cell">Summary</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {events.map((ev) => (
+                    <tr key={ev.id} className="hover:bg-slate-50">
+                      <td className="px-3 py-2 text-slate-400 whitespace-nowrap">
+                        {new Date(ev.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+                      </td>
+                      <td className="px-3 py-2">
+                        <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${EVENT_COLORS[ev.event_type] ?? "bg-slate-100 text-slate-600"}`}>
+                          {ev.event_type}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2 text-slate-600 font-mono">{ev.result ?? "—"}</td>
+                      <td className="px-3 py-2 text-slate-400 truncate max-w-xs hidden sm:table-cell">{ev.summary ?? "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )
         )}
       </div>
     </div>
