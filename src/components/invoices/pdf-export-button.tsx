@@ -80,10 +80,11 @@ async function generatePDF({ invoice, project, profile, design, items }: Props) 
   // Design defaults
   const primaryColor = design?.primaryColor ?? "#111827";
   const [pr, pg, pb] = hexToRgb(primaryColor);
-  const fontName = design?.font ?? "helvetica";
+  const titleFont = design?.titleFont ?? "helvetica";
+  const bodyFont = design?.bodyFont ?? "helvetica";
 
   // Set base font
-  doc.setFont(fontName, "normal");
+  doc.setFont(bodyFont, "normal");
 
   // ── Logo ───────────────────────────────────────────────────────────────────
   let logoHeight = 0;
@@ -107,14 +108,14 @@ async function generatePDF({ invoice, project, profile, design, items }: Props) 
 
   // ── Company info ──────────────────────────────────────────────────────────
   doc.setFontSize(18);
-  doc.setFont(fontName, "bold");
+  doc.setFont(titleFont, "bold");
   doc.setTextColor(pr, pg, pb);
   if (!design?.logoUrl) {
     doc.text(profile?.company_name ?? "Your Company", margin, headerTop + 24);
   }
 
   doc.setFontSize(9);
-  doc.setFont(fontName, "normal");
+  doc.setFont(bodyFont, "normal");
   doc.setTextColor(100);
   const contactLine = [profile?.phone, profile?.email].filter(Boolean).join("  |  ");
   const contactY = design?.logoUrl ? headerTop + 8 : headerTop + 38;
@@ -122,12 +123,12 @@ async function generatePDF({ invoice, project, profile, design, items }: Props) 
 
   // ── INVOICE label (right side) ────────────────────────────────────────────
   doc.setFontSize(22);
-  doc.setFont(fontName, "bold");
+  doc.setFont(titleFont, "bold");
   doc.setTextColor(pr, pg, pb);
   doc.text("INVOICE", pageWidth - margin, headerTop + 24, { align: "right" });
 
   doc.setFontSize(9);
-  doc.setFont(fontName, "normal");
+  doc.setFont(bodyFont, "normal");
   doc.setTextColor(80);
   const dateStr = invoice.created_at
     ? new Date(invoice.created_at).toLocaleDateString("en-US")
@@ -146,10 +147,10 @@ async function generatePDF({ invoice, project, profile, design, items }: Props) 
 
   // ── Bill To ───────────────────────────────────────────────────────────────
   doc.setFontSize(9);
-  doc.setFont(fontName, "bold");
+  doc.setFont(titleFont, "bold");
   doc.setTextColor(pr, pg, pb);
   doc.text("BILL TO", margin, dividerY + 16);
-  doc.setFont(fontName, "normal");
+  doc.setFont(bodyFont, "normal");
   doc.setTextColor(40);
   let y = dividerY + 28;
   if (project?.client_name) { doc.text(project.client_name, margin, y); y += 12; }
@@ -158,7 +159,7 @@ async function generatePDF({ invoice, project, profile, design, items }: Props) 
   if (cityLine) { doc.text(cityLine, margin, y); y += 12; }
   if (project?.name) {
     y += 2;
-    doc.setFont(fontName, "bold");
+    doc.setFont(titleFont, "bold");
     doc.setTextColor(80);
     doc.text(`Project: ${project.name}`, margin, y);
     y += 4;
@@ -182,7 +183,7 @@ async function generatePDF({ invoice, project, profile, design, items }: Props) 
       fontSize: 9,
       fontStyle: "bold",
     },
-    bodyStyles: { fontSize: 9, font: fontName },
+    bodyStyles: { fontSize: 9, font: bodyFont },
     alternateRowStyles: { fillColor: [248, 250, 252] },
     columnStyles: {
       0: { cellWidth: "auto" },
@@ -207,7 +208,7 @@ async function generatePDF({ invoice, project, profile, design, items }: Props) 
   const total = parseFloat(invoice.total) || 0;
 
   doc.setFontSize(9);
-  doc.setFont(fontName, "normal");
+  doc.setFont(bodyFont, "normal");
   doc.setTextColor(60);
   doc.text("Subtotal:", col1, ty, { align: "right" });
   doc.text(fmt(subtotal), col2, ty, { align: "right" });
@@ -223,7 +224,7 @@ async function generatePDF({ invoice, project, profile, design, items }: Props) 
   doc.setLineWidth(0.75);
   doc.line(col1 - 60, ty - 4, col2, ty - 4);
 
-  doc.setFont(fontName, "bold");
+  doc.setFont(titleFont, "bold");
   doc.setFontSize(11);
   doc.setTextColor(pr, pg, pb);
   doc.text("TOTAL:", col1, ty + 8, { align: "right" });
@@ -233,10 +234,10 @@ async function generatePDF({ invoice, project, profile, design, items }: Props) 
   if (invoice.notes) {
     ty += 28;
     doc.setFontSize(9);
-    doc.setFont(fontName, "bold");
+    doc.setFont(titleFont, "bold");
     doc.setTextColor(60);
     doc.text("Notes:", margin, ty);
-    doc.setFont(fontName, "normal");
+    doc.setFont(bodyFont, "normal");
     doc.setTextColor(80);
     const lines = doc.splitTextToSize(invoice.notes, pageWidth - margin * 2);
     doc.text(lines, margin, ty + 12);
@@ -246,7 +247,7 @@ async function generatePDF({ invoice, project, profile, design, items }: Props) 
   if (design?.footer) {
     const footerY = pageHeight - 30;
     doc.setFontSize(8);
-    doc.setFont(fontName, "normal");
+    doc.setFont(bodyFont, "normal");
     doc.setTextColor(160);
     const footerLines = doc.splitTextToSize(design.footer, pageWidth - margin * 2);
     doc.text(footerLines, pageWidth / 2, footerY, { align: "center" });

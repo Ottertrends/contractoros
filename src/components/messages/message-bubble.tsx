@@ -20,7 +20,7 @@ export function MessageBubble({
           "max-w-[85%] rounded-2xl px-4 py-2 text-sm shadow-sm",
           inbound
             ? "bg-slate-100 text-slate-900 dark:bg-slate-800 dark:text-slate-50"
-            : "bg-primary text-white",
+            : "bg-primary text-white dark:bg-slate-700 dark:text-slate-50",
         )}
       >
         <p className="whitespace-pre-wrap break-words">{message.content}</p>

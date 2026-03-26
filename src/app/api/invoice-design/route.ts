@@ -9,7 +9,7 @@ export async function GET() {
   const admin = createSupabaseAdminClient();
   const { data, error } = await admin
     .from("profiles")
-    .select("invoice_logo_url, invoice_primary_color, invoice_font, invoice_footer")
+    .select("invoice_logo_url, invoice_primary_color, invoice_title_font, invoice_body_font, invoice_footer")
     .eq("id", user.id)
     .single();
 
@@ -23,7 +23,7 @@ export async function PUT(request: Request) {
   if (!user) return new Response("Unauthorized", { status: 401 });
 
   const body = await request.json();
-  const { invoice_primary_color, invoice_font, invoice_footer, invoice_logo_url } = body;
+  const { invoice_primary_color, invoice_title_font, invoice_body_font, invoice_footer, invoice_logo_url } = body;
 
   const admin = createSupabaseAdminClient();
   const { data, error } = await admin
@@ -31,12 +31,13 @@ export async function PUT(request: Request) {
     .update({
       ...(invoice_logo_url !== undefined && { invoice_logo_url }),
       ...(invoice_primary_color && { invoice_primary_color }),
-      ...(invoice_font && { invoice_font }),
+      ...(invoice_title_font && { invoice_title_font }),
+      ...(invoice_body_font && { invoice_body_font }),
       invoice_footer: invoice_footer?.trim() || null,
       updated_at: new Date().toISOString(),
     })
     .eq("id", user.id)
-    .select("invoice_logo_url, invoice_primary_color, invoice_font, invoice_footer")
+    .select("invoice_logo_url, invoice_primary_color, invoice_title_font, invoice_body_font, invoice_footer")
     .single();
 
   if (error) return new Response(error.message, { status: 500 });

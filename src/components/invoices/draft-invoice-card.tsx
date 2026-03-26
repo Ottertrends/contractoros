@@ -126,14 +126,15 @@ export function DraftInvoiceCard({ projectName, invoice, items, priceBook, proje
   const [design, setDesign] = React.useState<InvoiceDesign>({
     logoUrl: null,
     primaryColor: "#111827",
-    font: "helvetica",
+    titleFont: "helvetica",
+    bodyFont: "helvetica",
     footer: null,
   });
 
   React.useEffect(() => {
     supabase
       .from("profiles")
-      .select("company_name, phone, email, invoice_logo_url, invoice_primary_color, invoice_font, invoice_footer")
+      .select("company_name, phone, email, invoice_logo_url, invoice_primary_color, invoice_title_font, invoice_body_font, invoice_footer")
       .eq("id", userId)
       .single()
       .then(({ data }: { data: {
@@ -142,7 +143,8 @@ export function DraftInvoiceCard({ projectName, invoice, items, priceBook, proje
         email: string | null;
         invoice_logo_url: string | null;
         invoice_primary_color: string | null;
-        invoice_font: string | null;
+        invoice_title_font: string | null;
+        invoice_body_font: string | null;
         invoice_footer: string | null;
       } | null }) => {
         if (data) {
@@ -150,7 +152,8 @@ export function DraftInvoiceCard({ projectName, invoice, items, priceBook, proje
           setDesign({
             logoUrl: data.invoice_logo_url,
             primaryColor: data.invoice_primary_color ?? "#111827",
-            font: (data.invoice_font as InvoiceDesign["font"]) ?? "helvetica",
+            titleFont: (data.invoice_title_font as InvoiceDesign["titleFont"]) ?? "helvetica",
+            bodyFont: (data.invoice_body_font as InvoiceDesign["bodyFont"]) ?? "helvetica",
             footer: data.invoice_footer,
           });
         }

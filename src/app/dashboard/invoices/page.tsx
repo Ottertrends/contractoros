@@ -141,7 +141,7 @@ export default async function InvoicesPage({
                 href={href}
                 className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
                   active
-                    ? "bg-primary text-white"
+                    ? "bg-primary text-white dark:bg-slate-700 dark:text-white"
                     : "bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
                 }`}
               >
@@ -157,7 +157,7 @@ export default async function InvoicesPage({
               href={`/dashboard/invoices${statusFilter ? `?status=${statusFilter}` : ""}`}
               className={`px-3 py-1.5 font-medium transition-colors ${
                 sort === "created"
-                  ? "bg-primary text-white"
+                  ? "bg-primary text-white dark:bg-slate-700 dark:text-white"
                   : "text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-800"
               }`}
             >
@@ -167,7 +167,7 @@ export default async function InvoicesPage({
               href={`/dashboard/invoices?sort=updated${statusFilter ? `&status=${statusFilter}` : ""}`}
               className={`px-3 py-1.5 font-medium border-l border-slate-200 transition-colors dark:border-slate-700 ${
                 sort === "updated"
-                  ? "bg-primary text-white"
+                  ? "bg-primary text-white dark:bg-slate-700 dark:text-white"
                   : "text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-800"
               }`}
             >

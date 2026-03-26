@@ -21,7 +21,8 @@ export interface Profile {
   whatsapp_secondary_instance_id: string | null;
   invoice_logo_url: string | null;
   invoice_primary_color: string | null;
-  invoice_font: string | null;
+  invoice_title_font: string | null;
+  invoice_body_font: string | null;
   invoice_footer: string | null;
   created_at: string;
   updated_at: string;
@@ -39,10 +40,13 @@ export interface Client {
   updated_at: string;
 }
 
+export type InvoiceFont = "helvetica" | "times" | "courier";
+
 export interface InvoiceDesign {
   logoUrl: string | null;
   primaryColor: string;
-  font: "helvetica" | "times" | "courier";
+  titleFont: InvoiceFont;
+  bodyFont: InvoiceFont;
   footer: string | null;
 }
 

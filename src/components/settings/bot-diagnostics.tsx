@@ -228,7 +228,7 @@ export function BotDiagnostics() {
 
       {/* Resync webhook */}
       <div className="flex flex-col gap-2">
-        <div className="text-sm font-medium text-slate-700">Webhook Registration</div>
+        <div className="text-sm font-medium text-slate-700 dark:text-slate-200">Webhook Registration</div>
         <div className="text-xs text-slate-500">
           Re-registers your webhook URL with the Evolution API. Run this if the bot isn&apos;t
           responding to WhatsApp messages.
@@ -251,7 +251,7 @@ export function BotDiagnostics() {
 
       {/* Test bot (chat without WhatsApp) */}
       <div className="flex flex-col gap-2">
-        <div className="text-sm font-medium text-slate-700">Test Claude Agent</div>
+        <div className="text-sm font-medium text-slate-700 dark:text-slate-200">Test Claude Agent</div>
         <div className="text-xs text-slate-500">
           Send a message directly to the AI agent to verify Claude is working, without needing a
           WhatsApp message.
@@ -297,7 +297,7 @@ export function BotDiagnostics() {
       <div className="flex flex-col gap-2">
         <div className="flex items-center justify-between">
           <div>
-            <div className="text-sm font-medium text-slate-700">WhatsApp Bot Event Log</div>
+            <div className="text-sm font-medium text-slate-700 dark:text-slate-200">WhatsApp Bot Event Log</div>
             <div className="text-xs text-slate-500">Last 50 bot events — what happened to each message</div>
           </div>
           <Button

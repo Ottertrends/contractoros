@@ -28,7 +28,7 @@
   :root {
     --background: #0b1220;
     --foreground: #e5e7eb;
-    --primary: #0f172a;
+    --primary: #e2e8f0;  /* near-white — visible on dark bg as text/links */
     --accent: #0d9488;
     --muted: #94a3b8;
   }

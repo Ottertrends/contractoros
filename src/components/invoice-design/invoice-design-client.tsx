@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/lib/supabase/client";
-import type { InvoiceDesign } from "@/lib/types/database";
+import type { InvoiceDesign, InvoiceFont } from "@/lib/types/database";
 
 interface Props {
   userId: string;
@@ -17,11 +17,11 @@ interface Props {
   initialDesign: InvoiceDesign;
 }
 
-const FONT_OPTIONS = [
-  { value: "helvetica", label: "Helvetica — Clean & Modern" },
-  { value: "times", label: "Times New Roman — Classic & Professional" },
-  { value: "courier", label: "Courier — Technical / Typewriter" },
-] as const;
+const FONT_OPTIONS: { value: InvoiceFont; label: string; sub: string; css: string }[] = [
+  { value: "helvetica", label: "Helvetica", sub: "Clean & Modern", css: "sans-serif" },
+  { value: "times", label: "Times New Roman", sub: "Classic & Professional", css: "serif" },
+  { value: "courier", label: "Courier", sub: "Technical / Typewriter", css: "monospace" },
+];
 
 const COLOR_PRESETS = [
   { label: "Slate", value: "#0f172a" },
@@ -32,15 +32,53 @@ const COLOR_PRESETS = [
   { label: "Orange", value: "#9a3412" },
 ];
 
-function hexToPreviewRgb(hex: string) {
-  try {
-    const c = hex.replace("#", "");
-    const r = parseInt(c.substring(0, 2), 16);
-    const g = parseInt(c.substring(2, 4), 16);
-    const b = parseInt(c.substring(4, 6), 16);
-    if (isNaN(r)) return "17, 24, 39";
-    return `${r}, ${g}, ${b}`;
-  } catch { return "17, 24, 39"; }
+function FontPicker({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: InvoiceFont;
+  onChange: (v: InvoiceFont) => void;
+}) {
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="text-sm font-medium text-slate-700 dark:text-slate-300">{label}</div>
+      <div className="flex flex-col gap-2">
+        {FONT_OPTIONS.map((opt) => (
+          <button
+            key={opt.value}
+            type="button"
+            onClick={() => onChange(opt.value)}
+            className={`flex items-center gap-3 px-4 py-2.5 rounded-lg border text-left transition-all ${
+              value === opt.value
+                ? "border-primary bg-primary/5 dark:bg-slate-700/60"
+                : "border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600"
+            }`}
+          >
+            <div
+              className={`w-4 h-4 rounded-full border-2 shrink-0 transition-colors ${
+                value === opt.value ? "border-primary bg-primary" : "border-slate-300 dark:border-slate-600"
+              }`}
+            />
+            <div>
+              <div
+                style={{ fontFamily: opt.css }}
+                className={`text-sm font-medium ${
+                  value === opt.value
+                    ? "text-primary dark:text-slate-100"
+                    : "text-slate-800 dark:text-slate-200"
+                }`}
+              >
+                {opt.label} — Aa Bb Cc
+              </div>
+              <div className="text-xs text-slate-400">{opt.sub}</div>
+            </div>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 export function InvoiceDesignClient({ userId, companyName, initialDesign }: Props) {
@@ -58,7 +96,6 @@ export function InvoiceDesignClient({ userId, companyName, initialDesign }: Prop
       toast.error("Logo must be under 2 MB");
       return;
     }
-
     setUploading(true);
     try {
       const ext = file.name.split(".").pop() ?? "png";
@@ -66,13 +103,9 @@ export function InvoiceDesignClient({ userId, companyName, initialDesign }: Prop
       const { error: upErr } = await supabase.storage
         .from("invoice-logos")
         .upload(path, file, { upsert: true, contentType: file.type });
-
       if (upErr) throw new Error(upErr.message);
-
       const { data: urlData } = supabase.storage.from("invoice-logos").getPublicUrl(path);
-      // Bust cache with timestamp
       const publicUrl = `${urlData.publicUrl}?v=${Date.now()}`;
-
       setDesign((d) => ({ ...d, logoUrl: publicUrl }));
       toast.success("Logo uploaded");
     } catch (e) {
@@ -80,10 +113,6 @@ export function InvoiceDesignClient({ userId, companyName, initialDesign }: Prop
     } finally {
       setUploading(false);
     }
-  }
-
-  async function removeLogo() {
-    setDesign((d) => ({ ...d, logoUrl: null }));
   }
 
   async function handleSave() {
@@ -95,7 +124,8 @@ export function InvoiceDesignClient({ userId, companyName, initialDesign }: Prop
         body: JSON.stringify({
           invoice_logo_url: design.logoUrl,
           invoice_primary_color: design.primaryColor,
-          invoice_font: design.font,
+          invoice_title_font: design.titleFont,
+          invoice_body_font: design.bodyFont,
           invoice_footer: design.footer,
         }),
       });
@@ -108,7 +138,8 @@ export function InvoiceDesignClient({ userId, companyName, initialDesign }: Prop
     }
   }
 
-  const rgb = hexToPreviewRgb(design.primaryColor);
+  const titleCss = FONT_OPTIONS.find((f) => f.value === design.titleFont)?.css ?? "sans-serif";
+  const bodyCss = FONT_OPTIONS.find((f) => f.value === design.bodyFont)?.css ?? "sans-serif";
 
   return (
     <div className="flex flex-col gap-6 max-w-3xl">
@@ -132,10 +163,10 @@ export function InvoiceDesignClient({ userId, companyName, initialDesign }: Prop
                 className="h-16 max-w-[180px] object-contain rounded border border-slate-200 dark:border-slate-700 bg-white p-2"
               />
               <button
-                onClick={removeLogo}
+                onClick={() => setDesign((d) => ({ ...d, logoUrl: null }))}
                 className="flex items-center gap-1.5 text-sm text-red-500 hover:underline mt-1"
               >
-                <X className="w-3.5 h-3.5" /> Remove logo
+                <X className="w-3.5 h-3.5" /> Remove
               </button>
             </div>
           ) : (
@@ -162,27 +193,18 @@ export function InvoiceDesignClient({ userId, companyName, initialDesign }: Prop
             }}
           />
           {design.logoUrl && !uploading && (
-            <Button
-              variant="secondary"
-              size="sm"
-              className="w-fit"
-              onClick={() => fileInputRef.current?.click()}
-            >
+            <Button variant="secondary" size="sm" className="w-fit" onClick={() => fileInputRef.current?.click()}>
               Replace logo
             </Button>
           )}
         </CardContent>
       </Card>
 
-      {/* Colors */}
+      {/* Brand color */}
       <Card>
         <CardHeader><CardTitle className="text-sm">Brand Color</CardTitle></CardHeader>
         <CardContent className="flex flex-col gap-4">
-          <div className="text-xs text-slate-500">
-            Used for the invoice header bar, totals accent, and dividers.
-          </div>
-
-          {/* Presets */}
+          <div className="text-xs text-slate-500">Used for the header bar, table headers, and total accent.</div>
           <div className="flex flex-wrap gap-2">
             {COLOR_PRESETS.map((p) => (
               <button
@@ -198,15 +220,13 @@ export function InvoiceDesignClient({ userId, companyName, initialDesign }: Prop
               />
             ))}
           </div>
-
-          {/* Custom hex */}
           <div className="flex items-center gap-3">
             <div
               className="w-9 h-9 rounded-lg border border-slate-200 dark:border-slate-700 shrink-0"
               style={{ backgroundColor: design.primaryColor }}
             />
             <div className="flex flex-col gap-1">
-              <Label className="text-xs text-slate-500">Custom color</Label>
+              <Label className="text-xs text-slate-500">Custom hex</Label>
               <div className="flex items-center gap-2">
                 <input
                   type="color"
@@ -226,59 +246,40 @@ export function InvoiceDesignClient({ userId, companyName, initialDesign }: Prop
         </CardContent>
       </Card>
 
-      {/* Font */}
+      {/* Fonts — two pickers side by side */}
       <Card>
-        <CardHeader><CardTitle className="text-sm">Font</CardTitle></CardHeader>
-        <CardContent className="flex flex-col gap-3">
-          {FONT_OPTIONS.map((opt) => (
-            <button
-              key={opt.value}
-              onClick={() => setDesign((d) => ({ ...d, font: opt.value }))}
-              className={`flex items-center gap-3 px-4 py-3 rounded-lg border text-left transition-all ${
-                design.font === opt.value
-                  ? "border-primary bg-primary/5 dark:bg-primary/10"
-                  : "border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600"
-              }`}
-            >
-              <div
-                className={`w-4 h-4 rounded-full border-2 shrink-0 ${
-                  design.font === opt.value ? "border-primary bg-primary" : "border-slate-300"
-                }`}
-              />
-              <div>
-                <div
-                  className={`text-sm font-medium ${
-                    design.font === opt.value
-                      ? "text-primary"
-                      : "text-slate-800 dark:text-slate-200"
-                  }`}
-                >
-                  {opt.label.split(" — ")[0]}
-                </div>
-                <div className="text-xs text-slate-400">{opt.label.split(" — ")[1]}</div>
-              </div>
-            </button>
-          ))}
+        <CardHeader><CardTitle className="text-sm">Fonts</CardTitle></CardHeader>
+        <CardContent className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+          <FontPicker
+            label="Title / Headings font"
+            value={design.titleFont}
+            onChange={(v) => setDesign((d) => ({ ...d, titleFont: v }))}
+          />
+          <FontPicker
+            label="Body / Content font"
+            value={design.bodyFont}
+            onChange={(v) => setDesign((d) => ({ ...d, bodyFont: v }))}
+          />
         </CardContent>
       </Card>
 
-      {/* Footer message */}
+      {/* Footer */}
       <Card>
         <CardHeader><CardTitle className="text-sm">Footer Message</CardTitle></CardHeader>
         <CardContent className="flex flex-col gap-2">
           <div className="text-xs text-slate-500">
-            Appears at the bottom of every PDF invoice (e.g. payment terms, thank-you note).
+            Printed at the bottom of every PDF (e.g. payment terms, thank-you note).
           </div>
           <Textarea
             value={design.footer ?? ""}
             onChange={(e) => setDesign((d) => ({ ...d, footer: e.target.value || null }))}
-            placeholder="Thank you for your business! Payment is due within 30 days."
+            placeholder="Thank you for your business! Payment due within 30 days."
             rows={3}
           />
         </CardContent>
       </Card>
 
-      {/* Live preview strip */}
+      {/* Live preview */}
       <Card className="overflow-hidden">
         <CardHeader><CardTitle className="text-sm">Preview</CardTitle></CardHeader>
         <CardContent className="p-0">
@@ -289,22 +290,29 @@ export function InvoiceDesignClient({ userId, companyName, initialDesign }: Prop
             <div>
               {design.logoUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={design.logoUrl} alt="logo" className="h-8 object-contain" />
+                <img src={design.logoUrl} alt="logo" className="h-10 object-contain" />
               ) : (
-                <div className="font-bold text-lg" style={{ fontFamily: design.font === "times" ? "serif" : design.font === "courier" ? "monospace" : "sans-serif" }}>
+                <div className="font-bold text-lg" style={{ fontFamily: titleCss }}>
                   {companyName || "Your Company"}
                 </div>
               )}
             </div>
-            <div className="text-right opacity-90">
-              <div className="text-xl font-bold tracking-wide" style={{ fontFamily: design.font === "times" ? "serif" : design.font === "courier" ? "monospace" : "sans-serif" }}>
+            <div className="text-right">
+              <div className="text-xl font-bold tracking-wide" style={{ fontFamily: titleCss }}>
                 INVOICE
               </div>
-              <div className="text-xs opacity-75 mt-0.5">#INV-0001</div>
+              <div className="text-xs opacity-75 mt-0.5" style={{ fontFamily: bodyCss }}>
+                #INV-0001 · {new Date().toLocaleDateString()}
+              </div>
             </div>
           </div>
+          <div className="px-6 py-4 bg-white dark:bg-slate-950" style={{ fontFamily: bodyCss }}>
+            <div className="text-xs text-slate-500 mb-2 uppercase tracking-wide font-semibold">Bill To</div>
+            <div className="text-sm text-slate-700 dark:text-slate-300">Client Name</div>
+            <div className="text-xs text-slate-400">123 Main Street</div>
+          </div>
           {design.footer && (
-            <div className="px-6 py-3 bg-slate-50 dark:bg-slate-900 text-center text-xs text-slate-400 border-t border-slate-100 dark:border-slate-800">
+            <div className="px-6 py-3 bg-slate-50 dark:bg-slate-900 text-center text-xs text-slate-400 border-t border-slate-100 dark:border-slate-800" style={{ fontFamily: bodyCss }}>
               {design.footer}
             </div>
           )}

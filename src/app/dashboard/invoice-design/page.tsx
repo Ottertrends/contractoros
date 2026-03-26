@@ -9,14 +9,15 @@ export default async function InvoiceDesignPage() {
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("company_name, invoice_logo_url, invoice_primary_color, invoice_font, invoice_footer")
+    .select("company_name, invoice_logo_url, invoice_primary_color, invoice_title_font, invoice_body_font, invoice_footer")
     .eq("id", user.id)
     .single();
 
   const design: InvoiceDesign = {
     logoUrl: profile?.invoice_logo_url ?? null,
     primaryColor: profile?.invoice_primary_color ?? "#111827",
-    font: (profile?.invoice_font as InvoiceDesign["font"]) ?? "helvetica",
+    titleFont: (profile?.invoice_title_font as InvoiceDesign["titleFont"]) ?? "helvetica",
+    bodyFont: (profile?.invoice_body_font as InvoiceDesign["bodyFont"]) ?? "helvetica",
     footer: profile?.invoice_footer ?? null,
   };
 

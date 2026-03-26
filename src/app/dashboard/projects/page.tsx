@@ -118,7 +118,7 @@ export default async function ProjectsPage({
                 href={`/dashboard/projects?${new URLSearchParams({ ...(q ? { q } : {}), ...(status !== "all" ? { status } : {}) }).toString()}`}
                 className={`px-3 py-1.5 font-medium transition-colors ${
                   sort === "updated"
-                    ? "bg-primary text-white"
+                    ? "bg-primary text-white dark:bg-slate-700 dark:text-white"
                     : "text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-800"
                 }`}
               >
@@ -128,7 +128,7 @@ export default async function ProjectsPage({
                 href={`/dashboard/projects?${new URLSearchParams({ ...(q ? { q } : {}), ...(status !== "all" ? { status } : {}), sort: "created" }).toString()}`}
                 className={`px-3 py-1.5 font-medium border-l border-slate-200 transition-colors dark:border-slate-700 ${
                   sort === "created"
-                    ? "bg-primary text-white"
+                    ? "bg-primary text-white dark:bg-slate-700 dark:text-white"
                     : "text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-800"
                 }`}
               >

@@ -145,6 +145,32 @@ export function ProjectForm({
           .single();
 
         if (error) throw error;
+
+        // Auto-save client (fire-and-forget, deduplicate by name+address)
+        const clientName = payload.client_name;
+        const clientAddress = payload.address;
+        if (clientName) {
+          void (async () => {
+            try {
+              // Check for existing client with same name AND address
+              const { data: existing } = await supabase
+                .from("clients")
+                .select("id")
+                .eq("user_id", userId)
+                .eq("client_name", clientName)
+                .eq("address", clientAddress ?? "")
+                .maybeSingle();
+              if (!existing) {
+                await supabase.from("clients").insert({
+                  user_id: userId,
+                  client_name: clientName,
+                  address: clientAddress ?? null,
+                });
+              }
+            } catch { /* silent — don't block project creation */ }
+          })();
+        }
+
         toast.success("Project created");
         router.push(`/dashboard/projects/${data.id}`);
       } else {
@@ -258,6 +284,25 @@ export function ProjectForm({
                         onClick={() => {
                           setValue("client_name", c.client_name, { shouldDirty: true });
                           if (c.address) setValue("address", c.address, { shouldDirty: true });
+                          // fill city / state / zip if they're encoded in the address as "City, ST 12345"
+                          // attempt simple parse: last word = zip, second-last = state, rest = city
+                          if (c.address) {
+                            const parts = c.address.split(",").map(s => s.trim());
+                            if (parts.length >= 2) {
+                              const lastPart = parts[parts.length - 1];
+                              const tokens = lastPart.trim().split(/\s+/);
+                              if (tokens.length >= 2) {
+                                const zip = tokens[tokens.length - 1];
+                                const state = tokens[tokens.length - 2];
+                                const city = parts.slice(0, parts.length - 1).join(", ");
+                                if (/^\d{4,6}$/.test(zip)) {
+                                  setValue("zip", zip, { shouldDirty: true });
+                                  setValue("state", state, { shouldDirty: true });
+                                  setValue("city", city, { shouldDirty: true });
+                                }
+                              }
+                            }
+                          }
                           setClientPickerOpen(false);
                           setClientSearch("");
                         }}
