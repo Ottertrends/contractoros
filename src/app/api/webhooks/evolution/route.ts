@@ -354,15 +354,18 @@ async function handleMessagesUpsert(
       }
     } else if (ownerLid) {
       if (jid !== ownerLid) {
-        console.log(
-          "[evolution-webhook] @lid — not owner LID, skipping | jid:",
-          jid,
-          "| ownerLid:",
-          ownerLid,
-        );
-        return;
+        // LID rotated (WhatsApp update / session change) — re-bootstrap with new LID
+        console.log("[evolution-webhook] @lid — LID changed, re-bootstrapping | old:", ownerLid, "| new:", jid);
+        await mergeWaSession(admin, userId, instance, { owner_lid: jid, lid_pending: false });
+        if (isPrimaryInstance(instance, prof, userId)) {
+          await admin.from("profiles")
+            .update({ whatsapp_owner_lid: jid, whatsapp_lid_pending: false })
+            .eq("id", userId);
+        }
+        // Fall through and process the message normally
+      } else {
+        console.log("[evolution-webhook] @lid — owner LID match ✅ | jid:", jid);
       }
-      console.log("[evolution-webhook] @lid — owner LID match ✅ | jid:", jid);
     } else {
       console.log("[evolution-webhook] @lid — no ownerLid and not pending, skipping");
       return;
