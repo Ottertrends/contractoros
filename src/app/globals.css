@@ -24,14 +24,13 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0b1220;
-    --foreground: #e5e7eb;
-    --primary: #e2e8f0;  /* near-white — visible on dark bg as text/links */
-    --accent: #0d9488;
-    --muted: #94a3b8;
-  }
+/* Dark mode via .dark class on <html> (class-based, toggled by ThemeToggle) */
+html.dark {
+  --background: #0b1220;
+  --foreground: #e5e7eb;
+  --primary: #e2e8f0;
+  --accent: #0d9488;
+  --muted: #94a3b8;
 }
 
 body {
