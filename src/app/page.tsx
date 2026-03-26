@@ -5,9 +5,9 @@ export default function Home() {
         <div className="flex flex-col gap-6">
           <div>
             <div className="text-4xl font-semibold tracking-tight text-primary">
-              ContractorOS
+              WorkSupp
             </div>
-            <div className="mt-2 text-slate-600">
+            <div className="mt-2 text-slate-600 dark:text-slate-400">
               AI-powered project management for small contractors.
             </div>
           </div>
@@ -15,13 +15,13 @@ export default function Home() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <a
               href="/auth/signup"
-              className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary/90"
+              className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary/90 transition-colors"
             >
               Sign Up
             </a>
             <a
               href="/auth/login"
-              className="inline-flex items-center justify-center rounded-md border border-slate-200 bg-background px-4 py-2 text-sm font-medium text-slate-900 hover:bg-slate-100"
+              className="inline-flex items-center justify-center rounded-md bg-slate-700 px-4 py-2 text-sm font-medium text-white hover:bg-slate-600 transition-colors"
             >
               Log In
             </a>
@@ -30,7 +30,15 @@ export default function Home() {
       </main>
 
       <footer className="py-8 text-center text-xs text-slate-500">
-        Phase 1: auth + core dashboard
+        Powered by{" "}
+        <a
+          href="https://otterq.com/"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-primary hover:underline"
+        >
+          OtterQ
+        </a>
       </footer>
     </div>
   );

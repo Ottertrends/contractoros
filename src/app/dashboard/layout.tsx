@@ -33,7 +33,7 @@ export default async function DashboardLayout({
     full_name: (user.user_metadata?.full_name as string | undefined) ?? "User",
     company_name:
       (user.user_metadata?.company_name as string | undefined) ??
-      "ContractorOS",
+      "WorkSupp",
     email: user.email ?? "",
     phone: (user.user_metadata?.phone as string | undefined) ?? "",
     quotes_per_month: null,

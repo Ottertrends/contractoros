@@ -72,9 +72,9 @@ async function loadImageBase64(url: string): Promise<{ data: string; format: "PN
 }
 
 /**
- * Fetch a logo, resize it to fit within maxPtW × maxPtH points (maintaining aspect ratio),
+ * Fetch a logo, resize it to fill maxPtW × maxPtH points (maintaining aspect ratio),
  * and return the resized base64 data + actual pt dimensions for correct PDF placement.
- * Renders at 2× pixel density for crisp output.
+ * Renders at 3× pixel density with high-quality smoothing for crisp print output.
  */
 async function resizeLogoForPdf(
   url: string,
@@ -84,31 +84,42 @@ async function resizeLogoForPdf(
   const raw = await loadImageBase64(url);
   if (!raw) return null;
 
-  const scale = 2; // 2× for sharp rendering on HiDPI / print
-  const maxPxW = maxPtW * scale;
-  const maxPxH = maxPtH * scale;
+  const scale = 3; // 3× density — sharp on HiDPI screens and in print
 
   return new Promise((resolve) => {
     const img = new Image();
     img.onload = () => {
-      // Scale down only if larger than the max box; never upscale
-      const ratio = Math.min(maxPxW / img.naturalWidth, maxPxH / img.naturalHeight, 1);
-      const pxW = Math.round(img.naturalWidth * ratio);
-      const pxH = Math.round(img.naturalHeight * ratio);
+      // Compute pt display size that preserves aspect ratio within the max box
+      const ar = img.naturalWidth / img.naturalHeight;
+      let ptW: number, ptH: number;
+      if (ar >= maxPtW / maxPtH) {
+        ptW = maxPtW;
+        ptH = maxPtW / ar;
+      } else {
+        ptH = maxPtH;
+        ptW = maxPtH * ar;
+      }
+
+      const pxW = Math.round(ptW * scale);
+      const pxH = Math.round(ptH * scale);
 
       const canvas = document.createElement("canvas");
       canvas.width = pxW;
       canvas.height = pxH;
       const ctx = canvas.getContext("2d");
       if (!ctx) {
-        // Canvas unavailable — return original image, clamped to max box
-        resolve({ ...raw, ptW: maxPtW, ptH: maxPtH });
+        resolve({ ...raw, ptW, ptH });
         return;
       }
+
+      // High-quality downscaling / upscaling
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = "high";
       ctx.drawImage(img, 0, 0, pxW, pxH);
+
       const mime = raw.format === "PNG" ? "image/png" : "image/jpeg";
-      const data = canvas.toDataURL(mime, 0.92);
-      resolve({ data, format: raw.format, ptW: pxW / scale, ptH: pxH / scale });
+      const data = canvas.toDataURL(mime, 0.95);
+      resolve({ data, format: raw.format, ptW, ptH });
     };
     img.onerror = () => resolve({ ...raw, ptW: maxPtW, ptH: maxPtH });
     img.src = raw.data;
@@ -138,7 +149,7 @@ async function generatePDF({ invoice, project, profile, design, items }: Props) 
     const img = await resizeLogoForPdf(design.logoUrl, 120, 50);
     if (img) {
       try {
-        doc.addImage(img.data, img.format, margin, leftY, img.ptW, img.ptH, undefined, "FAST");
+        doc.addImage(img.data, img.format, margin, leftY, img.ptW, img.ptH, undefined, "SLOW");
         leftY += img.ptH + 14; // 14 pt gap between logo bottom and company name
       } catch { /* skip bad image */ }
     }

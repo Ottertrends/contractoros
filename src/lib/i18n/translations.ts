@@ -4,7 +4,7 @@ export const translations = {
   en: {
     // ── Navigation ──────────────────────────────────────────────────────────
     nav: {
-      brand: "ContractorOS",
+      brand: "WorkSupp",
       dashboard: "Dashboard",
       projects: "Projects",
       messages: "Messages",
@@ -24,7 +24,7 @@ export const translations = {
     },
     // ── Auth ────────────────────────────────────────────────────────────────
     auth: {
-      loginTitle: "Log in to ContractorOS",
+      loginTitle: "Log in to WorkSupp",
       loginSubtitle: "Please log in to access your dashboard.",
       email: "Email",
       password: "Password",
@@ -32,7 +32,7 @@ export const translations = {
       loggingIn: "Logging in…",
       noAccount: "New here?",
       createAccount: "Create an account",
-      signupTitle: "Create your ContractorOS account",
+      signupTitle: "Create your WorkSupp account",
       fullName: "Full name",
       companyName: "Company name",
       phone: "Phone",
@@ -215,7 +215,7 @@ export const translations = {
       deleteAccount: "Delete your account permanently. This cannot be undone.",
       deleteAccountBtn: "Delete account",
       deleteConfirmTitle: "Delete account?",
-      deleteConfirmDesc: "This will permanently delete your ContractorOS account and all associated data.",
+      deleteConfirmDesc: "This will permanently delete your WorkSupp account and all associated data.",
       cancel: "Cancel",
       delete: "Delete",
       deleting: "Deleting…",
@@ -263,7 +263,7 @@ export const translations = {
   // ═══════════════════════════════════════════════════════════════════════════
   es: {
     nav: {
-      brand: "ContractorOS",
+      brand: "WorkSupp",
       dashboard: "Panel",
       projects: "Proyectos",
       messages: "Mensajes",
@@ -281,7 +281,7 @@ export const translations = {
       userMenu: "Menú de usuario",
     },
     auth: {
-      loginTitle: "Iniciar sesión en ContractorOS",
+      loginTitle: "Iniciar sesión en WorkSupp",
       loginSubtitle: "Por favor inicia sesión para acceder a tu panel.",
       email: "Correo electrónico",
       password: "Contraseña",
@@ -289,7 +289,7 @@ export const translations = {
       loggingIn: "Iniciando sesión…",
       noAccount: "¿Eres nuevo?",
       createAccount: "Crear una cuenta",
-      signupTitle: "Crea tu cuenta de ContractorOS",
+      signupTitle: "Crea tu cuenta de WorkSupp",
       fullName: "Nombre completo",
       companyName: "Nombre de la empresa",
       phone: "Teléfono",
@@ -464,7 +464,7 @@ export const translations = {
       deleteAccount: "Elimina tu cuenta permanentemente. Esto no se puede deshacer.",
       deleteAccountBtn: "Eliminar cuenta",
       deleteConfirmTitle: "¿Eliminar cuenta?",
-      deleteConfirmDesc: "Esto eliminará permanentemente tu cuenta de ContractorOS y todos los datos asociados.",
+      deleteConfirmDesc: "Esto eliminará permanentemente tu cuenta de WorkSupp y todos los datos asociados.",
       cancel: "Cancelar",
       delete: "Eliminar",
       deleting: "Eliminando…",
