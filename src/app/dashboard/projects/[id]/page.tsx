@@ -31,7 +31,7 @@ function fmt(n: number) {
 export default async function ProjectDetailPage({
   params,
 }: {
-  params: { id: string };
+  params: Promise<{ id: string }>;
 }) {
   const supabase = await createSupabaseServerClient();
   const {
@@ -44,7 +44,7 @@ export default async function ProjectDetailPage({
   const tp = t.projects;
   const ti = t.invoices;
 
-  const projectId = params.id;
+  const { id: projectId } = await params;
 
   const { data: project, error: projectError } = await supabase
     .from("projects")

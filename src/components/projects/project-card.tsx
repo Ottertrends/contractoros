@@ -46,6 +46,9 @@ export function ProjectCard({ project, invoiceStatus }: { project: Project; invo
   const lastUpdated = project.updated_at
     ? new Date(project.updated_at).toLocaleDateString()
     : "";
+  const dateAdded = project.created_at
+    ? new Date(project.created_at).toLocaleDateString()
+    : "";
 
   const locationText = project.city
     ? `${project.city}${project.state ? ", " + project.state : ""}`
@@ -112,10 +115,14 @@ export function ProjectCard({ project, invoiceStatus }: { project: Project; invo
               )}
               <div className="text-right">
                 <div className="text-xs text-slate-500">{tp.lastUpdated}</div>
-                <div className="text-sm text-slate-700 dark:text-slate-200">
-                  {lastUpdated}
-                </div>
+                <div className="text-sm text-slate-700 dark:text-slate-200">{lastUpdated}</div>
               </div>
+              {dateAdded && (
+                <div className="text-right">
+                  <div className="text-xs text-slate-400">Added</div>
+                  <div className="text-xs text-slate-500">{dateAdded}</div>
+                </div>
+              )}
             </div>
           </div>
         </div>

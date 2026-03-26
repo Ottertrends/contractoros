@@ -1,0 +1,66 @@
+import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+
+export async function PUT(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const { id } = await params;
+  const supabase = await createSupabaseServerClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return new Response("Unauthorized", { status: 401 });
+
+  const body = await request.json();
+  const { item_name, description, unit, unit_price, supplier, category } = body;
+
+  if (!item_name || item_name.trim() === "") {
+    return new Response("item_name is required", { status: 400 });
+  }
+  if (unit_price === undefined || unit_price === null || unit_price === "") {
+    return new Response("unit_price is required", { status: 400 });
+  }
+
+  const admin = createSupabaseAdminClient();
+  const { data, error } = await admin
+    .from("price_book")
+    .update({
+      item_name: item_name.trim(),
+      description: description?.trim() || null,
+      unit: unit?.trim() || null,
+      unit_price: String(unit_price),
+      supplier: supplier?.trim() || null,
+      category: category?.trim() || null,
+    })
+    .eq("id", id)
+    .eq("user_id", user.id)
+    .select()
+    .single();
+
+  if (error) return new Response(error.message, { status: 500 });
+  if (!data) return new Response("Not found", { status: 404 });
+  return Response.json(data);
+}
+
+export async function DELETE(
+  _request: Request,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const { id } = await params;
+  const supabase = await createSupabaseServerClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return new Response("Unauthorized", { status: 401 });
+
+  const admin = createSupabaseAdminClient();
+  const { error } = await admin
+    .from("price_book")
+    .delete()
+    .eq("id", id)
+    .eq("user_id", user.id);
+
+  if (error) return new Response(error.message, { status: 500 });
+  return new Response(null, { status: 204 });
+}

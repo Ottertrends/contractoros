@@ -1,17 +1,21 @@
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { PriceBookClient } from "@/components/price-book/price-book-client";
+import type { PriceBookItem } from "@/lib/types/database";
 
-export default function PriceBookPlaceholderPage() {
-  return (
-    <div className="flex flex-col gap-6">
-      <Card>
-        <CardHeader>
-          <CardTitle>Price Book</CardTitle>
-        </CardHeader>
-        <CardContent className="text-sm text-slate-600">
-          Phase 4 will add the materials/pricing price book CRUD.
-        </CardContent>
-      </Card>
-    </div>
-  );
+export default async function PriceBookPage() {
+  const supabase = await createSupabaseServerClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return null;
+
+  const { data } = await supabase
+    .from("price_book")
+    .select("*")
+    .eq("user_id", user.id)
+    .order("item_name");
+
+  const items = (data ?? []) as PriceBookItem[];
+
+  return <PriceBookClient initialItems={items} />;
 }
-

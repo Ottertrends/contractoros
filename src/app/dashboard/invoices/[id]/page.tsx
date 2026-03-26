@@ -9,7 +9,7 @@ import type { Invoice, InvoiceItem, PriceBookItem, Project } from "@/lib/types/d
 export default async function InvoiceDetailPage({
   params,
 }: {
-  params: { id: string };
+  params: Promise<{ id: string }>;
 }) {
   const supabase = await createSupabaseServerClient();
   const {
@@ -21,7 +21,7 @@ export default async function InvoiceDetailPage({
   const t = getT(lang);
   const ti = t.invoices;
 
-  const { id } = params;
+  const { id } = await params;
 
   const [
     { data: invoiceRaw, error: invErr },

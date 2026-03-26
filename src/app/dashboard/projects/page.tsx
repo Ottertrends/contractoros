@@ -22,6 +22,12 @@ export default async function ProjectsPage({
     typeof searchParams?.page === "string"
       ? Math.max(1, parseInt(searchParams.page, 10) || 1)
       : 1;
+  const sort =
+    typeof searchParams?.sort === "string" && searchParams.sort === "created"
+      ? "created"
+      : "updated";
+  const sortField: "created_at" | "updated_at" =
+    sort === "created" ? "created_at" : "updated_at";
 
   const supabase = await createSupabaseServerClient();
   const {
@@ -35,13 +41,13 @@ export default async function ProjectsPage({
 
   const pageSize = 9;
   const from = (page - 1) * pageSize;
-  const to = from + pageSize; // request one extra for "hasNext"
+  const to = from + pageSize;
 
   let query = supabase
     .from("projects")
     .select("*")
     .eq("user_id", user.id)
-    .order("updated_at", { ascending: false })
+    .order(sortField, { ascending: false })
     .range(from, to);
 
   if (q.trim().length > 0) {
@@ -53,7 +59,7 @@ export default async function ProjectsPage({
       .or(
         `name.ilike.${pattern},client_name.ilike.${pattern},location.ilike.${pattern},notes.ilike.${pattern}`,
       )
-      .order("updated_at", { ascending: false })
+      .order(sortField, { ascending: false })
       .range(from, to);
   }
 
@@ -65,9 +71,7 @@ export default async function ProjectsPage({
   if (error) {
     return (
       <div className="p-4">
-        <div className="text-red-600 font-medium">
-          {t.dashboard.failedToLoad}
-        </div>
+        <div className="text-red-600 font-medium">{t.dashboard.failedToLoad}</div>
       </div>
     );
   }
@@ -76,7 +80,6 @@ export default async function ProjectsPage({
   const projects = all.slice(0, pageSize);
   const hasNext = all.length > pageSize;
 
-  // Fetch latest invoice status per project for the current page
   const projectIds = projects.map((p) => p.id);
   const invoiceStatusMap: Record<string, InvoiceStatus> = {};
   if (projectIds.length > 0) {
@@ -96,6 +99,7 @@ export default async function ProjectsPage({
   const params = new URLSearchParams();
   if (q.trim()) params.set("q", q.trim());
   if (status !== "all") params.set("status", status);
+  if (sort !== "updated") params.set("sort", sort);
 
   return (
     <div className="flex flex-col gap-6">
@@ -105,20 +109,39 @@ export default async function ProjectsPage({
             <div className="text-lg font-semibold text-slate-900 dark:text-slate-50">
               {tp.title}
             </div>
-            <div className="text-sm text-slate-500">
-              {tp.subtitle}
-            </div>
+            <div className="text-sm text-slate-500">{tp.subtitle}</div>
           </div>
-
-          <Link href="/dashboard/projects/new">
-            <Button>{tp.newProject}</Button>
-          </Link>
+          <div className="flex items-center gap-2">
+            {/* Sort toggle */}
+            <div className="flex rounded-lg border border-slate-200 overflow-hidden text-sm dark:border-slate-700">
+              <Link
+                href={`/dashboard/projects?${new URLSearchParams({ ...(q ? { q } : {}), ...(status !== "all" ? { status } : {}) }).toString()}`}
+                className={`px-3 py-1.5 font-medium transition-colors ${
+                  sort === "updated"
+                    ? "bg-primary text-white"
+                    : "text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-800"
+                }`}
+              >
+                Recently Updated
+              </Link>
+              <Link
+                href={`/dashboard/projects?${new URLSearchParams({ ...(q ? { q } : {}), ...(status !== "all" ? { status } : {}), sort: "created" }).toString()}`}
+                className={`px-3 py-1.5 font-medium border-l border-slate-200 transition-colors dark:border-slate-700 ${
+                  sort === "created"
+                    ? "bg-primary text-white"
+                    : "text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-800"
+                }`}
+              >
+                Recently Added
+              </Link>
+            </div>
+            <Link href="/dashboard/projects/new">
+              <Button>{tp.newProject}</Button>
+            </Link>
+          </div>
         </div>
 
-        <ProjectsToolbar
-          initialQuery={q}
-          initialStatus={status}
-        />
+        <ProjectsToolbar initialQuery={q} initialStatus={status} />
       </div>
 
       {projects.length === 0 ? (
@@ -144,7 +167,9 @@ export default async function ProjectsPage({
           >
             {tp.prev}
           </Link>
-          <div className="text-sm text-slate-500">{tp.page} {page}</div>
+          <div className="text-sm text-slate-500">
+            {tp.page} {page}
+          </div>
           <Link
             href={
               hasNext
@@ -170,9 +195,7 @@ function EmptyState({ noProjects, adjustFilter }: { noProjects: string; adjustFi
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-8 text-center dark:border-slate-800 dark:bg-slate-950">
       <div className="text-slate-900 dark:text-slate-50 font-semibold">{noProjects}</div>
-      <div className="mt-2 text-sm text-slate-600 dark:text-slate-400">
-        {adjustFilter}
-      </div>
+      <div className="mt-2 text-sm text-slate-600 dark:text-slate-400">{adjustFilter}</div>
     </div>
   );
 }
