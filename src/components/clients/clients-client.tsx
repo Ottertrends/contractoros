@@ -12,12 +12,18 @@ interface Props {
 const EMPTY = {
   client_name: "",
   address: "",
+  city: "",
+  state: "",
+  zip: "",
   phone: "",
   email: "",
   notes: "",
 };
 
 type EditingRow = typeof EMPTY & { id: string | null };
+
+const inputCls =
+  "flex h-8 w-full rounded border border-slate-200 bg-white px-2 py-1 text-sm placeholder:text-slate-400 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100";
 
 export function ClientsClient({ initialClients }: Props) {
   const [clients, setClients] = useState<Client[]>(initialClients);
@@ -36,6 +42,8 @@ export function ClientsClient({ initialClients }: Props) {
       (c) =>
         c.client_name.toLowerCase().includes(q) ||
         (c.address ?? "").toLowerCase().includes(q) ||
+        (c.city ?? "").toLowerCase().includes(q) ||
+        (c.state ?? "").toLowerCase().includes(q) ||
         (c.phone ?? "").toLowerCase().includes(q) ||
         (c.email ?? "").toLowerCase().includes(q),
     );
@@ -53,6 +61,9 @@ export function ClientsClient({ initialClients }: Props) {
       id: c.id,
       client_name: c.client_name,
       address: c.address ?? "",
+      city: c.city ?? "",
+      state: c.state ?? "",
+      zip: c.zip ?? "",
       phone: c.phone ?? "",
       email: c.email ?? "",
       notes: c.notes ?? "",
@@ -72,6 +83,9 @@ export function ClientsClient({ initialClients }: Props) {
       const payload = {
         client_name: form.client_name.trim(),
         address: form.address.trim() || null,
+        city: form.city.trim() || null,
+        state: form.state.trim() || null,
+        zip: form.zip.trim() || null,
         phone: form.phone.trim() || null,
         email: form.email.trim() || null,
         notes: form.notes.trim() || null,
@@ -114,8 +128,10 @@ export function ClientsClient({ initialClients }: Props) {
     }
   }
 
-  const inputCls =
-    "flex h-8 w-full rounded border border-slate-200 bg-white px-2 py-1 text-sm placeholder:text-slate-400 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100";
+  function fullAddress(c: Client) {
+    const parts = [c.address, c.city, c.state ? `${c.state}${c.zip ? " " + c.zip : ""}` : c.zip].filter(Boolean);
+    return parts.join(", ");
+  }
 
   return (
     <div className="flex flex-col gap-5">
@@ -140,7 +156,7 @@ export function ClientsClient({ initialClients }: Props) {
               {editingId === "new" ? "New Client" : "Edit Client"}
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="flex flex-col gap-1">
+              <div className="flex flex-col gap-1 sm:col-span-2">
                 <label className="text-xs font-medium text-slate-600 dark:text-slate-400">
                   Client Name <span className="text-red-500">*</span>
                 </label>
@@ -151,14 +167,43 @@ export function ClientsClient({ initialClients }: Props) {
                   placeholder="e.g. John Smith, ABC Corp"
                 />
               </div>
-              <div className="flex flex-col gap-1">
-                <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Address</label>
+              <div className="flex flex-col gap-1 sm:col-span-2">
+                <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Street Address</label>
                 <input
                   className={inputCls}
                   value={form.address}
                   onChange={(e) => setForm((f) => ({ ...f, address: e.target.value }))}
-                  placeholder="Street address"
+                  placeholder="123 Main Street"
                 />
+              </div>
+              <div className="flex flex-col gap-1">
+                <label className="text-xs font-medium text-slate-600 dark:text-slate-400">City</label>
+                <input
+                  className={inputCls}
+                  value={form.city}
+                  onChange={(e) => setForm((f) => ({ ...f, city: e.target.value }))}
+                  placeholder="Austin"
+                />
+              </div>
+              <div className="flex gap-2">
+                <div className="flex flex-col gap-1 flex-1">
+                  <label className="text-xs font-medium text-slate-600 dark:text-slate-400">State</label>
+                  <input
+                    className={inputCls}
+                    value={form.state}
+                    onChange={(e) => setForm((f) => ({ ...f, state: e.target.value }))}
+                    placeholder="TX"
+                  />
+                </div>
+                <div className="flex flex-col gap-1 flex-1">
+                  <label className="text-xs font-medium text-slate-600 dark:text-slate-400">ZIP</label>
+                  <input
+                    className={inputCls}
+                    value={form.zip}
+                    onChange={(e) => setForm((f) => ({ ...f, zip: e.target.value }))}
+                    placeholder="78701"
+                  />
+                </div>
               </div>
               <div className="flex flex-col gap-1">
                 <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Phone</label>
@@ -220,18 +265,21 @@ export function ClientsClient({ initialClients }: Props) {
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-slate-50 dark:bg-slate-900 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 border-b border-slate-200 dark:border-slate-800">
-                  <th className="px-4 py-3 min-w-[160px]">Client Name</th>
-                  <th className="px-4 py-3 min-w-[200px]">Address</th>
-                  <th className="px-4 py-3 min-w-[130px]">Phone</th>
-                  <th className="px-4 py-3 min-w-[180px]">Email</th>
-                  <th className="px-4 py-3 min-w-[180px]">Notes</th>
+                  <th className="px-4 py-3 min-w-[150px]">Client Name</th>
+                  <th className="px-4 py-3 min-w-[160px]">Address</th>
+                  <th className="px-4 py-3 min-w-[100px]">City</th>
+                  <th className="px-4 py-3 w-16">State</th>
+                  <th className="px-4 py-3 w-20">ZIP</th>
+                  <th className="px-4 py-3 min-w-[120px]">Phone</th>
+                  <th className="px-4 py-3 min-w-[160px]">Email</th>
+                  <th className="px-4 py-3 min-w-[140px]">Notes</th>
                   <th className="px-4 py-3 w-24 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                 {filtered.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="px-4 py-10 text-center text-sm text-slate-400">
+                    <td colSpan={9} className="px-4 py-10 text-center text-sm text-slate-400">
                       {clients.length === 0
                         ? "No clients yet. Add your first client above."
                         : "No clients match your search."}
@@ -246,22 +294,21 @@ export function ClientsClient({ initialClients }: Props) {
                       <td className="px-4 py-3 font-medium text-slate-900 dark:text-slate-50">
                         {c.client_name}
                       </td>
-                      <td className="px-4 py-3 text-slate-600 dark:text-slate-300 max-w-[200px]">
+                      <td className="px-4 py-3 text-slate-500 text-xs max-w-[160px]">
                         <span className="truncate block">{c.address ?? "—"}</span>
                       </td>
-                      <td className="px-4 py-3 text-slate-500 font-mono text-xs">
-                        {c.phone ?? "—"}
-                      </td>
+                      <td className="px-4 py-3 text-slate-500 text-xs">{c.city ?? "—"}</td>
+                      <td className="px-4 py-3 text-slate-500 text-xs">{c.state ?? "—"}</td>
+                      <td className="px-4 py-3 text-slate-500 font-mono text-xs">{c.zip ?? "—"}</td>
+                      <td className="px-4 py-3 text-slate-500 font-mono text-xs">{c.phone ?? "—"}</td>
                       <td className="px-4 py-3 text-slate-500 text-xs">
                         {c.email ? (
                           <a href={`mailto:${c.email}`} className="hover:text-primary hover:underline">
                             {c.email}
                           </a>
-                        ) : (
-                          "—"
-                        )}
+                        ) : "—"}
                       </td>
-                      <td className="px-4 py-3 text-slate-400 text-xs max-w-[180px]">
+                      <td className="px-4 py-3 text-slate-400 text-xs max-w-[140px]">
                         <span className="truncate block">{c.notes ?? "—"}</span>
                       </td>
                       <td className="px-4 py-3 text-right">
@@ -307,6 +354,9 @@ export function ClientsClient({ initialClients }: Props) {
           </div>
         </CardContent>
       </Card>
+
+      {/* helper: fullAddress not shown in table but used elsewhere */}
+      {false && filtered.map((c) => fullAddress(c))}
     </div>
   );
 }

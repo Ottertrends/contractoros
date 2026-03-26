@@ -23,7 +23,7 @@ export async function POST(request: Request) {
   if (!user) return new Response("Unauthorized", { status: 401 });
 
   const body = await request.json();
-  const { client_name, address, phone, email, notes } = body;
+  const { client_name, address, city, state, zip, phone, email, notes } = body;
 
   if (!client_name?.trim()) return new Response("client_name is required", { status: 400 });
 
@@ -34,6 +34,9 @@ export async function POST(request: Request) {
       user_id: user.id,
       client_name: client_name.trim(),
       address: address?.trim() || null,
+      city: city?.trim() || null,
+      state: state?.trim() || null,
+      zip: zip?.trim() || null,
       phone: phone?.trim() || null,
       email: email?.trim() || null,
       notes: notes?.trim() || null,

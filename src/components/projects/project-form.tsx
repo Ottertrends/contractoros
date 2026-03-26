@@ -165,6 +165,9 @@ export function ProjectForm({
                   user_id: userId,
                   client_name: clientName,
                   address: clientAddress ?? null,
+                  city: normalizeNullable(values.city),
+                  state: normalizeNullable(values.state),
+                  zip: normalizeNullable(values.zip),
                 });
               }
             } catch { /* silent — don't block project creation */ }
@@ -249,15 +252,19 @@ export function ProjectForm({
           </div>
 
           <div className="flex flex-col gap-2">
-            <div className="flex items-center justify-between">
-              <Label htmlFor="client_name">{tp.clientName}</Label>
+            <Label htmlFor="client_name">{tp.clientName}</Label>
+            {/* Client name input + inline "Select" button */}
+            <div className="relative flex gap-2 items-start">
+              <div className="flex-1">
+                <Input id="client_name" {...register("client_name")} placeholder="Client name" />
+              </div>
               {clients.length > 0 && (
                 <button
                   type="button"
                   onClick={() => setClientPickerOpen((o) => !o)}
-                  className="text-xs text-primary hover:underline"
+                  className="shrink-0 h-10 px-3 rounded-md border border-slate-200 dark:border-slate-700 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 whitespace-nowrap transition-colors"
                 >
-                  {clientPickerOpen ? "Close" : "Select saved client →"}
+                  {clientPickerOpen ? "✕ Close" : "📋 Saved clients"}
                 </button>
               )}
             </div>
@@ -284,36 +291,22 @@ export function ProjectForm({
                         onClick={() => {
                           setValue("client_name", c.client_name, { shouldDirty: true });
                           if (c.address) setValue("address", c.address, { shouldDirty: true });
-                          // fill city / state / zip if they're encoded in the address as "City, ST 12345"
-                          // attempt simple parse: last word = zip, second-last = state, rest = city
-                          if (c.address) {
-                            const parts = c.address.split(",").map(s => s.trim());
-                            if (parts.length >= 2) {
-                              const lastPart = parts[parts.length - 1];
-                              const tokens = lastPart.trim().split(/\s+/);
-                              if (tokens.length >= 2) {
-                                const zip = tokens[tokens.length - 1];
-                                const state = tokens[tokens.length - 2];
-                                const city = parts.slice(0, parts.length - 1).join(", ");
-                                if (/^\d{4,6}$/.test(zip)) {
-                                  setValue("zip", zip, { shouldDirty: true });
-                                  setValue("state", state, { shouldDirty: true });
-                                  setValue("city", city, { shouldDirty: true });
-                                }
-                              }
-                            }
-                          }
+                          if (c.city) setValue("city", c.city, { shouldDirty: true });
+                          if (c.state) setValue("state", c.state, { shouldDirty: true });
+                          if (c.zip) setValue("zip", c.zip, { shouldDirty: true });
                           setClientPickerOpen(false);
                           setClientSearch("");
                         }}
                         className="w-full flex items-start gap-3 px-3 py-2.5 text-left hover:bg-slate-50 dark:hover:bg-slate-900 border-b border-slate-50 dark:border-slate-800 last:border-0"
                       >
-                        <div className="min-w-0">
+                        <div className="min-w-0 flex-1">
                           <div className="text-sm font-medium text-slate-900 dark:text-slate-50">
                             {c.client_name}
                           </div>
-                          {c.address && (
-                            <div className="text-xs text-slate-400 truncate">{c.address}</div>
+                          {(c.address || c.city) && (
+                            <div className="text-xs text-slate-400 truncate">
+                              {[c.address, c.city, c.state, c.zip].filter(Boolean).join(", ")}
+                            </div>
                           )}
                         </div>
                         {c.phone && (
@@ -325,8 +318,6 @@ export function ProjectForm({
                 </div>
               </div>
             )}
-
-            <Input id="client_name" {...register("client_name")} />
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

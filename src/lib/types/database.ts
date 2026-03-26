@@ -33,6 +33,9 @@ export interface Client {
   user_id: string;
   client_name: string;
   address: string | null;
+  city: string | null;
+  state: string | null;
+  zip: string | null;
   phone: string | null;
   email: string | null;
   notes: string | null;

@@ -416,25 +416,25 @@ export function DraftInvoiceCard({ projectName, invoice, items, priceBook, proje
 
           {/* Line items */}
           <div className="flex flex-col gap-2">
-            <div className="flex items-center justify-between">
-              <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                {t.projects.lineItems}
-              </div>
-              {priceBook.length > 0 && (
-                <button
-                  type="button"
-                  onClick={() => setPbOpen(true)}
-                  className="flex items-center gap-1.5 text-xs font-medium text-primary hover:underline"
-                >
-                  <BookOpen className="w-3.5 h-3.5" />
-                  Add from Price Book
-                </button>
-              )}
+            <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              {t.projects.lineItems}
             </div>
 
             {/* Column headers */}
             <div className="hidden sm:grid sm:grid-cols-[3fr_1fr_1.2fr_1fr_auto] gap-2 text-xs text-slate-400 px-1">
-              <span>Product / Service</span>
+              <span className="flex items-center gap-2">
+                Product / Service
+                {priceBook.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setPbOpen(true)}
+                    className="flex items-center gap-1 text-xs font-medium text-primary hover:underline normal-case tracking-normal"
+                  >
+                    <BookOpen className="w-3 h-3" />
+                    Add from Price Book
+                  </button>
+                )}
+              </span>
               <span>{t.projects.qty}</span>
               <span>{t.projects.unitPrice}</span>
               <span className="text-right">{ti.lineTotal}</span>

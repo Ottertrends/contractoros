@@ -86,46 +86,40 @@ async function generatePDF({ invoice, project, profile, design, items }: Props) 
   // Set base font
   doc.setFont(bodyFont, "normal");
 
-  // ── Logo ───────────────────────────────────────────────────────────────────
-  let logoHeight = 0;
+  // ── LEFT COLUMN: Logo → Company Name → Address → Email | Phone ─────────────
+  let leftY = 36;
+
+  // Logo (top-left)
   if (design?.logoUrl) {
     const img = await loadImageBase64(design.logoUrl);
     if (img) {
-      const maxW = 120;
-      const maxH = 48;
-      // jsPDF getImageProperties requires the image to be added first via addImage
       try {
-        // Estimate aspect — place at max dimensions and let jsPDF clip
-        doc.addImage(img.data, img.format, margin, 30, maxW, maxH, undefined, "FAST");
-        logoHeight = maxH + 8;
-      } catch {
-        // Logo failed to load — skip
-      }
+        doc.addImage(img.data, img.format, margin, leftY, 120, 44, undefined, "FAST");
+        leftY += 52;
+      } catch { /* skip bad image */ }
     }
   }
 
-  const headerTop = 30 + logoHeight;
-
-  // ── Company info ──────────────────────────────────────────────────────────
-  doc.setFontSize(18);
+  // Company name
+  doc.setFontSize(14);
   doc.setFont(titleFont, "bold");
   doc.setTextColor(pr, pg, pb);
-  if (!design?.logoUrl) {
-    doc.text(profile?.company_name ?? "Your Company", margin, headerTop + 24);
-  }
+  doc.text(profile?.company_name ?? "Your Company", margin, leftY);
+  leftY += 14;
 
+  // Address lines (if profile had address — for now just show contact)
   doc.setFontSize(9);
   doc.setFont(bodyFont, "normal");
-  doc.setTextColor(100);
-  const contactLine = [profile?.phone, profile?.email].filter(Boolean).join("  |  ");
-  const contactY = design?.logoUrl ? headerTop + 8 : headerTop + 38;
-  if (contactLine) doc.text(contactLine, margin, contactY);
+  doc.setTextColor(90);
+  if (profile?.email) { doc.text(profile.email, margin, leftY); leftY += 11; }
+  if (profile?.phone) { doc.text(profile.phone, margin, leftY); leftY += 11; }
 
-  // ── INVOICE label (right side) ────────────────────────────────────────────
-  doc.setFontSize(22);
+  // ── RIGHT COLUMN: INVOICE → # → Date ────────────────────────────────────
+  // "INVOICE" large heading
+  doc.setFontSize(26);
   doc.setFont(titleFont, "bold");
   doc.setTextColor(pr, pg, pb);
-  doc.text("INVOICE", pageWidth - margin, headerTop + 24, { align: "right" });
+  doc.text("INVOICE", pageWidth - margin, 52, { align: "right" });
 
   doc.setFontSize(9);
   doc.setFont(bodyFont, "normal");
@@ -133,12 +127,13 @@ async function generatePDF({ invoice, project, profile, design, items }: Props) 
   const dateStr = invoice.created_at
     ? new Date(invoice.created_at).toLocaleDateString("en-US")
     : new Date().toLocaleDateString("en-US");
-  doc.text(`Invoice #: ${invoice.invoice_number ?? "—"}`, pageWidth - margin, headerTop + 38, { align: "right" });
-  doc.text(`Date: ${dateStr}`, pageWidth - margin, headerTop + 50, { align: "right" });
-  doc.text(`Status: ${invoice.status.toUpperCase()}`, pageWidth - margin, headerTop + 62, { align: "right" });
+  let rightY = 68;
+  doc.text(`Invoice #: ${invoice.invoice_number ?? "—"}`, pageWidth - margin, rightY, { align: "right" });
+  rightY += 12;
+  doc.text(`Date: ${dateStr}`, pageWidth - margin, rightY, { align: "right" });
 
   // ── Divider ───────────────────────────────────────────────────────────────
-  const dividerY = headerTop + 72;
+  const dividerY = Math.max(leftY, rightY) + 14;
   doc.setDrawColor(pr, pg, pb);
   doc.setLineWidth(1.5);
   doc.line(margin, dividerY, pageWidth - margin, dividerY);
@@ -155,8 +150,8 @@ async function generatePDF({ invoice, project, profile, design, items }: Props) 
   let y = dividerY + 28;
   if (project?.client_name) { doc.text(project.client_name, margin, y); y += 12; }
   if (project?.address) { doc.text(project.address, margin, y); y += 12; }
-  const cityLine = [project?.city, project?.state, project?.zip].filter(Boolean).join(", ");
-  if (cityLine) { doc.text(cityLine, margin, y); y += 12; }
+  const cityParts = [project?.city, project?.state, project?.zip].filter(Boolean);
+  if (cityParts.length) { doc.text(cityParts.join(", "), margin, y); y += 12; }
   if (project?.name) {
     y += 2;
     doc.setFont(titleFont, "bold");
