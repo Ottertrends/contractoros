@@ -60,52 +60,40 @@ export function MobileNav() {
   // the TopBar's backdrop-filter stacking context (iOS Safari fix)
   const overlay = (
     <>
-      {/* Full-screen opaque backdrop */}
+      {/* Full-screen backdrop */}
       <div
-        className={`fixed inset-0 md:hidden transition-opacity duration-200 ${
+        className={`fixed inset-0 md:hidden transition-opacity duration-200 bg-black/65 ${
           open ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
         }`}
-        style={{ zIndex: 9998, backgroundColor: "rgba(0,0,0,0.65)" }}
+        style={{ zIndex: 9998 }}
         onClick={() => setOpen(false)}
         aria-hidden="true"
       />
 
-      {/* Slide-in drawer — solid, no transparency */}
+      {/* Slide-in drawer */}
       <div
-        className={`fixed inset-y-0 left-0 md:hidden flex flex-col transform transition-transform duration-200 ease-in-out ${
+        className={`fixed inset-y-0 left-0 md:hidden flex flex-col w-80 transform transition-transform duration-200 ease-in-out bg-white dark:bg-slate-950 border-r border-slate-200 dark:border-slate-800 shadow-2xl ${
           open ? "translate-x-0" : "-translate-x-full"
         }`}
-        style={{
-          zIndex: 9999,
-          width: "320px",
-          backgroundColor: "#ffffff",
-          borderRight: "1px solid #e2e8f0",
-          boxShadow: "4px 0 24px 0 rgba(0,0,0,0.18)",
-        }}
+        style={{ zIndex: 9999 }}
       >
         {/* Header */}
-        <div
-          style={{ backgroundColor: "#ffffff", borderBottom: "1px solid #e2e8f0" }}
-          className="flex items-center justify-between px-5 py-4 shrink-0"
-        >
-          <div className="text-xl font-bold text-primary">
+        <div className="flex items-center justify-between px-5 py-4 shrink-0 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
+          <div className="text-xl font-bold text-primary dark:text-white">
             {t.nav.brand}
           </div>
           <button
             type="button"
             onClick={() => setOpen(false)}
             aria-label="Close navigation"
-            className="flex items-center justify-center h-9 w-9 rounded-md text-slate-500 hover:bg-slate-100 transition-colors"
+            className="flex items-center justify-center h-9 w-9 rounded-md text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
           >
             <X className="h-5 w-5" />
           </button>
         </div>
 
         {/* Nav items */}
-        <nav
-          className="flex flex-col gap-1 p-4 flex-1 overflow-y-auto"
-          style={{ backgroundColor: "#ffffff" }}
-        >
+        <nav className="flex flex-col gap-1 p-4 flex-1 overflow-y-auto bg-white dark:bg-slate-950">
           {navItems.map((item) => {
             const Icon = item.icon;
             const isActive =
@@ -117,10 +105,9 @@ export function MobileNav() {
                 href={item.href}
                 className={`flex items-center gap-4 px-4 py-3.5 rounded-xl text-base font-medium transition-colors ${
                   isActive
-                    ? "text-primary"
-                    : "text-slate-700 hover:bg-slate-100"
+                    ? "bg-primary/10 dark:bg-primary/20 text-primary dark:text-white"
+                    : "text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
                 }`}
-                style={isActive ? { backgroundColor: "rgba(var(--primary-rgb, 59,130,246),0.1)" } : {}}
               >
                 <Icon className="h-5 w-5 shrink-0" />
                 <span>{item.label}</span>

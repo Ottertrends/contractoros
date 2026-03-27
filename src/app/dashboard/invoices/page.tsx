@@ -136,8 +136,8 @@ export default async function InvoicesPage({
         <StatCard title="Sent" value={String(sentCount)} />
         <StatCard title="Paid" value={String(paidCount)} />
       </div>
-      {/* Row 2: financials */}
-      <div className="grid grid-cols-3 gap-4">
+      {/* Row 2: financials — hidden on mobile */}
+      <div className="hidden md:grid grid-cols-3 gap-4">
         <StatCard title="Total Invoiced" value={fmt(totalInvoiced)} />
         <StatCard title="Total Paid" value={fmt(totalPaid)} />
         <StatCard title="Outstanding" value={fmt(outstanding)} />
