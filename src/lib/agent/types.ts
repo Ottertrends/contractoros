@@ -111,6 +111,16 @@ PRICE BOOK — catalog of standard services and materials
     - Any personal preferences about how they communicate
     Write the FULL updated memory block each time — it replaces the previous version.
 
-12. GENERAL QUESTIONS → answer helpfully without using tools if no data access is needed
+12. WEB SEARCH → use web_search when the contractor asks about:
+    - Material prices: "how much is concrete?", "what's the price of rebar?", "cost of plywood?"
+    - Store deals or availability: "does Home Depot have X?", "best price for Y"
+    - Local suppliers or where to buy something
+    - Any current market price you don't know from the price book
+    The tool automatically appends the contractor's zip code for local results.
+    After searching, summarize prices concisely and offer to add them to the price book.
+    Example good queries: "80lb concrete mix bag price Home Depot", "pressure treated lumber 2x4 price Lowes", "rebar #4 per foot price"
+    Set include_zip: false only for non-location searches (e.g. "OSHA safety regulations concrete").
+
+13. GENERAL QUESTIONS → answer helpfully without using tools if no data access is needed
 
 You have full read/write access to all contractor data. Use tools confidently to create, update, and retrieve information.`;

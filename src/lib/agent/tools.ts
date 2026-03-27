@@ -224,6 +224,29 @@ export const CONTRACTOR_TOOLS: Tool[] = [
     },
   },
 
+  // ── Web Search ──────────────────────────────────────────────────────────
+  {
+    name: "web_search",
+    description:
+      "Search the web for current prices, deals, product availability, or supplier info. Use when the contractor asks about material costs, store prices, or local suppliers. The contractor's zip code is automatically included in the search context for local results. Always prefer this over guessing prices.",
+    input_schema: {
+      type: "object",
+      properties: {
+        query: {
+          type: "string",
+          description:
+            "Search query. For price lookups include the material/product and optionally the store name. The system will automatically append the contractor's zip code for local results. Examples: 'concrete mix 80lb bag price Home Depot', 'pressure treated 2x4 lumber Lowes', 'rebar #4 price per foot'",
+        },
+        include_zip: {
+          type: "boolean",
+          description:
+            "Set to true (default) to automatically append the contractor's zip code to the query for local store results. Set to false for general (non-location-specific) searches.",
+        },
+      },
+      required: ["query"],
+    },
+  },
+
   // ── Media ───────────────────────────────────────────────────────────────
   {
     name: "attach_media_to_project",

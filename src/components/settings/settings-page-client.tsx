@@ -60,6 +60,7 @@ export function SettingsPageClient({ userId, profile }: { userId: string; profil
   const [companyName, setCompanyName] = React.useState(profile.company_name);
   const [email, setEmail] = React.useState(profile.email);
   const [phone, setPhone] = React.useState(profile.phone);
+  const [zip, setZip] = React.useState((profile as Record<string, unknown>).zip as string ?? "");
   const [quotesPerMonth, setQuotesPerMonth] = React.useState<QuotesPerMonth>(
     (profile.quotes_per_month ?? "1-5") as QuotesPerMonth,
   );
@@ -86,6 +87,7 @@ export function SettingsPageClient({ userId, profile }: { userId: string; profil
           company_name: companyName.trim(),
           email: email.trim(),
           phone: phone.trim(),
+          zip: zip.trim() || null,
           quotes_per_month: quotesPerMonth,
           business_areas: businessAreas.length ? businessAreas : [],
           services: services.length ? services : [],
@@ -171,6 +173,20 @@ export function SettingsPageClient({ userId, profile }: { userId: string; profil
             <div className="flex flex-col gap-2">
               <Label htmlFor="phone">{ts.phone}</Label>
               <Input id="phone" value={phone} onChange={(e) => setPhone(e.target.value)} />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="zip">Business ZIP Code</Label>
+              <Input
+                id="zip"
+                value={zip}
+                onChange={(e) => setZip(e.target.value)}
+                placeholder="e.g. 78640"
+                maxLength={10}
+              />
+              <p className="text-xs text-slate-400">Used by the AI assistant to find local store prices near you.</p>
             </div>
           </div>
 

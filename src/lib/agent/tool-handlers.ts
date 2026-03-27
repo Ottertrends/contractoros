@@ -524,6 +524,77 @@ export async function executeTool(
       return jsonResult({ ok: true, message: "Memory updated successfully" });
     }
 
+    // ── Web Search ────────────────────────────────────────────────────────────
+
+    case "web_search": {
+      const rawQuery = String(input.query ?? "").trim();
+      if (!rawQuery) return jsonResult({ error: "query is required" });
+
+      const apiKey = process.env.TAVILY_API_KEY?.trim();
+      if (!apiKey) return jsonResult({ error: "Web search is not configured (missing TAVILY_API_KEY)" });
+
+      // Fetch contractor's zip code from profile for local search context
+      const includeZip = input.include_zip !== false; // default true
+      let zip: string | null = null;
+      if (includeZip) {
+        const { data: prof } = await admin
+          .from("profiles")
+          .select("zip, city, state")
+          .eq("id", userId)
+          .maybeSingle();
+        zip = prof?.zip ?? null;
+        // Build location suffix: zip preferred, fallback to city+state
+        if (!zip && prof?.city) {
+          zip = [prof.city, prof.state].filter(Boolean).join(", ");
+        }
+      }
+
+      const finalQuery = zip ? `${rawQuery} near ${zip}` : rawQuery;
+
+      try {
+        const res = await fetch("https://api.tavily.com/search", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            api_key: apiKey,
+            query: finalQuery,
+            search_depth: "basic",
+            max_results: 6,
+            include_answer: true,
+            include_raw_content: false,
+            include_images: false,
+          }),
+        });
+
+        if (!res.ok) {
+          const errText = await res.text();
+          return jsonResult({ error: `Tavily error ${res.status}: ${errText.slice(0, 200)}` });
+        }
+
+        const data = await res.json() as {
+          answer?: string;
+          results?: { title: string; url: string; content: string; score: number }[];
+        };
+
+        const results = (data.results ?? []).map((r) => ({
+          title: r.title,
+          url: r.url,
+          snippet: r.content.slice(0, 400),
+        }));
+
+        return jsonResult({
+          ok: true,
+          query: finalQuery,
+          answer: data.answer ?? null,
+          results,
+          note: zip ? `Search localized to zip/area: ${zip}` : "General search (no zip on profile)",
+        });
+      } catch (fetchErr) {
+        const msg = fetchErr instanceof Error ? fetchErr.message : String(fetchErr);
+        return jsonResult({ error: `Search failed: ${msg}` });
+      }
+    }
+
     // ── Media ─────────────────────────────────────────────────────────────────
 
     case "attach_media_to_project": {
