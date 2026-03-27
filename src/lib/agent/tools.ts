@@ -247,6 +247,24 @@ export const CONTRACTOR_TOOLS: Tool[] = [
     },
   },
 
+  // ── Delete ──────────────────────────────────────────────────────────────
+  {
+    name: "delete_project",
+    description:
+      "Permanently delete a project and all its linked invoices, line items, and media. ONLY use when the contractor explicitly confirms deletion. Always confirm project name before calling. This cannot be undone.",
+    input_schema: {
+      type: "object",
+      properties: {
+        project_id: { type: "string", description: "UUID of the project to delete" },
+        confirmed: {
+          type: "boolean",
+          description: "Must be true — confirms the contractor explicitly approved the deletion",
+        },
+      },
+      required: ["project_id", "confirmed"],
+    },
+  },
+
   // ── Media ───────────────────────────────────────────────────────────────
   {
     name: "attach_media_to_project",

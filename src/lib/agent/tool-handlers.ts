@@ -600,6 +600,50 @@ export async function executeTool(
       }
     }
 
+    // ── Delete ────────────────────────────────────────────────────────────────
+
+    case "delete_project": {
+      const projectId = String(input.project_id ?? "").trim();
+      if (!projectId) return jsonResult({ error: "project_id is required" });
+      if (!input.confirmed) return jsonResult({ error: "confirmed must be true — ask the contractor to confirm deletion first" });
+
+      // Verify the project belongs to this user
+      const { data: proj } = await admin
+        .from("projects")
+        .select("id, name")
+        .eq("id", projectId)
+        .eq("user_id", userId)
+        .maybeSingle();
+
+      if (!proj) return jsonResult({ error: "Project not found or access denied" });
+
+      // Get invoice IDs so we can delete their line items
+      const { data: invRows } = await admin
+        .from("invoices")
+        .select("id")
+        .eq("project_id", projectId)
+        .eq("user_id", userId);
+
+      const invoiceIds = (invRows ?? []).map((i) => i.id);
+
+      // Delete invoice items
+      if (invoiceIds.length > 0) {
+        await admin.from("invoice_items").delete().in("invoice_id", invoiceIds);
+      }
+
+      // Delete invoices
+      await admin.from("invoices").delete().eq("project_id", projectId).eq("user_id", userId);
+
+      // Delete project media records
+      await admin.from("project_media").delete().eq("project_id", projectId).eq("user_id", userId);
+
+      // Delete the project
+      const { error } = await admin.from("projects").delete().eq("id", projectId).eq("user_id", userId);
+      if (error) return jsonResult({ error: error.message });
+
+      return jsonResult({ ok: true, deleted: { project_id: projectId, project_name: proj.name }, invoices_deleted: invoiceIds.length });
+    }
+
     // ── Media ─────────────────────────────────────────────────────────────────
 
     case "attach_media_to_project": {

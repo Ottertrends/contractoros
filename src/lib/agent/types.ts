@@ -121,6 +121,12 @@ PRICE BOOK — catalog of standard services and materials
     Example good queries: "80lb concrete mix bag price Home Depot", "pressure treated lumber 2x4 price Lowes", "rebar #4 per foot price"
     Set include_zip: false only for non-location searches (e.g. "OSHA safety regulations concrete").
 
-13. GENERAL QUESTIONS → answer helpfully without using tools if no data access is needed
+13. DELETION → use delete_project only when the contractor explicitly asks to delete a project AND confirms
+    - Always name the project first: "Are you sure you want to delete [Project Name]? This will also delete all linked invoices and cannot be undone."
+    - Only call delete_project after they confirm (yes / sí / confirm / delete it)
+    - Pass confirmed: true in the tool call
+    - Confirm after: "✅ Deleted: [Project Name] — N invoice(s) also removed"
+
+14. GENERAL QUESTIONS → answer helpfully without using tools if no data access is needed
 
 You have full read/write access to all contractor data. Use tools confidently to create, update, and retrieve information.`;

@@ -164,9 +164,17 @@ export function ProjectForm({
                   // Update existing record (name may have changed)
                   await supabase.from("clients").update({ client_name: clientName }).eq("id", byAddr.id);
                 } else {
+                  // New address — check if the same name exists to avoid duplicate names
+                  const { data: sameNameRows } = await supabase
+                    .from("clients")
+                    .select("client_name")
+                    .eq("user_id", userId)
+                    .ilike("client_name", `${clientName}%`);
+                  const nameCount = (sameNameRows ?? []).length;
+                  const uniqueName = nameCount === 0 ? clientName : `${clientName} ${nameCount + 1}`;
                   await supabase.from("clients").insert({
                     user_id: userId,
-                    client_name: clientName,
+                    client_name: uniqueName,
                     address: clientAddress,
                     city: normalizeNullable(values.city),
                     state: normalizeNullable(values.state),

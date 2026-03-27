@@ -73,10 +73,11 @@ export default async function ProjectDetailPage({
 
   const safeInvoices = (invoices ?? []) as Invoice[];
 
-  // Find or auto-create the draft invoice (app-layer fallback; DB trigger handles normal flow)
-  let draftInvoice = safeInvoices.find((inv) => inv.status === "draft") ?? null;
+  // Use the most recent invoice (any status) as the primary editable invoice.
+  // If none exist, auto-create a draft via the app-layer fallback.
+  let primaryInvoice = safeInvoices[0] ?? null;
 
-  if (!draftInvoice) {
+  if (!primaryInvoice) {
     const admin = createSupabaseAdminClient();
     const newId = await ensureDraftInvoice(admin, user.id, safeProject);
     if (newId) {
@@ -85,19 +86,19 @@ export default async function ProjectDetailPage({
         .select("*")
         .eq("id", newId)
         .single();
-      if (fresh) draftInvoice = fresh as Invoice;
+      if (fresh) primaryInvoice = fresh as Invoice;
     }
   }
 
-  // Load draft invoice items
-  let draftItems: InvoiceItem[] = [];
-  if (draftInvoice) {
+  // Load line items for the primary invoice
+  let primaryItems: InvoiceItem[] = [];
+  if (primaryInvoice) {
     const { data: its } = await supabase
       .from("invoice_items")
       .select("*")
-      .eq("invoice_id", draftInvoice.id)
+      .eq("invoice_id", primaryInvoice.id)
       .order("sort_order");
-    draftItems = (its ?? []) as InvoiceItem[];
+    primaryItems = (its ?? []) as InvoiceItem[];
   }
 
   // Load price book for invoice autocomplete
@@ -108,7 +109,8 @@ export default async function ProjectDetailPage({
     .order("item_name");
   const priceBook = (priceBookRaw ?? []) as PriceBookItem[];
 
-  const nonDraftInvoices = safeInvoices.filter((inv) => inv.status !== "draft");
+  // Older invoices shown in a read-only table below the primary editor
+  const olderInvoices = safeInvoices.slice(1);
 
   // Load project media and generate signed URLs
   const { data: mediaRows } = await supabase
@@ -144,12 +146,12 @@ export default async function ProjectDetailPage({
       {/* Project edit form */}
       <ProjectForm mode="edit" userId={user.id} project={safeProject} />
 
-      {/* Draft Invoice — always visible, auto-created */}
-      {draftInvoice ? (
+      {/* Primary Invoice — always shows the most recent invoice in full editor */}
+      {primaryInvoice ? (
         <DraftInvoiceCard
           projectName={safeProject.name}
-          invoice={draftInvoice}
-          items={draftItems}
+          invoice={primaryInvoice}
+          items={primaryItems}
           priceBook={priceBook}
           project={safeProject}
           userId={user.id}
@@ -173,8 +175,8 @@ export default async function ProjectDetailPage({
         <MediaGallery items={mediaWithUrls} projectId={projectId} />
       )}
 
-      {/* Sent / Paid / Cancelled invoices */}
-      {nonDraftInvoices.length > 0 && (
+      {/* Older invoices (read-only table) */}
+      {olderInvoices.length > 0 && (
         <Card>
           <CardHeader>
             <CardTitle>{tp.otherInvoices}</CardTitle>
@@ -191,7 +193,7 @@ export default async function ProjectDetailPage({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
-                  {nonDraftInvoices.map((inv) => (
+                  {olderInvoices.map((inv) => (
                     <tr key={inv.id} className="hover:bg-slate-50 dark:hover:bg-slate-900">
                       <td className="py-3 pr-3">
                         <Link
