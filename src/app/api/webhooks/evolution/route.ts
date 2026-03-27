@@ -355,16 +355,22 @@ async function handleMessagesUpsert(
       }
     } else if (ownerLid) {
       if (jid !== ownerLid) {
-        // LID rotated (WhatsApp update / session change) — re-bootstrap with new LID
-        console.log("[evolution-webhook] @lid — LID changed, re-bootstrapping | old:", ownerLid, "| new:", jid);
-        await logBotEvent(admin, userId, "bootstrap", "lid-rotated", jid, `old: ${ownerLid}`);
+        // LID mismatch — two possible causes:
+        //   A) Message to a contact who uses multi-device (their LID ≠ owner LID) → must skip
+        //   B) A real WhatsApp session LID rotation → update stored LID for next message
+        //
+        // We can't tell A from B, so we update the stored LID (safe for B) and SKIP this
+        // message (safe for A). After a real rotation the very next self-message will match.
+        console.log("[evolution-webhook] @lid mismatch — updating stored LID and SKIPPING (could be contact LID, not owner) | stored:", ownerLid, "| received:", jid);
+        await logBotEvent(admin, userId, "skipped", "lid-mismatch", jid, `stored:${ownerLid}`);
+        // Update stored LID so genuine rotations recover on the next self-message
         await mergeWaSession(admin, userId, instance, { owner_lid: jid, lid_pending: false });
         if (isPrimaryInstance(instance, prof, userId)) {
           await admin.from("profiles")
             .update({ whatsapp_owner_lid: jid, whatsapp_lid_pending: false })
             .eq("id", userId);
         }
-        // Fall through and process the message normally
+        return; // ← SKIP — do not process as self-chat
       } else {
         console.log("[evolution-webhook] @lid — owner LID match ✅ | jid:", jid);
       }
