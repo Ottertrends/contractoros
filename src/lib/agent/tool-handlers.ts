@@ -507,6 +507,23 @@ export async function executeTool(
       return jsonResult({ ok: true, item: data, action: "created" });
     }
 
+    // ── Memory ────────────────────────────────────────────────────────────────
+
+    case "update_memory": {
+      const content = String(input.memory_text ?? "").trim();
+      if (!content) return jsonResult({ error: "memory_text is required" });
+
+      const { error } = await admin
+        .from("agent_memory")
+        .upsert(
+          { user_id: userId, memory_text: content, updated_at: new Date().toISOString() },
+          { onConflict: "user_id" },
+        );
+
+      if (error) return jsonResult({ error: error.message });
+      return jsonResult({ ok: true, message: "Memory updated successfully" });
+    }
+
     // ── Media ─────────────────────────────────────────────────────────────────
 
     case "attach_media_to_project": {

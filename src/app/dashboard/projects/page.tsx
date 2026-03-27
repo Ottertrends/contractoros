@@ -82,16 +82,18 @@ export default async function ProjectsPage({
 
   const projectIds = projects.map((p) => p.id);
   const invoiceStatusMap: Record<string, InvoiceStatus> = {};
+  const invoiceTotalMap: Record<string, string> = {};
   if (projectIds.length > 0) {
     const { data: invoicesForPage } = await supabase
       .from("invoices")
-      .select("project_id, status")
+      .select("project_id, status, total")
       .in("project_id", projectIds)
       .eq("user_id", user.id)
       .order("created_at", { ascending: false });
     for (const inv of invoicesForPage ?? []) {
       if (!invoiceStatusMap[inv.project_id]) {
         invoiceStatusMap[inv.project_id] = inv.status as InvoiceStatus;
+        invoiceTotalMap[inv.project_id] = inv.total ?? "0";
       }
     }
   }
@@ -147,7 +149,7 @@ export default async function ProjectsPage({
       {projects.length === 0 ? (
         <EmptyState noProjects={tp.noProjects} adjustFilter={tp.adjustFilter} />
       ) : (
-        <ProjectGrid projects={projects} invoiceStatusMap={invoiceStatusMap} />
+        <ProjectGrid projects={projects} invoiceStatusMap={invoiceStatusMap} invoiceTotalMap={invoiceTotalMap} />
       )}
 
       <Card className="p-4">

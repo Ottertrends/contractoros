@@ -39,7 +39,7 @@ const invoiceBadgeColors: Record<InvoiceStatus, string> = {
   cancelled: "bg-red-100 text-red-600 dark:bg-red-900/40 dark:text-red-400",
 };
 
-export function ProjectCard({ project, invoiceStatus }: { project: Project; invoiceStatus?: InvoiceStatus }) {
+export function ProjectCard({ project, invoiceStatus, invoiceTotal }: { project: Project; invoiceStatus?: InvoiceStatus; invoiceTotal?: string }) {
   const { t } = useLanguage();
   const tp = t.projects;
 
@@ -102,9 +102,9 @@ export function ProjectCard({ project, invoiceStatus }: { project: Project; invo
 
           <div className="mt-auto flex items-end justify-between gap-3">
             <div>
-              <div className="text-xs text-slate-500">{tp.quotedAmount}</div>
+              <div className="text-xs text-slate-500">Invoice Amount</div>
               <div className="text-lg font-semibold text-slate-900 dark:text-slate-50">
-                {formatCurrency(project.quoted_amount)}
+                {invoiceTotal != null ? formatCurrency(invoiceTotal) : "$0.00"}
               </div>
             </div>
             <div className="flex flex-col items-end gap-1">

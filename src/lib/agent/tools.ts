@@ -206,6 +206,24 @@ export const CONTRACTOR_TOOLS: Tool[] = [
     },
   },
 
+  // ── Memory ──────────────────────────────────────────────────────────────
+  {
+    name: "update_memory",
+    description:
+      "Save or update key facts about this contractor to your long-term memory. Call this whenever you learn something important: their typical job sizes, preferred pricing, common clients, working area, billing habits, or anything that would help you assist them better in future conversations. This memory persists across all sessions.",
+    input_schema: {
+      type: "object",
+      properties: {
+        memory_text: {
+          type: "string",
+          description:
+            "Full memory block as structured plain text. Include sections like: Services & Specialties, Typical Job Size & Pricing, Working Area, Common Clients, Billing Preferences, Notes. Always write the COMPLETE updated memory — this replaces the previous version entirely.",
+        },
+      },
+      required: ["memory_text"],
+    },
+  },
+
   // ── Media ───────────────────────────────────────────────────────────────
   {
     name: "attach_media_to_project",

@@ -6,6 +6,7 @@ import type {
   ToolUseBlock,
 } from "@anthropic-ai/sdk/resources/messages";
 
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { executeTool } from "@/lib/agent/tool-handlers";
 import { DEFAULT_ANTHROPIC_MODEL } from "@/lib/agent/model";
 import { SYSTEM_PROMPT } from "@/lib/agent/types";
@@ -91,6 +92,21 @@ export async function processContractorMessage(
       { model, userId: userId.slice(0, 8), historyLen: history.length },
     );
     const client = getClient();
+
+    // Fetch this contractor's long-term memory and inject it into the prompt
+    const admin = createSupabaseAdminClient();
+    const { data: memRow } = await admin
+      .from("agent_memory")
+      .select("memory_text, updated_at")
+      .eq("user_id", userId)
+      .maybeSingle();
+
+    const memoryBlock = memRow?.memory_text?.trim()
+      ? `\n\n━━━ YOUR MEMORY ABOUT THIS CONTRACTOR ━━━\n${memRow.memory_text}\n(Last updated: ${memRow.updated_at ? new Date(memRow.updated_at).toLocaleDateString() : "unknown"})\nWhen you learn new important details, call update_memory with the full updated memory block.`
+      : `\n\n━━━ CONTRACTOR MEMORY ━━━\n(No notes yet — memory is empty. As you learn about this contractor's services, pricing, clients, and work style, call update_memory to start building their profile.)`;
+
+    const systemWithMemory = SYSTEM_PROMPT + memoryBlock;
+
     let messages = buildMessageParams(history, messageText);
     const maxLoops = 8;
 
@@ -98,7 +114,7 @@ export async function processContractorMessage(
       const response = await client.messages.create({
         model,
         max_tokens: 8192,
-        system: SYSTEM_PROMPT,
+        system: systemWithMemory,
         tools: CONTRACTOR_TOOLS,
         messages,
       });

@@ -80,11 +80,13 @@ export default async function DashboardHome({
   const featured = allProjects.slice(0, 10);
   const featuredIds = new Set(featured.map((p) => p.id));
 
-  // Invoice status map for project cards
+  // Invoice status + total maps for project cards
   const invoiceStatusMap: Record<string, InvoiceStatus> = {};
+  const invoiceTotalMap: Record<string, string> = {};
   for (const inv of allInvoices) {
     if (inv.project_id && featuredIds.has(inv.project_id) && !invoiceStatusMap[inv.project_id]) {
       invoiceStatusMap[inv.project_id] = inv.status;
+      invoiceTotalMap[inv.project_id] = inv.total ?? "0";
     }
   }
 
@@ -169,7 +171,7 @@ export default async function DashboardHome({
           createFirst={t.dashboard.createFirst}
         />
       ) : (
-        <ProjectGrid projects={featured} invoiceStatusMap={invoiceStatusMap} />
+        <ProjectGrid projects={featured} invoiceStatusMap={invoiceStatusMap} invoiceTotalMap={invoiceTotalMap} />
       )}
 
       <div>
