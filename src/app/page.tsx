@@ -1,3 +1,4 @@
+import Image from "next/image";
 import { LoginForm } from "@/components/auth/login-form";
 
 const features = [
@@ -24,7 +25,10 @@ export default function LandingPage() {
       {/* Nav */}
       <header className="sticky top-0 z-10 bg-white/90 dark:bg-slate-900/90 backdrop-blur border-b border-slate-200 dark:border-slate-800">
         <div className="max-w-6xl mx-auto px-4 h-14 flex items-center justify-between">
-          <span className="text-lg font-bold text-primary dark:text-white tracking-tight">WorkSupp</span>
+          <div className="flex items-center gap-2">
+            <Image src="/logo.png" alt="WorkSupp" width={32} height={32} className="object-contain" />
+            <span className="text-lg font-bold text-primary dark:text-white tracking-tight">WorkSupp</span>
+          </div>
           <a
             href="/auth/signup"
             className="inline-flex items-center justify-center rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary/90 transition-colors"

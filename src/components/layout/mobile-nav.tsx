@@ -17,6 +17,7 @@ import {
   Settings as SettingsIcon,
 } from "lucide-react";
 
+import Image from "next/image";
 import { useLanguage } from "@/lib/i18n/client";
 
 export function MobileNav() {
@@ -79,8 +80,9 @@ export function MobileNav() {
       >
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 shrink-0 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
-          <div className="text-xl font-bold text-primary dark:text-white">
-            {t.nav.brand}
+          <div className="flex items-center gap-2">
+            <Image src="/logo.png" alt="WorkSupp" width={32} height={32} className="object-contain" />
+            <span className="text-xl font-bold text-primary dark:text-white">{t.nav.brand}</span>
           </div>
           <button
             type="button"

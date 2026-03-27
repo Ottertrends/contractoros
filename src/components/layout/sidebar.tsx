@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import {
   LayoutDashboard,
   FolderKanban,
@@ -31,8 +32,9 @@ export function Sidebar() {
   return (
     <aside className="hidden md:block md:w-64 md:shrink-0 border-r border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950">
       <div className="p-4">
-        <div className="text-lg font-semibold text-primary dark:text-white mb-6">
-          {t.nav.brand}
+        <div className="flex items-center gap-2 mb-6">
+          <Image src="/logo.png" alt="WorkSupp" width={28} height={28} className="object-contain" />
+          <span className="text-lg font-semibold text-primary dark:text-white">{t.nav.brand}</span>
         </div>
         <nav className="flex flex-col gap-1">
           {navItems.map((item) => {
