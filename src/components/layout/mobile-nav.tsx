@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -20,8 +21,14 @@ import { useLanguage } from "@/lib/i18n/client";
 
 export function MobileNav() {
   const [open, setOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
   const { t } = useLanguage();
   const pathname = usePathname();
+
+  // Mount guard for createPortal (SSR-safe)
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   // Close drawer on route change
   useEffect(() => {
@@ -49,9 +56,85 @@ export function MobileNav() {
     { href: "/dashboard/settings", label: t.nav.settings, icon: SettingsIcon },
   ];
 
+  // Rendered via portal directly into document.body so it escapes
+  // the TopBar's backdrop-filter stacking context (iOS Safari fix)
+  const overlay = (
+    <>
+      {/* Full-screen opaque backdrop */}
+      <div
+        className={`fixed inset-0 md:hidden transition-opacity duration-200 ${
+          open ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
+        }`}
+        style={{ zIndex: 9998, backgroundColor: "rgba(0,0,0,0.65)" }}
+        onClick={() => setOpen(false)}
+        aria-hidden="true"
+      />
+
+      {/* Slide-in drawer — solid, no transparency */}
+      <div
+        className={`fixed inset-y-0 left-0 md:hidden flex flex-col transform transition-transform duration-200 ease-in-out ${
+          open ? "translate-x-0" : "-translate-x-full"
+        }`}
+        style={{
+          zIndex: 9999,
+          width: "320px",
+          backgroundColor: "#ffffff",
+          borderRight: "1px solid #e2e8f0",
+          boxShadow: "4px 0 24px 0 rgba(0,0,0,0.18)",
+        }}
+      >
+        {/* Header */}
+        <div
+          style={{ backgroundColor: "#ffffff", borderBottom: "1px solid #e2e8f0" }}
+          className="flex items-center justify-between px-5 py-4 shrink-0"
+        >
+          <div className="text-xl font-bold text-primary">
+            {t.nav.brand}
+          </div>
+          <button
+            type="button"
+            onClick={() => setOpen(false)}
+            aria-label="Close navigation"
+            className="flex items-center justify-center h-9 w-9 rounded-md text-slate-500 hover:bg-slate-100 transition-colors"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        {/* Nav items */}
+        <nav
+          className="flex flex-col gap-1 p-4 flex-1 overflow-y-auto"
+          style={{ backgroundColor: "#ffffff" }}
+        >
+          {navItems.map((item) => {
+            const Icon = item.icon;
+            const isActive =
+              pathname === item.href ||
+              (item.href !== "/dashboard" && pathname.startsWith(item.href));
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={`flex items-center gap-4 px-4 py-3.5 rounded-xl text-base font-medium transition-colors ${
+                  isActive
+                    ? "text-primary"
+                    : "text-slate-700 hover:bg-slate-100"
+                }`}
+                style={isActive ? { backgroundColor: "rgba(var(--primary-rgb, 59,130,246),0.1)" } : {}}
+              >
+                <Icon className="h-5 w-5 shrink-0" />
+                <span>{item.label}</span>
+              </Link>
+            );
+          })}
+        </nav>
+      </div>
+    </>
+  );
+
   return (
     <>
-      {/* Hamburger button — visible only on mobile */}
+      {/* Hamburger button */}
       <button
         type="button"
         onClick={() => setOpen(true)}
@@ -61,56 +144,8 @@ export function MobileNav() {
         <Menu className="h-4 w-4" />
       </button>
 
-      {/* Backdrop */}
-      {open && (
-        <div
-          className="fixed inset-0 z-[998] bg-black/60 md:hidden"
-          onClick={() => setOpen(false)}
-          aria-hidden="true"
-        />
-      )}
-
-      {/* Slide-in drawer */}
-      <div
-        className={`fixed inset-y-0 left-0 z-[999] w-80 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-700 shadow-2xl transform transition-transform duration-200 ease-in-out md:hidden ${
-          open ? "translate-x-0" : "-translate-x-full"
-        }`}
-      >
-        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900">
-          <div className="text-xl font-bold text-primary dark:text-white">
-            {t.nav.brand}
-          </div>
-          <button
-            type="button"
-            onClick={() => setOpen(false)}
-            aria-label="Close navigation"
-            className="flex items-center justify-center h-9 w-9 rounded-md text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-          >
-            <X className="h-5 w-5" />
-          </button>
-        </div>
-
-        <nav className="flex flex-col gap-1 p-4 bg-white dark:bg-slate-900 h-full">
-          {navItems.map((item) => {
-            const Icon = item.icon;
-            const isActive = pathname === item.href || (item.href !== "/dashboard" && pathname.startsWith(item.href));
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={`flex items-center gap-4 px-4 py-3.5 rounded-xl text-base font-medium transition-colors ${
-                  isActive
-                    ? "bg-primary/10 dark:bg-primary/20 text-primary dark:text-white"
-                    : "text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
-                }`}
-              >
-                <Icon className="h-5 w-5 shrink-0" />
-                <span>{item.label}</span>
-              </Link>
-            );
-          })}
-        </nav>
-      </div>
+      {/* Portal: renders directly in document.body, outside all stacking contexts */}
+      {mounted && createPortal(overlay, document.body)}
     </>
   );
 }
