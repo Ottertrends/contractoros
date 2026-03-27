@@ -16,7 +16,7 @@ import { resolveUserIdFromWebhookInstance } from "@/lib/whatsapp/resolve-user";
 import { getSessionSlice, logBotEvent, mergeWaSession } from "@/lib/whatsapp/session-store";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+export const maxDuration = 300; // 5 minutes — prevents agent timeout causing user to resend
 
 export async function GET() {
   return new Response(JSON.stringify({ ok: true, service: "evolution-webhook" }), {

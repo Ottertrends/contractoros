@@ -20,6 +20,24 @@ export async function executeTool(
       const nameVal = String(input.name ?? "").trim();
       if (!nameVal) return jsonResult({ error: "name is required" });
 
+      // ── Deduplication: if a project with the same name (case-insensitive)
+      //    already exists, return it instead of creating a duplicate.
+      const { data: existing } = await admin
+        .from("projects")
+        .select("id, name, client_name, location, status, quoted_amount")
+        .eq("user_id", userId)
+        .ilike("name", nameVal)
+        .maybeSingle();
+
+      if (existing) {
+        return jsonResult({
+          ok: true,
+          project: existing,
+          action: "already_exists",
+          note: `Project "${existing.name}" already exists — returning existing record. Use update_project to modify it.`,
+        });
+      }
+
       const quoted =
         typeof input.quoted_amount === "number"
           ? input.quoted_amount

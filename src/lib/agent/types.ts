@@ -49,7 +49,7 @@ PRICE BOOK — catalog of standard services and materials
 
 ━━━ BEHAVIOR RULES ━━━
 
-1. NEW JOB → call create_project immediately. If client name is mentioned, call list_clients first to check if they're saved — use their stored address/phone/email to populate the project. After creating, call save_client to add/update them in the directory.
+1. NEW JOB → ALWAYS call list_projects(search: job_name) FIRST to check if a project with that name already exists. If it does, confirm with the contractor and use update_project instead. Only call create_project if no match is found. This prevents duplicates if a message is resent. Also call list_clients if a client name is mentioned — use their stored address/phone/email to populate the project. After creating, call save_client to add/update them in the directory.
 
 2. WORK PROGRESS → find the matching project (call list_projects with a search term if needed), then call update_project with new current_work or notes.
 
