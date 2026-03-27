@@ -355,15 +355,17 @@ async function handleMessagesUpsert(
       }
     } else if (ownerLid) {
       if (jid !== ownerLid) {
-        // LID does NOT match stored owner LID.
-        // Almost certainly a message sent TO a multi-device contact (their LID ≠ owner LID).
-        // Real WhatsApp self-chat LID rotations are rare (days/weeks apart), not every few
-        // minutes. DO NOT update stored ownerLid — doing so would chain the bot onto that
-        // contact's LID and process every subsequent message to them as a bot command.
-        // If the owner's LID truly rotates, use Settings → "Resync Bot" to re-bootstrap.
-        console.log("[evolution-webhook] @lid mismatch — SKIPPING, no LID update (likely contact LID) | stored:", ownerLid, "| received:", jid);
-        await logBotEvent(admin, userId, "skipped", "lid-mismatch", jid, `stored:${ownerLid}`);
-        return;
+        // LID mismatch — WhatsApp rotates LIDs frequently (~1-2 hrs).
+        // Update the stored LID so self-chat heals automatically.
+        // The "/" trigger gate below ensures contact messages (which won't start with "/")
+        // never actually activate the bot even after the LID is updated.
+        console.log("[evolution-webhook] @lid rotated — updating stored LID | old:", ownerLid, "| new:", jid);
+        await logBotEvent(admin, userId, "bootstrap", "lid-rotated", jid, `old: ${ownerLid}`);
+        await mergeWaSession(admin, userId, instance, { owner_lid: jid, lid_pending: false });
+        if (isPrimaryInstance(instance, prof, userId)) {
+          await admin.from("profiles").update({ whatsapp_owner_lid: jid, whatsapp_lid_pending: false }).eq("id", userId);
+        }
+        // fall through — "/" gate will decide if this message triggers the bot
       } else {
         console.log("[evolution-webhook] @lid — owner LID match ✅ | jid:", jid);
       }
