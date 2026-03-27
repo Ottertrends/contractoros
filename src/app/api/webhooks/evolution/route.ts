@@ -136,11 +136,6 @@ export async function POST(request: Request) {
     payload.instance,
   );
 
-  // ── FULL PAYLOAD DUMP (temporary — remove after inspection) ──────────────
-  if (payload.event?.includes("messages")) {
-    console.log("[evolution-webhook] FULL RAW PAYLOAD:\n" + JSON.stringify(payload, null, 2));
-  }
-
   const secret = process.env.EVOLUTION_WEBHOOK_SECRET?.trim();
   if (secret) {
     const header =
@@ -492,13 +487,31 @@ async function handleMessagesUpsert(
     return;
   }
 
+  // ── "/" TRIGGER GATE ─────────────────────────────────────────────────────
+  // Only process messages that start with "/" — prevents bot from responding
+  // to accidental self-chat messages or messages meant for other people.
+  // Users send commands like: /nuevo trabajo, /factura, /lista proyectos
+  if (!agentText.trimStart().startsWith("/")) {
+    console.log("[evolution-webhook] No '/' prefix — not a bot command, skipping | preview:", agentText.slice(0, 80));
+    await logBotEvent(admin, userId, "skipped", "no-trigger", jid, agentText.slice(0, 200));
+    return;
+  }
+  // Strip the leading "/" (and any space after it) before passing to the agent
+  const commandText = agentText.trimStart().replace(/^\/\s*/, "");
+  if (!commandText) {
+    console.log("[evolution-webhook] '/' with no command text — skipping");
+    return;
+  }
+  console.log("[evolution-webhook] '/' trigger confirmed | command:", commandText.slice(0, 80));
+  // ─────────────────────────────────────────────────────────────────────────
+
   const { data: inserted, error: insErr } = await admin
     .from("messages")
     .insert({
       user_id: userId,
       project_id: null,
       direction: "inbound",
-      content: agentText,
+      content: commandText,
       message_type: mediaInfo ? "image" : "text",
       whatsapp_message_id: waMsgId,
       processed: false,
@@ -540,15 +553,15 @@ async function handleMessagesUpsert(
     "[evolution-webhook] AGENT CALLED — userId:",
     userId,
     "| text:",
-    agentText.slice(0, 80),
+    commandText.slice(0, 80),
     "| historyLen:",
     history.length,
   );
-  await logBotEvent(admin, userId, "agent", "agent-called", jid, agentText.slice(0, 200));
+  await logBotEvent(admin, userId, "agent", "agent-called", jid, commandText.slice(0, 200));
 
   let reply: string;
   try {
-    const agentResult = await processContractorMessage(userId, agentText, history);
+    const agentResult = await processContractorMessage(userId, commandText, history);
     reply = agentResult.reply;
     if (agentResult.error) {
       console.error("[evolution-webhook] Agent error detail:", agentResult.error);
