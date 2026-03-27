@@ -43,7 +43,7 @@ function sortInvoices(
 export default async function InvoicesPage({
   searchParams,
 }: {
-  searchParams: Record<string, string | string[] | undefined>;
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const supabase = await createSupabaseServerClient();
   const {
@@ -55,16 +55,17 @@ export default async function InvoicesPage({
   const t = getT(lang);
   const ti = t.invoices;
 
+  const sp = searchParams ? await searchParams : {};
   const statusFilter =
-    typeof searchParams.status === "string" && searchParams.status !== "all"
-      ? searchParams.status
+    typeof sp.status === "string" && sp.status !== "all"
+      ? sp.status
       : null;
   const search =
-    typeof searchParams.q === "string" ? searchParams.q.trim() : "";
+    typeof sp.q === "string" ? sp.q.trim() : "";
   const sortBy =
-    typeof searchParams.sortBy === "string" ? searchParams.sortBy : "created";
+    typeof sp.sortBy === "string" ? sp.sortBy : "created";
   const sortDir: "asc" | "desc" =
-    searchParams.sortDir === "asc" ? "asc" : "desc";
+    sp.sortDir === "asc" ? "asc" : "desc";
 
   let query = supabase
     .from("invoices")
@@ -147,7 +148,7 @@ export default async function InvoicesPage({
         <div className="flex items-center gap-2 flex-wrap">
           {statuses.map((s) => {
             const active =
-              searchParams.status === s || (!searchParams.status && s === "all");
+              statusFilter === s || (!statusFilter && s === "all");
             const p2 = new URLSearchParams();
             if (search) p2.set("q", search);
             if (s !== "all") p2.set("status", s);

@@ -42,15 +42,16 @@ function sortProjects(
 export default async function ProjectsPage({
   searchParams,
 }: {
-  searchParams?: Record<string, string | string[] | undefined>;
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const q = typeof searchParams?.q === "string" ? searchParams.q : "";
-  const status = typeof searchParams?.status === "string" ? searchParams.status : "all";
-  const sortBy = typeof searchParams?.sortBy === "string" ? searchParams.sortBy : "updated";
-  const sortDir: "asc" | "desc" = searchParams?.sortDir === "asc" ? "asc" : "desc";
+  const sp = searchParams ? await searchParams : {};
+  const q = typeof sp.q === "string" ? sp.q : "";
+  const status = typeof sp.status === "string" ? sp.status : "all";
+  const sortBy = typeof sp.sortBy === "string" ? sp.sortBy : "updated";
+  const sortDir: "asc" | "desc" = sp.sortDir === "asc" ? "asc" : "desc";
   const page =
-    typeof searchParams?.page === "string"
-      ? Math.max(1, parseInt(searchParams.page, 10) || 1)
+    typeof sp.page === "string"
+      ? Math.max(1, parseInt(sp.page, 10) || 1)
       : 1;
   const pageSize = 20;
 
@@ -163,7 +164,7 @@ export default async function ProjectsPage({
       {/* Status filter pills */}
       <div className="flex items-center gap-2 flex-wrap">
         {statuses.map((s) => {
-          const active = status === s || (!searchParams?.status && s === "all");
+          const active = status === s;
           const p2 = new URLSearchParams();
           if (q.trim()) p2.set("q", q.trim());
           if (s !== "all") p2.set("status", s);

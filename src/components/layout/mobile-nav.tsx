@@ -64,7 +64,7 @@ export function MobileNav() {
       {/* Backdrop */}
       {open && (
         <div
-          className="fixed inset-0 z-40 bg-black/50 md:hidden"
+          className="fixed inset-0 z-[998] bg-black/60 md:hidden"
           onClick={() => setOpen(false)}
           aria-hidden="true"
         />
@@ -72,25 +72,25 @@ export function MobileNav() {
 
       {/* Slide-in drawer */}
       <div
-        className={`fixed inset-y-0 left-0 z-50 w-64 bg-white dark:bg-slate-950 border-r border-slate-200 dark:border-slate-800 transform transition-transform duration-200 ease-in-out md:hidden ${
+        className={`fixed inset-y-0 left-0 z-[999] w-80 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-700 shadow-2xl transform transition-transform duration-200 ease-in-out md:hidden ${
           open ? "translate-x-0" : "-translate-x-full"
         }`}
       >
-        <div className="flex items-center justify-between p-4 border-b border-slate-200 dark:border-slate-800">
-          <div className="text-lg font-semibold text-slate-900 dark:text-white">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900">
+          <div className="text-xl font-bold text-primary dark:text-white">
             {t.nav.brand}
           </div>
           <button
             type="button"
             onClick={() => setOpen(false)}
             aria-label="Close navigation"
-            className="flex items-center justify-center h-8 w-8 rounded-md text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+            className="flex items-center justify-center h-9 w-9 rounded-md text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
           >
-            <X className="h-4 w-4" />
+            <X className="h-5 w-5" />
           </button>
         </div>
 
-        <nav className="flex flex-col gap-1 p-4">
+        <nav className="flex flex-col gap-1 p-4 bg-white dark:bg-slate-900 h-full">
           {navItems.map((item) => {
             const Icon = item.icon;
             const isActive = pathname === item.href || (item.href !== "/dashboard" && pathname.startsWith(item.href));
@@ -98,13 +98,13 @@ export function MobileNav() {
               <Link
                 key={item.href}
                 href={item.href}
-                className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                className={`flex items-center gap-4 px-4 py-3.5 rounded-xl text-base font-medium transition-colors ${
                   isActive
-                    ? "bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white"
-                    : "text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-900"
+                    ? "bg-primary/10 dark:bg-primary/20 text-primary dark:text-white"
+                    : "text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
                 }`}
               >
-                <Icon className="h-4 w-4 opacity-80 shrink-0" />
+                <Icon className="h-5 w-5 shrink-0" />
                 <span>{item.label}</span>
               </Link>
             );

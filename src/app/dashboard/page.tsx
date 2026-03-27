@@ -148,15 +148,14 @@ export default async function DashboardHome() {
                 </tbody>
               </table>
             </div>
+            <div className="flex justify-end mt-4 pt-3 border-t border-slate-100 dark:border-slate-800">
+              <Link href="/dashboard/projects">
+                <Button size="sm">{t.dashboard.viewAllProjects} →</Button>
+              </Link>
+            </div>
           </CardContent>
         </Card>
       )}
-
-      <div>
-        <Link href="/dashboard/projects" className="text-sm font-medium text-primary hover:underline">
-          {t.dashboard.viewAllProjects}
-        </Link>
-      </div>
 
       {/* Recent invoices — linked to the same 10 projects above */}
       {linkedInvoices.length > 0 && (
