@@ -136,6 +136,11 @@ export async function POST(request: Request) {
     payload.instance,
   );
 
+  // ── FULL PAYLOAD DUMP (temporary — remove after inspection) ──────────────
+  if (payload.event?.includes("messages")) {
+    console.log("[evolution-webhook] FULL RAW PAYLOAD:\n" + JSON.stringify(payload, null, 2));
+  }
+
   const secret = process.env.EVOLUTION_WEBHOOK_SECRET?.trim();
   if (secret) {
     const header =
@@ -355,22 +360,15 @@ async function handleMessagesUpsert(
       }
     } else if (ownerLid) {
       if (jid !== ownerLid) {
-        // LID mismatch — two possible causes:
-        //   A) Message to a contact who uses multi-device (their LID ≠ owner LID) → must skip
-        //   B) A real WhatsApp session LID rotation → update stored LID for next message
-        //
-        // We can't tell A from B, so we update the stored LID (safe for B) and SKIP this
-        // message (safe for A). After a real rotation the very next self-message will match.
-        console.log("[evolution-webhook] @lid mismatch — updating stored LID and SKIPPING (could be contact LID, not owner) | stored:", ownerLid, "| received:", jid);
+        // LID does NOT match stored owner LID.
+        // Almost certainly a message sent TO a multi-device contact (their LID ≠ owner LID).
+        // Real WhatsApp self-chat LID rotations are rare (days/weeks apart), not every few
+        // minutes. DO NOT update stored ownerLid — doing so would chain the bot onto that
+        // contact's LID and process every subsequent message to them as a bot command.
+        // If the owner's LID truly rotates, use Settings → "Resync Bot" to re-bootstrap.
+        console.log("[evolution-webhook] @lid mismatch — SKIPPING, no LID update (likely contact LID) | stored:", ownerLid, "| received:", jid);
         await logBotEvent(admin, userId, "skipped", "lid-mismatch", jid, `stored:${ownerLid}`);
-        // Update stored LID so genuine rotations recover on the next self-message
-        await mergeWaSession(admin, userId, instance, { owner_lid: jid, lid_pending: false });
-        if (isPrimaryInstance(instance, prof, userId)) {
-          await admin.from("profiles")
-            .update({ whatsapp_owner_lid: jid, whatsapp_lid_pending: false })
-            .eq("id", userId);
-        }
-        return; // ← SKIP — do not process as self-chat
+        return;
       } else {
         console.log("[evolution-webhook] @lid — owner LID match ✅ | jid:", jid);
       }
