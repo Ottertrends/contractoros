@@ -17,22 +17,39 @@ export async function ensureDraftInvoice(
   project: Pick<Project, "id" | "name" | "notes" | "current_work" | "quoted_amount">,
 ): Promise<string | null> {
   // Check for existing draft
-  const { data: existing } = await admin
+  const { data: existingDraft } = await admin
     .from("invoices")
     .select("id")
     .eq("project_id", project.id)
     .eq("status", "draft")
     .maybeSingle();
 
-  if (existing?.id) return existing.id;
+  if (existingDraft?.id) return existingDraft.id;
 
-  // Generate invoice number
-  const { count } = await admin
+  // Don't create a new draft if any non-cancelled invoice already exists (sent/paid)
+  // This prevents duplicate invoices when project is updated after invoice is sent/paid
+  const { data: anyInvoice } = await admin
     .from("invoices")
-    .select("*", { count: "exact", head: true })
+    .select("id")
+    .eq("project_id", project.id)
+    .neq("status", "cancelled")
+    .maybeSingle();
+
+  if (anyInvoice?.id) return null; // project already has an active invoice, don't create draft
+
+  // Use MAX existing invoice number to prevent gaps/duplicates after deletions
+  const { data: allNums } = await admin
+    .from("invoices")
+    .select("invoice_number")
     .eq("user_id", userId);
 
-  const invoice_number = `INV-${String((count ?? 0) + 1).padStart(3, "0")}`;
+  const maxNum = (allNums ?? []).reduce((max, inv) => {
+    const match = (inv.invoice_number ?? "").match(/(\d+)$/);
+    const n = match ? parseInt(match[1], 10) : 0;
+    return Math.max(max, n);
+  }, 0);
+
+  const invoice_number = `INV-${String(maxNum + 1).padStart(3, "0")}`;
   const quoted = Number(project.quoted_amount ?? 0);
 
   const { data: inv, error: invErr } = await admin

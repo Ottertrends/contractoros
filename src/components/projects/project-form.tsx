@@ -146,29 +146,44 @@ export function ProjectForm({
 
         if (error) throw error;
 
-        // Auto-save client (fire-and-forget, deduplicate by name+address)
+        // Auto-save client — deduplicate by address (if provided) or by name
         const clientName = payload.client_name;
         const clientAddress = payload.address;
         if (clientName) {
           void (async () => {
             try {
-              // Check for existing client with same name AND address
-              const { data: existing } = await supabase
-                .from("clients")
-                .select("id")
-                .eq("user_id", userId)
-                .eq("client_name", clientName)
-                .eq("address", clientAddress ?? "")
-                .maybeSingle();
-              if (!existing) {
-                await supabase.from("clients").insert({
-                  user_id: userId,
-                  client_name: clientName,
-                  address: clientAddress ?? null,
-                  city: normalizeNullable(values.city),
-                  state: normalizeNullable(values.state),
-                  zip: normalizeNullable(values.zip),
-                });
+              if (clientAddress) {
+                // Address-based dedup: find any client with same address
+                const { data: byAddr } = await supabase
+                  .from("clients")
+                  .select("id, client_name")
+                  .eq("user_id", userId)
+                  .eq("address", clientAddress)
+                  .maybeSingle();
+                if (byAddr) {
+                  // Update existing record (name may have changed)
+                  await supabase.from("clients").update({ client_name: clientName }).eq("id", byAddr.id);
+                } else {
+                  await supabase.from("clients").insert({
+                    user_id: userId,
+                    client_name: clientName,
+                    address: clientAddress,
+                    city: normalizeNullable(values.city),
+                    state: normalizeNullable(values.state),
+                    zip: normalizeNullable(values.zip),
+                  });
+                }
+              } else {
+                // No address: dedup by name only
+                const { data: byName } = await supabase
+                  .from("clients")
+                  .select("id")
+                  .eq("user_id", userId)
+                  .eq("client_name", clientName)
+                  .maybeSingle();
+                if (!byName) {
+                  await supabase.from("clients").insert({ user_id: userId, client_name: clientName });
+                }
               }
             } catch { /* silent — don't block project creation */ }
           })();

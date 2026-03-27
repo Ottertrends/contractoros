@@ -308,11 +308,16 @@ export async function executeTool(
 
         await admin.from("invoice_items").delete().eq("invoice_id", invoiceId);
       } else {
-        const { count: invCount } = await admin
+        const { data: allNums } = await admin
           .from("invoices")
-          .select("*", { count: "exact", head: true })
+          .select("invoice_number")
           .eq("user_id", userId);
-        invoice_number = `INV-${String((invCount ?? 0) + 1).padStart(3, "0")}`;
+        const maxNum = (allNums ?? []).reduce((max: number, inv: { invoice_number: string | null }) => {
+          const match = (inv.invoice_number ?? "").match(/(\d+)$/);
+          const n = match ? parseInt(match[1], 10) : 0;
+          return Math.max(max, n);
+        }, 0);
+        invoice_number = `INV-${String(maxNum + 1).padStart(3, "0")}`;
 
         const { data: newInv, error: iErr } = await admin
           .from("invoices")

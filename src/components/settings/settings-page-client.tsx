@@ -60,7 +60,7 @@ export function SettingsPageClient({ userId, profile }: { userId: string; profil
   const [companyName, setCompanyName] = React.useState(profile.company_name);
   const [email, setEmail] = React.useState(profile.email);
   const [phone, setPhone] = React.useState(profile.phone);
-  const [zip, setZip] = React.useState((profile as Record<string, unknown>).zip as string ?? "");
+  const [zip, setZip] = React.useState(((profile as unknown) as Record<string, unknown>).zip as string ?? "");
   const [quotesPerMonth, setQuotesPerMonth] = React.useState<QuotesPerMonth>(
     (profile.quotes_per_month ?? "1-5") as QuotesPerMonth,
   );

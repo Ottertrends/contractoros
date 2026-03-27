@@ -97,10 +97,14 @@ export default async function InvoicesPage({
   const draftCount = all.filter((i) => i.status === "draft").length;
   const sentCount = all.filter((i) => i.status === "sent").length;
   const paidCount = all.filter((i) => i.status === "paid").length;
-  const cancelledCount = all.filter((i) => i.status === "cancelled").length;
   const totalRevenue = all
     .filter((i) => i.status === "paid")
     .reduce((acc, i) => acc + (parseFloat(i.total) || 0), 0);
+  const totalInvoiced = all
+    .filter((i) => i.status === "draft" || i.status === "sent")
+    .reduce((acc, i) => acc + (parseFloat(i.total) || 0), 0);
+  const totalPaid = totalRevenue;
+  const outstanding = totalInvoiced - totalPaid;
 
   const statusLabels: Record<string, string> = {
     all: ti.all,
@@ -124,28 +128,18 @@ export default async function InvoicesPage({
 
   return (
     <div className="flex flex-col gap-6">
-      {/* Summary stats */}
+      {/* Row 1: counts */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <StatCard title={ti.totalInvoices} value={String(all.length)} />
-        <StatCard title={ti.draft} value={String(draftCount)} />
-        <StatCard title={ti.sent} value={String(sentCount)} />
-        <StatCard title={ti.paid} value={String(paidCount)} />
+        <StatCard title="Total Invoices" value={String(all.length)} />
+        <StatCard title="Draft" value={String(draftCount)} />
+        <StatCard title="Sent" value={String(sentCount)} />
+        <StatCard title="Paid" value={String(paidCount)} />
       </div>
-
-      {/* Second stat row */}
-      <div className="grid grid-cols-2 gap-4">
-        <Card className="p-4">
-          <div className="text-sm text-slate-500">Cancelled</div>
-          <div className="mt-2 text-2xl font-semibold text-slate-900 dark:text-slate-50">
-            {cancelledCount}
-          </div>
-        </Card>
-        <Card className="p-4">
-          <div className="text-sm text-slate-500">{ti.totalRevenue}</div>
-          <div className="mt-2 text-2xl font-semibold text-slate-900 dark:text-slate-50">
-            {fmt(totalRevenue)}
-          </div>
-        </Card>
+      {/* Row 2: financials */}
+      <div className="grid grid-cols-3 gap-4">
+        <StatCard title="Total Invoiced" value={fmt(totalInvoiced)} />
+        <StatCard title="Total Paid" value={fmt(totalPaid)} />
+        <StatCard title="Outstanding" value={fmt(outstanding)} />
       </div>
 
       {/* Toolbar: status filter + new invoice */}

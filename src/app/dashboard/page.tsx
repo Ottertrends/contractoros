@@ -3,7 +3,7 @@ import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ProjectGrid } from "@/components/projects/project-grid";
+import { ProjectTableRows } from "@/components/projects/project-table-rows";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { getServerLang } from "@/lib/i18n/server";
 import { getT } from "@/lib/i18n/translations";
@@ -28,11 +28,7 @@ function fmtDate(d: string | null | undefined) {
   return new Date(d).toLocaleDateString();
 }
 
-export default async function DashboardHome({
-  searchParams,
-}: {
-  searchParams?: Record<string, string | string[] | undefined>;
-}) {
+export default async function DashboardHome() {
   const supabase = await createSupabaseServerClient();
   const {
     data: { user },
@@ -43,20 +39,12 @@ export default async function DashboardHome({
   const lang = await getServerLang();
   const t = getT(lang);
 
-  // Sort: 'created' = newest added first, default 'updated' = recently updated first
-  const sort =
-    typeof searchParams?.sort === "string" && searchParams.sort === "created"
-      ? "created"
-      : "updated";
-  const sortField: "created_at" | "updated_at" =
-    sort === "created" ? "created_at" : "updated_at";
-
   const [{ data: projectsRaw, error }, { data: invoicesRaw }] = await Promise.all([
     supabase
       .from("projects")
       .select("*")
       .eq("user_id", user.id)
-      .order(sortField, { ascending: false }),
+      .order("updated_at", { ascending: false }),
     supabase
       .from("invoices")
       .select("*, projects(name)")
@@ -76,40 +64,35 @@ export default async function DashboardHome({
   const allProjects = (projectsRaw ?? []) as Project[];
   const allInvoices = (invoicesRaw ?? []) as (Invoice & { projects: { name: string } | null })[];
 
-  // Top 10 projects by chosen sort
+  // Top 10 projects
   const featured = allProjects.slice(0, 10);
   const featuredIds = new Set(featured.map((p) => p.id));
 
-  // Invoice status + total maps for project cards
-  const invoiceStatusMap: Record<string, InvoiceStatus> = {};
+  // Invoice total map for project table rows
   const invoiceTotalMap: Record<string, string> = {};
   for (const inv of allInvoices) {
-    if (inv.project_id && featuredIds.has(inv.project_id) && !invoiceStatusMap[inv.project_id]) {
-      invoiceStatusMap[inv.project_id] = inv.status;
+    if (inv.project_id && featuredIds.has(inv.project_id) && !invoiceTotalMap[inv.project_id]) {
       invoiceTotalMap[inv.project_id] = inv.total ?? "0";
     }
   }
 
   // Financial stats (all invoices)
-  const totalInvoiced = allInvoices.reduce((acc, i) => acc + (parseFloat(i.total) || 0), 0);
+  // totalInvoiced = draft + sent (billed but not yet paid)
+  const totalInvoiced = allInvoices
+    .filter((i) => i.status === "draft" || i.status === "sent")
+    .reduce((acc, i) => acc + (parseFloat(i.total) || 0), 0);
   const totalPaid = allInvoices
     .filter((i) => i.status === "paid")
     .reduce((acc, i) => acc + (parseFloat(i.total) || 0), 0);
-  const outstanding = allInvoices
-    .filter((i) => i.status === "sent")
-    .reduce((acc, i) => acc + (parseFloat(i.total) || 0), 0);
+  const outstanding = totalInvoiced - totalPaid;
 
   const totalProjects = allProjects.length;
   const activeProjects = allProjects.filter((p) => p.status === "active").length;
 
-  // Invoices for the featured 10 projects only, sorted by same criterion
+  // Invoices for the featured 10 projects only
   const linkedInvoices = allInvoices
     .filter((inv) => inv.project_id && featuredIds.has(inv.project_id))
-    .sort((a, b) => {
-      const aVal = sortField === "created_at" ? a.created_at : (a.updated_at ?? a.created_at);
-      const bVal = sortField === "created_at" ? b.created_at : (b.updated_at ?? b.created_at);
-      return new Date(bVal).getTime() - new Date(aVal).getTime();
-    })
+    .sort((a, b) => new Date(b.updated_at ?? b.created_at).getTime() - new Date(a.updated_at ?? a.created_at).getTime())
     .slice(0, 10);
 
   return (
@@ -127,41 +110,15 @@ export default async function DashboardHome({
         <StatCard title={t.dashboard.activeProjects} value={`${activeProjects}`} />
       </div>
 
-      {/* Projects section header + sort toggle */}
+      {/* Projects section header */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
-          <div className="text-lg font-semibold text-slate-900 dark:text-slate-50">
-            {t.dashboard.yourProjects}
-          </div>
+          <div className="text-lg font-semibold text-slate-900 dark:text-slate-50">{t.dashboard.yourProjects}</div>
           <div className="text-sm text-slate-500">{t.dashboard.manageQuotes}</div>
         </div>
-        <div className="flex items-center gap-2">
-          <div className="flex rounded-lg border border-slate-200 overflow-hidden text-sm dark:border-slate-700">
-            <Link
-              href="/dashboard"
-              className={`px-3 py-1.5 font-medium transition-colors ${
-                sort === "updated"
-                  ? "bg-primary text-white dark:bg-slate-700 dark:text-white"
-                  : "text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-800"
-              }`}
-            >
-              Recently Updated
-            </Link>
-            <Link
-              href="/dashboard?sort=created"
-              className={`px-3 py-1.5 font-medium border-l border-slate-200 transition-colors dark:border-slate-700 ${
-                sort === "created"
-                  ? "bg-primary text-white dark:bg-slate-700 dark:text-white"
-                  : "text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-800"
-              }`}
-            >
-              Recently Added
-            </Link>
-          </div>
-          <Link href="/dashboard/projects/new">
-            <Button size="sm">{t.dashboard.newProject}</Button>
-          </Link>
-        </div>
+        <Link href="/dashboard/projects/new">
+          <Button size="sm">{t.dashboard.newProject}</Button>
+        </Link>
       </div>
 
       {allProjects.length === 0 ? (
@@ -171,7 +128,28 @@ export default async function DashboardHome({
           createFirst={t.dashboard.createFirst}
         />
       ) : (
-        <ProjectGrid projects={featured} invoiceStatusMap={invoiceStatusMap} invoiceTotalMap={invoiceTotalMap} />
+        <Card>
+          <CardContent className="pt-4">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="text-left border-b border-slate-200 dark:border-slate-700">
+                  <tr>
+                    <th className="pb-3 pr-4 text-xs uppercase text-slate-400 font-medium">Project</th>
+                    <th className="pb-3 pr-4 text-xs uppercase text-slate-400 font-medium">Client</th>
+                    <th className="pb-3 pr-4 text-xs uppercase text-slate-400 font-medium">Location</th>
+                    <th className="pb-3 pr-4 text-xs uppercase text-slate-400 font-medium">Status</th>
+                    <th className="pb-3 pr-4 text-xs uppercase text-slate-400 font-medium text-right">Invoice</th>
+                    <th className="pb-3 pr-4 text-xs uppercase text-slate-400 font-medium text-right">Updated</th>
+                    <th className="pb-3 text-xs uppercase text-slate-400 font-medium text-right">Created</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                  <ProjectTableRows projects={featured} invoiceTotalMap={invoiceTotalMap} />
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
       )}
 
       <div>
@@ -188,7 +166,7 @@ export default async function DashboardHome({
               <div>
                 <CardTitle>{t.dashboard.recentInvoices}</CardTitle>
                 <p className="text-xs text-slate-400 mt-0.5">
-                  {sort === "created" ? "Showing invoices for 10 newest projects" : "Showing invoices for 10 most recently updated projects"}
+                  Showing invoices for 10 most recently updated projects
                 </p>
               </div>
               <Link href="/dashboard/invoices" className="text-sm text-primary hover:underline">
