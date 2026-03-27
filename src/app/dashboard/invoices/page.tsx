@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { SortableHeader } from "@/components/ui/sortable-header";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { getServerLang } from "@/lib/i18n/server";
 import { getT } from "@/lib/i18n/translations";
@@ -13,6 +14,31 @@ function fmt(n: number) {
 }
 
 type InvoiceRow = Invoice & { projects: { name: string; client_name: string | null } | null };
+
+function sortInvoices(
+  invoices: InvoiceRow[],
+  sortBy: string,
+  sortDir: "asc" | "desc",
+): InvoiceRow[] {
+  const dir = sortDir === "asc" ? 1 : -1;
+  return [...invoices].sort((a, b) => {
+    let av: string | number = "";
+    let bv: string | number = "";
+    if (sortBy === "invoice_number") { av = a.invoice_number ?? ""; bv = b.invoice_number ?? ""; }
+    else if (sortBy === "project") { av = a.projects?.name ?? ""; bv = b.projects?.name ?? ""; }
+    else if (sortBy === "client") { av = a.projects?.client_name ?? ""; bv = b.projects?.client_name ?? ""; }
+    else if (sortBy === "status") { av = a.status ?? ""; bv = b.status ?? ""; }
+    else if (sortBy === "total") {
+      av = parseFloat(a.total) || 0;
+      bv = parseFloat(b.total) || 0;
+    }
+    else if (sortBy === "updated") { av = a.updated_at ?? ""; bv = b.updated_at ?? ""; }
+    else { av = a.created_at ?? ""; bv = b.created_at ?? ""; } // default: created
+    if (av < bv) return -1 * dir;
+    if (av > bv) return 1 * dir;
+    return 0;
+  });
+}
 
 export default async function InvoicesPage({
   searchParams,
@@ -35,17 +61,16 @@ export default async function InvoicesPage({
       : null;
   const search =
     typeof searchParams.q === "string" ? searchParams.q.trim() : "";
-  const sort =
-    typeof searchParams.sort === "string" && searchParams.sort === "updated"
-      ? "updated"
-      : "created";
-  const sortField = sort === "updated" ? "updated_at" : "created_at";
+  const sortBy =
+    typeof searchParams.sortBy === "string" ? searchParams.sortBy : "created";
+  const sortDir: "asc" | "desc" =
+    searchParams.sortDir === "asc" ? "asc" : "desc";
 
   let query = supabase
     .from("invoices")
     .select("*, projects(name, client_name)")
     .eq("user_id", user.id)
-    .order(sortField, { ascending: false });
+    .order("created_at", { ascending: false });
 
   if (statusFilter) {
     query = query.eq("status", statusFilter);
@@ -63,6 +88,9 @@ export default async function InvoicesPage({
         (inv.projects?.client_name ?? "").toLowerCase().includes(lower),
     );
   }
+
+  // Sort in JS
+  invoices = sortInvoices(invoices, sortBy, sortDir);
 
   // Stats (all invoices regardless of filter)
   const all = (invoicesRaw ?? []) as InvoiceRow[];
@@ -83,6 +111,16 @@ export default async function InvoicesPage({
   };
 
   const statuses = ["all", "draft", "sent", "paid", "cancelled"] as const;
+
+  // Build href for sortable headers (preserves status and q)
+  function buildSortHref(field: string, dir: "asc" | "desc") {
+    const p = new URLSearchParams();
+    if (search) p.set("q", search);
+    if (statusFilter) p.set("status", statusFilter);
+    p.set("sortBy", field);
+    p.set("sortDir", dir);
+    return `/dashboard/invoices?${p.toString()}`;
+  }
 
   return (
     <div className="flex flex-col gap-6">
@@ -110,20 +148,21 @@ export default async function InvoicesPage({
         </Card>
       </div>
 
-      {/* Toolbar: status filter + sort + new invoice */}
+      {/* Toolbar: status filter + new invoice */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-2 flex-wrap">
           {statuses.map((s) => {
             const active =
               searchParams.status === s || (!searchParams.status && s === "all");
-            const href =
-              s === "all"
-                ? `/dashboard/invoices${sort !== "created" ? `?sort=${sort}` : ""}`
-                : `/dashboard/invoices?status=${s}${sort !== "created" ? `&sort=${sort}` : ""}`;
+            const p2 = new URLSearchParams();
+            if (search) p2.set("q", search);
+            if (s !== "all") p2.set("status", s);
+            p2.set("sortBy", sortBy);
+            p2.set("sortDir", sortDir);
             return (
               <Link
                 key={s}
-                href={href}
+                href={`/dashboard/invoices?${p2.toString()}`}
                 className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
                   active
                     ? "bg-primary text-white dark:bg-slate-700 dark:text-white"
@@ -135,40 +174,16 @@ export default async function InvoicesPage({
             );
           })}
         </div>
-        <div className="flex items-center gap-2">
-          {/* Sort toggle */}
-          <div className="flex rounded-lg border border-slate-200 overflow-hidden text-sm dark:border-slate-700">
-            <Link
-              href={`/dashboard/invoices${statusFilter ? `?status=${statusFilter}` : ""}`}
-              className={`px-3 py-1.5 font-medium transition-colors ${
-                sort === "created"
-                  ? "bg-primary text-white dark:bg-slate-700 dark:text-white"
-                  : "text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-800"
-              }`}
-            >
-              By Created
-            </Link>
-            <Link
-              href={`/dashboard/invoices?sort=updated${statusFilter ? `&status=${statusFilter}` : ""}`}
-              className={`px-3 py-1.5 font-medium border-l border-slate-200 transition-colors dark:border-slate-700 ${
-                sort === "updated"
-                  ? "bg-primary text-white dark:bg-slate-700 dark:text-white"
-                  : "text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-800"
-              }`}
-            >
-              By Updated
-            </Link>
-          </div>
-          <Link href="/dashboard/invoices/new">
-            <Button size="sm">{ti.newInvoice}</Button>
-          </Link>
-        </div>
+        <Link href="/dashboard/invoices/new">
+          <Button size="sm">{ti.newInvoice}</Button>
+        </Link>
       </div>
 
       {/* Search */}
       <form method="GET">
         {statusFilter && <input type="hidden" name="status" value={statusFilter} />}
-        {sort !== "created" && <input type="hidden" name="sort" value={sort} />}
+        <input type="hidden" name="sortBy" value={sortBy} />
+        <input type="hidden" name="sortDir" value={sortDir} />
         <div className="flex gap-2">
           <input
             name="q"
@@ -202,15 +217,15 @@ export default async function InvoicesPage({
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
-                <thead className="text-left text-xs uppercase text-slate-500 border-b border-slate-200">
+                <thead className="text-left border-b border-slate-200 dark:border-slate-700">
                   <tr>
-                    <th className="pb-3 pr-4">{ti.invoiceNumber}</th>
-                    <th className="pb-3 pr-4">{ti.project}</th>
-                    <th className="pb-3 pr-4">{ti.client}</th>
-                    <th className="pb-3 pr-4">{ti.status}</th>
-                    <th className="pb-3 pr-4 text-right">{ti.total}</th>
-                    <th className="pb-3 pr-4 text-right">Created</th>
-                    <th className="pb-3 text-right">Last Updated</th>
+                    <SortableHeader label={ti.invoiceNumber} field="invoice_number" sortBy={sortBy} sortDir={sortDir} buildHref={buildSortHref} />
+                    <SortableHeader label={ti.project} field="project" sortBy={sortBy} sortDir={sortDir} buildHref={buildSortHref} />
+                    <SortableHeader label={ti.client} field="client" sortBy={sortBy} sortDir={sortDir} buildHref={buildSortHref} />
+                    <SortableHeader label={ti.status} field="status" sortBy={sortBy} sortDir={sortDir} buildHref={buildSortHref} />
+                    <SortableHeader label={ti.total} field="total" sortBy={sortBy} sortDir={sortDir} buildHref={buildSortHref} right />
+                    <SortableHeader label="Created" field="created" sortBy={sortBy} sortDir={sortDir} buildHref={buildSortHref} right />
+                    <SortableHeader label="Last Updated" field="updated" sortBy={sortBy} sortDir={sortDir} buildHref={buildSortHref} right />
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
