@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { stripe } from "@/lib/stripe";
+import { getStripe } from "@/lib/stripe";
 
 export async function POST() {
   const supabase = await createSupabaseServerClient();
@@ -19,7 +19,7 @@ export async function POST() {
 
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://worksup.vercel.app";
 
-  const portalSession = await stripe.billingPortal.sessions.create({
+  const portalSession = await getStripe().billingPortal.sessions.create({
     customer: profile.stripe_customer_id,
     return_url: `${appUrl}/dashboard/billing`,
   });

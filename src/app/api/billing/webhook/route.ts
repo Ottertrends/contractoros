@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { stripe } from "@/lib/stripe";
+import { getStripe } from "@/lib/stripe";
 import { createClient } from "@supabase/supabase-js";
 
 export const runtime = "nodejs";
@@ -20,13 +20,13 @@ export async function POST(req: NextRequest) {
 
   let event;
   try {
-    event = stripe.webhooks.constructEvent(body, sig, process.env.STRIPE_WEBHOOK_SECRET);
+    event = getStripe().webhooks.constructEvent(body, sig, process.env.STRIPE_WEBHOOK_SECRET);
   } catch {
     return NextResponse.json({ error: "Webhook signature verification failed" }, { status: 400 });
   }
 
   async function getSupabaseUserId(customerId: string): Promise<string | null> {
-    const customer = await stripe.customers.retrieve(customerId);
+    const customer = await getStripe().customers.retrieve(customerId);
     if (customer.deleted) return null;
     return (customer as { metadata?: { supabase_user_id?: string } }).metadata?.supabase_user_id ?? null;
   }
