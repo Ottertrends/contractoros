@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 
 interface Profile {
   id: string;
@@ -82,10 +83,17 @@ interface Props {
 }
 
 export function AdminUserDetailClient({ userId, profile, projects, invoices, memory, usage }: Props) {
+  const router = useRouter();
   const [plan, setPlan] = useState(profile.subscription_plan ?? "standard");
   const [status, setStatus] = useState(profile.subscription_status ?? "none");
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState("");
+
+  const [resetSending, setResetSending] = useState(false);
+  const [resetMsg, setResetMsg] = useState("");
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteMsg, setDeleteMsg] = useState("");
 
   const [diagnostics, setDiagnostics] = useState<DiagnosticsResult | null>(null);
   const [diagLoading, setDiagLoading] = useState(false);
@@ -98,6 +106,38 @@ export function AdminUserDetailClient({ userId, profile, projects, invoices, mem
 
   const totalTokens = usage.reduce((acc, u) => acc + u.claude_input_tokens + u.claude_output_tokens, 0);
   const totalTavily = usage.reduce((acc, u) => acc + u.tavily_searches, 0);
+
+  async function sendPasswordReset() {
+    setResetSending(true);
+    setResetMsg("");
+    try {
+      const res = await fetch(`/api/admin/users/${userId}/send-password-reset`, { method: "POST" });
+      const data = await res.json();
+      setResetMsg(res.ok ? "Reset email sent ✓" : `Error: ${data.error}`);
+    } finally {
+      setResetSending(false);
+    }
+  }
+
+  async function deleteUser() {
+    setDeleting(true);
+    setDeleteMsg("");
+    try {
+      const res = await fetch(`/api/admin/users/${userId}`, { method: "DELETE" });
+      const data = await res.json();
+      if (res.ok) {
+        router.push("/admin/users");
+      } else {
+        setDeleteMsg(`Error: ${data.error}`);
+        setDeleting(false);
+        setDeleteOpen(false);
+      }
+    } catch {
+      setDeleteMsg("Network error");
+      setDeleting(false);
+      setDeleteOpen(false);
+    }
+  }
 
   async function savePlan() {
     setSaving(true);
@@ -170,6 +210,56 @@ export function AdminUserDetailClient({ userId, profile, projects, invoices, mem
 
   return (
     <div className="flex flex-col gap-6">
+      {/* User Actions */}
+      <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+        <h2 className="font-semibold text-slate-900 dark:text-white mb-4">User Actions</h2>
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            onClick={sendPasswordReset}
+            disabled={resetSending}
+            className="px-4 py-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-sm font-medium hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-50"
+          >
+            {resetSending ? "Sending…" : "Send Password Reset Email"}
+          </button>
+          <button
+            onClick={() => setDeleteOpen(true)}
+            className="px-4 py-2 rounded-lg bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 text-sm font-medium hover:bg-red-200 dark:hover:bg-red-900/50"
+          >
+            Delete User
+          </button>
+        </div>
+        {resetMsg && <p className="mt-3 text-sm text-slate-600 dark:text-slate-400">{resetMsg}</p>}
+        {deleteMsg && <p className="mt-3 text-sm text-red-600">{deleteMsg}</p>}
+
+        {/* Delete confirmation dialog */}
+        {deleteOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+            <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 p-6 max-w-sm w-full mx-4 shadow-xl">
+              <h3 className="font-semibold text-slate-900 dark:text-white mb-2">Delete user?</h3>
+              <p className="text-sm text-slate-500 mb-4">
+                This will permanently delete <strong>{profile.full_name ?? profile.email}</strong> and all their data (projects, invoices, memory). This cannot be undone.
+              </p>
+              <div className="flex gap-3 justify-end">
+                <button
+                  onClick={() => setDeleteOpen(false)}
+                  disabled={deleting}
+                  className="px-4 py-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-sm font-medium hover:bg-slate-200"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={deleteUser}
+                  disabled={deleting}
+                  className="px-4 py-2 rounded-lg bg-red-600 text-white text-sm font-medium hover:bg-red-700 disabled:opacity-50"
+                >
+                  {deleting ? "Deleting…" : "Delete permanently"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* Subscription management */}
       <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
         <h2 className="font-semibold text-slate-900 dark:text-white mb-4">Subscription Management</h2>

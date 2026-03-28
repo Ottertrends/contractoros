@@ -68,6 +68,8 @@ export function SettingsPageClient({ userId, profile }: { userId: string; profil
 
   const [newPassword, setNewPassword] = React.useState("");
   const [confirmPassword, setConfirmPassword] = React.useState("");
+  const [resetSent, setResetSent] = React.useState(false);
+  const [resetSending, setResetSending] = React.useState(false);
 
   const [deleteOpen, setDeleteOpen] = React.useState(false);
   const [isDeleting, setIsDeleting] = React.useState(false);
@@ -99,6 +101,23 @@ export function SettingsPageClient({ userId, profile }: { userId: string; profil
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : "Failed to save profile";
       toast.error(message);
+    }
+  }
+
+  async function onSendResetEmail() {
+    setResetSending(true);
+    try {
+      const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? "").replace(/\/$/, "");
+      const { error } = await supabase.auth.resetPasswordForEmail(profile.email, {
+        redirectTo: `${appUrl}/auth/callback?redirect=/auth/reset-password`,
+      });
+      if (error) throw error;
+      setResetSent(true);
+      toast.success("Reset email sent");
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Failed to send reset email");
+    } finally {
+      setResetSending(false);
     }
   }
 
@@ -309,6 +328,19 @@ export function SettingsPageClient({ userId, profile }: { userId: string; profil
             <Button variant="secondary" onClick={() => void onChangePassword()}>
               {ts.updatePassword}
             </Button>
+            <div className="flex items-center gap-3">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={resetSending || resetSent}
+                onClick={() => void onSendResetEmail()}
+              >
+                {resetSending ? "Sending…" : resetSent ? "Reset email sent ✓" : "Send password reset email"}
+              </Button>
+              {resetSent && (
+                <span className="text-xs text-slate-500">Check {profile.email}</span>
+              )}
+            </div>
           </div>
 
           <div className="flex items-center justify-between gap-3 flex-wrap">
