@@ -29,12 +29,12 @@ export async function POST() {
     await supabase.from("profiles").update({ stripe_customer_id: customerId }).eq("id", user.id);
   }
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://worksup.vercel.app";
+  const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? "https://worksup.vercel.app").replace(/\/$/, "");
 
-  // Apply discount coupon if discounted plan
+  // Apply promo code if discounted plan (STRIPE_PROMO_ID = Stripe promotion_code ID)
   const discounts =
-    profile?.subscription_plan === "discounted" && process.env.STRIPE_DISCOUNT_COUPON_ID
-      ? [{ coupon: process.env.STRIPE_DISCOUNT_COUPON_ID }]
+    profile?.subscription_plan === "discounted" && process.env.STRIPE_PROMO_ID
+      ? [{ promotion_code: process.env.STRIPE_PROMO_ID }]
       : [];
 
   const session = await getStripe().checkout.sessions.create({

@@ -17,7 +17,7 @@ export async function POST() {
     return NextResponse.json({ error: "No Stripe customer found" }, { status: 400 });
   }
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://worksup.vercel.app";
+  const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? "https://worksup.vercel.app").replace(/\/$/, "");
 
   const portalSession = await getStripe().billingPortal.sessions.create({
     customer: profile.stripe_customer_id,
