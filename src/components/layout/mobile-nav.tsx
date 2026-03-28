@@ -81,7 +81,7 @@ export function MobileNav() {
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 shrink-0 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
           <div className="flex items-center gap-2">
-            <Image src="/logo.png" alt="WorkSupp" width={32} height={32} className="object-contain" />
+            <Image src="/logo.png" alt="WorkSupp" width={48} height={48} className="object-contain" />
             <span className="text-xl font-bold text-primary dark:text-white">{t.nav.brand}</span>
           </div>
           <button

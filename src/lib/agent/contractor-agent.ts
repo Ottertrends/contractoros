@@ -9,7 +9,7 @@ import type {
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { executeTool } from "@/lib/agent/tool-handlers";
 import { DEFAULT_ANTHROPIC_MODEL } from "@/lib/agent/model";
-import { SYSTEM_PROMPT } from "@/lib/agent/types";
+import { buildSystemPrompt } from "@/lib/agent/types";
 import { CONTRACTOR_TOOLS } from "@/lib/agent/tools";
 
 function getModel() {
@@ -93,19 +93,22 @@ export async function processContractorMessage(
     );
     const client = getClient();
 
-    // Fetch this contractor's long-term memory and inject it into the prompt
+    // Fetch this contractor's long-term memory + location context
     const admin = createSupabaseAdminClient();
-    const { data: memRow } = await admin
-      .from("agent_memory")
-      .select("memory_text, updated_at")
-      .eq("user_id", userId)
-      .maybeSingle();
+    const [{ data: memRow }, { data: profRow }] = await Promise.all([
+      admin.from("agent_memory").select("memory_text, updated_at").eq("user_id", userId).maybeSingle(),
+      admin.from("profiles").select("zip, city, state").eq("id", userId).maybeSingle(),
+    ]);
 
     const memoryBlock = memRow?.memory_text?.trim()
       ? `\n\n━━━ YOUR MEMORY ABOUT THIS CONTRACTOR ━━━\n${memRow.memory_text}\n(Last updated: ${memRow.updated_at ? new Date(memRow.updated_at).toLocaleDateString() : "unknown"})\nWhen you learn new important details, call update_memory with the full updated memory block.`
       : `\n\n━━━ CONTRACTOR MEMORY ━━━\n(No notes yet — memory is empty. As you learn about this contractor's services, pricing, clients, and work style, call update_memory to start building their profile.)`;
 
-    const systemWithMemory = SYSTEM_PROMPT + memoryBlock;
+    const systemWithMemory = buildSystemPrompt({
+      zip: profRow?.zip,
+      city: profRow?.city,
+      state: profRow?.state,
+    }) + memoryBlock;
 
     let messages = buildMessageParams(history, messageText);
     const maxLoops = 8;

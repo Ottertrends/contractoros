@@ -33,7 +33,7 @@ export function Sidebar() {
     <aside className="hidden md:block md:w-64 md:shrink-0 border-r border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950">
       <div className="p-4">
         <div className="flex items-center gap-2 mb-6">
-          <Image src="/logo.png" alt="WorkSupp" width={28} height={28} className="object-contain" />
+          <Image src="/logo.png" alt="WorkSupp" width={42} height={42} className="object-contain" />
           <span className="text-lg font-semibold text-primary dark:text-white">{t.nav.brand}</span>
         </div>
         <nav className="flex flex-col gap-1">

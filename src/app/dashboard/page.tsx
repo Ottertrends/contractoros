@@ -64,11 +64,9 @@ export default async function DashboardHome() {
   const allProjects = (projectsRaw ?? []) as Project[];
   const allInvoices = (invoicesRaw ?? []) as (Invoice & { projects: { name: string } | null })[];
 
-  // Top 10 projects
   const featured = allProjects.slice(0, 10);
   const featuredIds = new Set(featured.map((p) => p.id));
 
-  // Invoice total map for project table rows
   const invoiceTotalMap: Record<string, string> = {};
   for (const inv of allInvoices) {
     if (inv.project_id && featuredIds.has(inv.project_id) && !invoiceTotalMap[inv.project_id]) {
@@ -76,8 +74,6 @@ export default async function DashboardHome() {
     }
   }
 
-  // Financial stats (all invoices)
-  // totalInvoiced = draft + sent (billed but not yet paid)
   const totalInvoiced = allInvoices
     .filter((i) => i.status === "draft" || i.status === "sent")
     .reduce((acc, i) => acc + (parseFloat(i.total) || 0), 0);
@@ -89,23 +85,29 @@ export default async function DashboardHome() {
   const totalProjects = allProjects.length;
   const activeProjects = allProjects.filter((p) => p.status === "active").length;
 
-  // Invoices for the featured 10 projects only
   const linkedInvoices = allInvoices
     .filter((inv) => inv.project_id && featuredIds.has(inv.project_id))
     .sort((a, b) => new Date(b.updated_at ?? b.created_at).getTime() - new Date(a.updated_at ?? a.created_at).getTime())
     .slice(0, 10);
 
+  const statusLabel: Record<InvoiceStatus, string> = {
+    draft: t.invoices.draft,
+    sent: t.invoices.sent,
+    paid: t.invoices.paid,
+    cancelled: t.invoices.cancelled,
+  };
+
   return (
     <div className="flex flex-col gap-6">
-      {/* Financial stats */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      {/* Financial stats — always 3 cols, compact on mobile */}
+      <div className="grid grid-cols-3 gap-3">
         <StatCard title={t.dashboard.totalInvoiced} value={fmt(totalInvoiced)} />
         <StatCard title={t.dashboard.totalPaid} value={fmt(totalPaid)} />
         <StatCard title={t.dashboard.outstanding} value={fmt(outstanding)} />
       </div>
 
       {/* Project counts */}
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-2 gap-3">
         <StatCard title={t.dashboard.totalProjects} value={`${totalProjects}`} />
         <StatCard title={t.dashboard.activeProjects} value={`${activeProjects}`} />
       </div>
@@ -134,13 +136,13 @@ export default async function DashboardHome() {
               <table className="w-full text-sm">
                 <thead className="text-left border-b border-slate-200 dark:border-slate-700">
                   <tr>
-                    <th className="pb-3 pr-4 text-xs uppercase text-slate-400 font-medium">Project</th>
-                    <th className="pb-3 pr-4 text-xs uppercase text-slate-400 font-medium">Client</th>
-                    <th className="pb-3 pr-4 text-xs uppercase text-slate-400 font-medium">Location</th>
-                    <th className="pb-3 pr-4 text-xs uppercase text-slate-400 font-medium">Status</th>
-                    <th className="pb-3 pr-4 text-xs uppercase text-slate-400 font-medium text-right">Invoice</th>
-                    <th className="pb-3 pr-4 text-xs uppercase text-slate-400 font-medium text-right">Updated</th>
-                    <th className="pb-3 text-xs uppercase text-slate-400 font-medium text-right">Created</th>
+                    <th className="pb-3 pr-4 text-xs uppercase text-slate-400 font-medium">{t.dashboard.project}</th>
+                    <th className="pb-3 pr-4 text-xs uppercase text-slate-400 font-medium">{t.dashboard.client}</th>
+                    <th className="pb-3 pr-4 text-xs uppercase text-slate-400 font-medium">{t.dashboard.location}</th>
+                    <th className="pb-3 pr-4 text-xs uppercase text-slate-400 font-medium">{t.dashboard.status}</th>
+                    <th className="pb-3 pr-4 text-xs uppercase text-slate-400 font-medium text-right">{t.dashboard.invoice}</th>
+                    <th className="pb-3 pr-4 text-xs uppercase text-slate-400 font-medium text-right">{t.dashboard.updated}</th>
+                    <th className="pb-3 text-xs uppercase text-slate-400 font-medium text-right">{t.dashboard.created}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -157,7 +159,7 @@ export default async function DashboardHome() {
         </Card>
       )}
 
-      {/* Recent invoices — linked to the same 10 projects above */}
+      {/* Recent invoices */}
       {linkedInvoices.length > 0 && (
         <Card>
           <CardHeader>
@@ -165,11 +167,11 @@ export default async function DashboardHome() {
               <div>
                 <CardTitle>{t.dashboard.recentInvoices}</CardTitle>
                 <p className="text-xs text-slate-400 mt-0.5">
-                  Showing invoices for 10 most recently updated projects
+                  {t.dashboard.recentInvoicesDesc}
                 </p>
               </div>
-              <Link href="/dashboard/invoices" className="text-sm text-primary hover:underline">
-                {t.dashboard.viewAll}
+              <Link href="/dashboard/invoices">
+                <Button size="sm">{t.dashboard.viewAll} →</Button>
               </Link>
             </div>
           </CardHeader>
@@ -181,8 +183,8 @@ export default async function DashboardHome() {
                     <th className="pb-2 pr-4">{t.dashboard.invoiceNumber}</th>
                     <th className="pb-2 pr-4">{t.dashboard.project}</th>
                     <th className="pb-2 pr-4">{t.dashboard.status}</th>
-                    <th className="pb-2 pr-4">Created</th>
-                    <th className="pb-2 pr-4">Updated</th>
+                    <th className="pb-2 pr-4">{t.dashboard.created}</th>
+                    <th className="pb-2 pr-4">{t.dashboard.updated}</th>
                     <th className="pb-2 text-right">{t.dashboard.total}</th>
                   </tr>
                 </thead>
@@ -206,7 +208,7 @@ export default async function DashboardHome() {
                         </Link>
                       </td>
                       <td className="py-2 pr-4">
-                        <Badge variant={statusVariant(inv.status)}>{inv.status}</Badge>
+                        <Badge variant={statusVariant(inv.status)}>{statusLabel[inv.status]}</Badge>
                       </td>
                       <td className="py-2 pr-4 text-slate-400 text-xs">
                         {fmtDate(inv.created_at)}
@@ -231,9 +233,9 @@ export default async function DashboardHome() {
 
 function StatCard({ title, value }: { title: string; value: string }) {
   return (
-    <Card className="p-4">
-      <div className="text-sm text-slate-500">{title}</div>
-      <div className="mt-2 text-2xl font-semibold text-slate-900 dark:text-slate-50">{value}</div>
+    <Card className="p-3 md:p-4">
+      <div className="text-xs md:text-sm text-slate-500 leading-tight">{title}</div>
+      <div className="mt-1 text-base md:text-2xl font-semibold text-slate-900 dark:text-slate-50 truncate">{value}</div>
     </Card>
   );
 }

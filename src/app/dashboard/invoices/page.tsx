@@ -129,18 +129,18 @@ export default async function InvoicesPage({
 
   return (
     <div className="flex flex-col gap-6">
-      {/* Row 1: counts */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <StatCard title="Total Invoices" value={String(all.length)} />
-        <StatCard title="Draft" value={String(draftCount)} />
-        <StatCard title="Sent" value={String(sentCount)} />
-        <StatCard title="Paid" value={String(paidCount)} />
+      {/* Row 1: counts — always 4 cols, compact on mobile */}
+      <div className="grid grid-cols-4 gap-2">
+        <StatCard title={ti.totalInvoices} value={String(all.length)} />
+        <StatCard title={ti.draft} value={String(draftCount)} />
+        <StatCard title={ti.sent} value={String(sentCount)} />
+        <StatCard title={ti.paid} value={String(paidCount)} />
       </div>
       {/* Row 2: financials — hidden on mobile */}
       <div className="hidden md:grid grid-cols-3 gap-4">
-        <StatCard title="Total Invoiced" value={fmt(totalInvoiced)} />
-        <StatCard title="Total Paid" value={fmt(totalPaid)} />
-        <StatCard title="Outstanding" value={fmt(outstanding)} />
+        <StatCard title={t.dashboard.totalInvoiced} value={fmt(totalInvoiced)} />
+        <StatCard title={t.dashboard.totalPaid} value={fmt(totalPaid)} />
+        <StatCard title={t.dashboard.outstanding} value={fmt(outstanding)} />
       </div>
 
       {/* Toolbar: status filter + new invoice */}
@@ -237,9 +237,9 @@ export default async function InvoicesPage({
 
 function StatCard({ title, value }: { title: string; value: string }) {
   return (
-    <Card className="p-4">
-      <div className="text-sm text-slate-500">{title}</div>
-      <div className="mt-2 text-2xl font-semibold text-slate-900 dark:text-slate-50">{value}</div>
+    <Card className="p-2 md:p-4">
+      <div className="text-xs md:text-sm text-slate-500 leading-tight truncate">{title}</div>
+      <div className="mt-1 text-base md:text-2xl font-semibold text-slate-900 dark:text-slate-50 truncate">{value}</div>
     </Card>
   );
 }
