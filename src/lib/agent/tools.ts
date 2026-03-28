@@ -279,5 +279,7 @@ export const CONTRACTOR_TOOLS: Tool[] = [
       },
       required: ["media_id", "project_id"],
     },
+    // cache_control marks the end of the cached tools prefix — all tools are cached together
+    cache_control: { type: "ephemeral" } as { type: "ephemeral" },
   },
 ];

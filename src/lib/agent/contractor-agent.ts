@@ -3,6 +3,7 @@ import type {
   ContentBlock,
   MessageParam,
   TextBlock,
+  TextBlockParam,
   ToolUseBlock,
 } from "@anthropic-ai/sdk/resources/messages";
 
@@ -58,7 +59,7 @@ function buildMessageParams(
   history: { role: "user" | "assistant"; content: string }[],
   latestUserText: string,
 ): MessageParam[] {
-  const recent = history.slice(-20);
+  const recent = history.slice(-8);
   const msgs: MessageParam[] = recent.map((h) => ({
     role: h.role,
     content: h.content,
@@ -110,14 +111,42 @@ export async function processContractorMessage(
       state: profRow?.state,
     }) + memoryBlock;
 
+    // Monthly token cap check (6.5M tokens)
+    const MONTHLY_TOKEN_CAP = 6_500_000;
+    const monthStart = new Date();
+    monthStart.setDate(1);
+    monthStart.setHours(0, 0, 0, 0);
+    const { data: monthRows } = await admin
+      .from("api_usage")
+      .select("claude_input_tokens, claude_output_tokens")
+      .eq("user_id", userId)
+      .gte("date", monthStart.toISOString().slice(0, 10));
+    const monthlyTokens = (monthRows ?? []).reduce(
+      (sum, r) => sum + (r.claude_input_tokens ?? 0) + (r.claude_output_tokens ?? 0),
+      0,
+    );
+    if (monthlyTokens >= MONTHLY_TOKEN_CAP) {
+      return {
+        reply: "⚠️ You've reached your monthly usage limit (6.5M tokens). Your limit resets on the 1st of next month.",
+        error: `Monthly token cap exceeded: ${monthlyTokens.toLocaleString()} / ${MONTHLY_TOKEN_CAP.toLocaleString()}`,
+      };
+    }
+
+    // System prompt with prompt caching (saves ~80% on cached tokens)
+    const systemBlock: TextBlockParam = {
+      type: "text",
+      text: systemWithMemory,
+      cache_control: { type: "ephemeral" },
+    };
+
     let messages = buildMessageParams(history, messageText);
-    const maxLoops = 8;
+    const maxLoops = 5;
 
     for (let i = 0; i < maxLoops; i++) {
       const response = await client.messages.create({
         model,
-        max_tokens: 8192,
-        system: systemWithMemory,
+        max_tokens: 2048,
+        system: [systemBlock],
         tools: CONTRACTOR_TOOLS,
         messages,
       });
