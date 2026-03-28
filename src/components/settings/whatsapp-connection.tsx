@@ -286,6 +286,10 @@ function LineBlock({
           <p className="text-sm text-slate-600 text-center">
             Scan with WhatsApp → Linked devices. Status checks every 3 seconds.
           </p>
+          <p className="text-xs text-slate-400 text-center max-w-xs">
+            WorkSupp may include Amazon affiliate links when recommending products.{" "}
+            <span className="font-medium">As an Amazon Associate, WorkSupp earns from qualifying purchases.</span>
+          </p>
         </div>
       ) : !connected && connecting ? (
         <div className="rounded-xl border border-slate-200 bg-slate-50 px-6 py-10 text-center text-sm text-slate-600 dark:border-slate-800 dark:bg-slate-900">
