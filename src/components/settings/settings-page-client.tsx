@@ -17,7 +17,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { WhatsAppConnection } from "@/components/settings/whatsapp-connection";
-import { BotDiagnostics } from "@/components/settings/bot-diagnostics";
 
 const quotesOptions: QuotesPerMonth[] = ["1-5", "6-15", "16-30", "30+"];
 
@@ -276,16 +275,6 @@ export function SettingsPageClient({ userId, profile }: { userId: string; profil
             primaryInitiallyConnected={!!profile.whatsapp_connected}
             secondaryInitiallyConnected={!!profile.whatsapp_secondary_connected}
           />
-        </CardContent>
-      </Card>
-
-      {/* Bot diagnostics */}
-      <Card>
-        <CardHeader>
-          <CardTitle>{ts.diagnostics}</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <BotDiagnostics />
         </CardContent>
       </Card>
 

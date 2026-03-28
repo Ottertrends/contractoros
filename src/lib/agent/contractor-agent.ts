@@ -122,6 +122,21 @@ export async function processContractorMessage(
         messages,
       });
 
+      // Track token usage
+      if (response.usage) {
+        const today = new Date().toISOString().slice(0, 10);
+        void Promise.resolve(
+          admin.rpc("increment_usage", {
+            p_user_id: userId,
+            p_date: today,
+            p_input: response.usage.input_tokens ?? 0,
+            p_output: response.usage.output_tokens ?? 0,
+            p_tavily: 0,
+            p_web_messages: 0,
+          })
+        ).catch((err: unknown) => console.warn("[contractor-agent] usage tracking failed:", err));
+      }
+
       if (response.stop_reason === "end_turn") {
         const text = extractTextFromResponse(response.content);
         return { reply: text || "✅ Done." };

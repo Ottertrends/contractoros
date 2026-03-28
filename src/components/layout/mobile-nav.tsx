@@ -15,6 +15,7 @@ import {
   Users,
   Palette,
   Settings as SettingsIcon,
+  CreditCard,
 } from "lucide-react";
 
 import Image from "next/image";
@@ -54,6 +55,7 @@ export function MobileNav() {
     { href: "/dashboard/clients", label: t.nav.clients, icon: Users },
     { href: "/dashboard/invoice-design", label: t.nav.invoiceDesign, icon: Palette },
     { href: "/dashboard/messages", label: t.nav.messages, icon: MessageSquare },
+    { href: "/dashboard/billing", label: "Billing", icon: CreditCard },
     { href: "/dashboard/settings", label: t.nav.settings, icon: SettingsIcon },
   ];
 

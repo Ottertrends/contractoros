@@ -20,6 +20,31 @@ export async function executeTool(
       const nameVal = String(input.name ?? "").trim();
       if (!nameVal) return jsonResult({ error: "name is required" });
 
+      // ── Free tier limit: max 1 project ────────────────────────────────────
+      const { data: subProfile } = await admin
+        .from("profiles")
+        .select("subscription_plan, subscription_status")
+        .eq("id", userId)
+        .maybeSingle();
+
+      const isPaid =
+        subProfile?.subscription_plan === "free" ||
+        ["active", "trialing"].includes(subProfile?.subscription_status ?? "");
+
+      if (!isPaid) {
+        const { count: projectCount } = await admin
+          .from("projects")
+          .select("*", { count: "exact", head: true })
+          .eq("user_id", userId);
+
+        if ((projectCount ?? 0) >= 1) {
+          return jsonResult({
+            error:
+              "Free plan is limited to 1 project. Upgrade to Standard at worksup.vercel.app/dashboard/billing to add more.",
+          });
+        }
+      }
+
       // ── Deduplication: if a project with the same name (case-insensitive)
       //    already exists, return it instead of creating a duplicate.
       const { data: existing } = await admin
@@ -535,6 +560,24 @@ export async function executeTool(
       const rawQuery = String(input.query ?? "").trim();
       if (!rawQuery) return jsonResult({ error: "query is required" });
 
+      // ── Free tier: web search not available ───────────────────────────────
+      const { data: wsProfile } = await admin
+        .from("profiles")
+        .select("subscription_plan, subscription_status")
+        .eq("id", userId)
+        .maybeSingle();
+
+      const wsIsPaid =
+        wsProfile?.subscription_plan === "free" ||
+        ["active", "trialing"].includes(wsProfile?.subscription_status ?? "");
+
+      if (!wsIsPaid) {
+        return jsonResult({
+          error:
+            "Web search is available on the Standard plan ($50/month). Upgrade at worksup.vercel.app/dashboard/billing",
+        });
+      }
+
       const apiKey = process.env.TAVILY_API_KEY?.trim();
       if (!apiKey) return jsonResult({ error: "Web search is not configured (missing TAVILY_API_KEY)" });
 
@@ -597,6 +640,19 @@ export async function executeTool(
           url: injectAmazonTag(r.url),  // affiliate tag injected for amazon.com URLs
           snippet: r.content.slice(0, 400),
         }));
+
+        // Track Tavily usage
+        const today = new Date().toISOString().slice(0, 10);
+        void Promise.resolve(
+          admin.rpc("increment_usage", {
+            p_user_id: userId,
+            p_date: today,
+            p_input: 0,
+            p_output: 0,
+            p_tavily: 1,
+            p_web_messages: 0,
+          })
+        ).catch((err: unknown) => console.warn("[tool-handlers] tavily usage tracking failed:", err));
 
         return jsonResult({
           ok: true,
