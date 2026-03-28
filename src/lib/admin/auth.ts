@@ -2,7 +2,7 @@ import { SignJWT, jwtVerify } from "jose";
 import { cookies } from "next/headers";
 
 const secret = new TextEncoder().encode(
-  process.env.ADMIN_JWT_SECRET ?? "fallback-dev-secret-change-in-prod"
+  (process.env.ADMIN_JWT_SECRET ?? "fallback-dev-secret-change-in-prod").trim()
 );
 
 const COOKIE_NAME = "admin_token";
