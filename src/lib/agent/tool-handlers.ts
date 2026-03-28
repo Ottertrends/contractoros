@@ -538,6 +538,17 @@ export async function executeTool(
       const apiKey = process.env.TAVILY_API_KEY?.trim();
       if (!apiKey) return jsonResult({ error: "Web search is not configured (missing TAVILY_API_KEY)" });
 
+      // Amazon Associates affiliate tag — injected into amazon.com URLs before returning to Claude
+      const amazonTag = process.env.AMAZON_AFFILIATE_TAG?.trim() ?? null;
+      const injectAmazonTag = (url: string): string => {
+        if (!amazonTag || !url.includes("amazon.com")) return url;
+        try {
+          const u = new URL(url);
+          u.searchParams.set("tag", amazonTag);
+          return u.toString();
+        } catch { return url; }
+      };
+
       // Fetch contractor's zip code from profile for local search context
       const includeZip = input.include_zip !== false; // default true
       let zip: string | null = null;
@@ -583,7 +594,7 @@ export async function executeTool(
 
         const results = (data.results ?? []).map((r) => ({
           title: r.title,
-          url: r.url,
+          url: injectAmazonTag(r.url),  // affiliate tag injected for amazon.com URLs
           snippet: r.content.slice(0, 400),
         }));
 
@@ -593,6 +604,7 @@ export async function executeTool(
           answer: data.answer ?? null,
           results,
           note: zip ? `Search localized to zip/area: ${zip}` : "General search (no zip on profile)",
+          amazon_affiliate_active: !!amazonTag,  // signals Claude to add disclosure when sharing Amazon links
         });
       } catch (fetchErr) {
         const msg = fetchErr instanceof Error ? fetchErr.message : String(fetchErr);
