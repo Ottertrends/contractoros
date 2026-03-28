@@ -2,6 +2,7 @@ import { isAdminAuthenticated } from "@/lib/admin/auth";
 import { redirect } from "next/navigation";
 import { createClient } from "@supabase/supabase-js";
 import Link from "next/link";
+import { AdminLogoutButton } from "@/app/admin/AdminLogoutButton";
 
 const admin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -80,15 +81,7 @@ export default async function AdminUsersPage() {
             <Link href="/admin/subscribers" className="text-sm text-primary hover:underline">
               Subscribers
             </Link>
-            <button
-              onClick={async () => {
-                await fetch("/api/admin/auth", { method: "DELETE" });
-                window.location.href = "/admin/login";
-              }}
-              className="text-sm text-slate-400 hover:text-slate-600"
-            >
-              Logout
-            </button>
+            <AdminLogoutButton />
           </div>
         </div>
 
