@@ -58,51 +58,23 @@ export function LoginForm() {
   async function onSubmit(values: LoginValues) {
     try {
       setDebugError(null);
-      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
-      const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim();
-      if (!supabaseUrl || !supabaseAnonKey) {
-        const msg = "Missing Supabase URL or anon key.";
-        setDebugError(msg); toast.error(msg); return;
-      }
-
-      const tokenRes = await fetch(
-        `${supabaseUrl.replace(/\/$/, "")}/auth/v1/token?grant_type=password`,
-        {
-          method: "POST",
-          headers: { apikey: supabaseAnonKey, "Content-Type": "application/json" },
-          body: JSON.stringify({ email: values.email, password: values.password }),
-        },
-      );
-
-      const tokenJson = (await tokenRes.json().catch(() => ({}))) as Record<string, unknown>;
-      if (!tokenRes.ok) {
-        const msg = extractAuthErrorMessage(tokenJson);
-        setDebugError(msg); toast.error(msg); return;
-      }
-
-      const accessToken = typeof tokenJson.access_token === "string" ? tokenJson.access_token : null;
-      const refreshToken = typeof tokenJson.refresh_token === "string" ? tokenJson.refresh_token : null;
-      if (!accessToken || !refreshToken) {
-        const msg = "Auth response missing tokens.";
-        setDebugError(msg); toast.error(msg); return;
-      }
-
-      const { error: sessionError } = await supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken });
-      if (sessionError) {
-        const msg = extractAuthErrorMessage(sessionError);
-        setDebugError(msg); toast.error(msg); return;
-      }
-
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        const msg = "Login succeeded but no session was created.";
-        setDebugError(msg); toast.error(msg); return;
+      const { error } = await supabase.auth.signInWithPassword({
+        email: values.email,
+        password: values.password,
+      });
+      if (error) {
+        const msg = extractAuthErrorMessage(error);
+        setDebugError(msg);
+        toast.error(msg);
+        return;
       }
       toast.success("Logged in");
+      router.refresh(); // flush server components so DashboardLayout sees the new session
       router.push("/dashboard");
     } catch (e: unknown) {
       const msg = extractAuthErrorMessage(e);
-      setDebugError(msg); toast.error(msg);
+      setDebugError(msg);
+      toast.error(msg);
     }
   }
 
