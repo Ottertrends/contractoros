@@ -43,7 +43,10 @@ export async function POST() {
     line_items: [{ price: process.env.STRIPE_PRICE_ID!, quantity: 1 }],
     automatic_tax: { enabled: true },
     customer_update: { address: "auto" },
-    discounts: discounts.length ? discounts : undefined,
+    // allow_promotion_codes and discounts are mutually exclusive in Stripe
+    ...(discounts.length
+      ? { discounts }
+      : { allow_promotion_codes: true }),
     success_url: `${appUrl}/dashboard/billing?success=1`,
     cancel_url: `${appUrl}/dashboard/billing?canceled=1`,
     metadata: { supabase_user_id: user.id },
