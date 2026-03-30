@@ -173,10 +173,22 @@ export function createEvolutionClient(): EvolutionClient {
 
     async getPairingCode(instanceName: string, phoneNumber: string) {
       const digits = phoneNumber.replace(/\D/g, "");
-      return evolutionFetch<QRCodeResponse>(
-        `/instance/connect/${encodeURIComponent(instanceName)}?number=${encodeURIComponent(digits)}`,
-        { method: "GET" },
-      );
+      // Try Evolution v2 dedicated endpoint first; fall back to v1 GET with ?number param
+      try {
+        const result = await evolutionFetch<QRCodeResponse>(
+          `/instance/pairingCode/${encodeURIComponent(instanceName)}`,
+          { method: "POST", body: JSON.stringify({ number: digits }) },
+        );
+        console.log("[evolution-client] getPairingCode v2 POST succeeded:", JSON.stringify(result).slice(0, 200));
+        return result;
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        console.warn("[evolution-client] getPairingCode v2 POST failed, trying v1 GET:", msg.slice(0, 120));
+        return evolutionFetch<QRCodeResponse>(
+          `/instance/connect/${encodeURIComponent(instanceName)}?number=${encodeURIComponent(digits)}`,
+          { method: "GET" },
+        );
+      }
     },
   };
 }
