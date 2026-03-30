@@ -269,15 +269,34 @@ export async function resolveQrDataUrl(
 }
 
 /**
- * Extract the 8-character pairing code from an Evolution connect response
- * when a phone number was supplied. Response looks like { code: "ABCD-EFGH" }.
- * Uses < 24 length guard (inverse of extractWhatsAppQrString which skips short codes).
+ * Extract the pairing code from an Evolution connect response when a phone number
+ * was supplied. Evolution may return it as `pairingCode` (v2) or `code` (v1, short).
+ * Logs the raw payload so we can debug format differences.
  */
 export function extractPairingCode(payload: unknown): string | null {
   if (!payload || typeof payload !== "object") return null;
-  const c = (payload as Record<string, unknown>).code;
-  if (typeof c === "string" && c.trim().length > 0 && c.trim().length < 24)
-    return c.trim().toUpperCase();
+  const o = payload as Record<string, unknown>;
+
+  console.log("[evolution-client] extractPairingCode raw payload:", JSON.stringify(o).slice(0, 300));
+
+  // v2: explicit pairingCode field
+  if (typeof o.pairingCode === "string" && o.pairingCode.trim().length > 0) {
+    return o.pairingCode.trim().toUpperCase();
+  }
+
+  // v1 / fallback: `code` field that is short (pairing codes are ≤ 16 chars)
+  if (typeof o.code === "string" && o.code.trim().length > 0 && o.code.trim().length <= 16) {
+    return o.code.trim().toUpperCase();
+  }
+
+  // Nested under `instance` key
+  if (o.instance && typeof o.instance === "object") {
+    const inst = o.instance as Record<string, unknown>;
+    if (typeof inst.pairingCode === "string" && inst.pairingCode.trim().length > 0) {
+      return inst.pairingCode.trim().toUpperCase();
+    }
+  }
+
   return null;
 }
 

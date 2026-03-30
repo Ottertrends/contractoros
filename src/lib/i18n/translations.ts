@@ -246,6 +246,7 @@ export const translations = {
       plumbing: "Plumbing",
       drywall: "Drywall",
       excavation: "Excavation",
+      landscaping: "Landscaping",
       // language
       language: "Language",
     },
@@ -498,6 +499,7 @@ export const translations = {
       plumbing: "Plomería",
       drywall: "Tablaroca",
       excavation: "Excavación",
+      landscaping: "Paisajismo",
       language: "Idioma",
     },
     common: {

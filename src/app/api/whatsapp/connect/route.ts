@@ -117,7 +117,7 @@ export async function POST(request: Request) {
 
       if (!pairingCode) {
         return NextResponse.json(
-          { error: "Evolution did not return a pairing code. Ensure the instance is in connecting state and the phone number is correct (with country code, e.g. 15551234567)." },
+          { error: "Could not get pairing code. Make sure you include + and country code (e.g. +17372969713). Check Vercel logs for the raw Evolution response." },
           { status: 500 },
         );
       }

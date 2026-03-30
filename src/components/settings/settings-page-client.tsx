@@ -53,6 +53,7 @@ export function SettingsPageClient({ userId, profile }: { userId: string; profil
     { value: "plumbing", label: ts.plumbing },
     { value: "drywall", label: ts.drywall },
     { value: "excavation", label: ts.excavation },
+    { value: "landscaping", label: ts.landscaping },
   ];
 
   const [fullName, setFullName] = React.useState(profile.full_name);

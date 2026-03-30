@@ -88,6 +88,7 @@ export default function SignupPage() {
     { value: "plumbing", label: ts.plumbing },
     { value: "drywall", label: ts.drywall },
     { value: "excavation", label: ts.excavation },
+    { value: "landscaping", label: ts.landscaping },
   ];
 
   const form = useForm<SignupValues>({
