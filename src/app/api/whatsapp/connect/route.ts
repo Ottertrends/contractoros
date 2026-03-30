@@ -111,15 +111,17 @@ export async function POST(request: Request) {
       const admin = createSupabaseAdminClient();
       await mergeWaSession(admin, user.id, instanceName, { owner_jid: null, owner_lid: null, lid_pending: true });
 
-      // Ensure the instance is in a fresh connecting state before requesting pairing code.
-      // If the instance was previously connected (state=open), the pairing code will be invalid.
+      // For pairing code, delete and recreate the instance to guarantee a fresh
+      // connecting state. A previously-connected (state=open) or stale instance
+      // returns codes that WhatsApp rejects.
       try {
-        await evolution.logoutInstance(instanceName);
-        console.log("[whatsapp/connect] instance logged out — ready for pairing code");
-      } catch (le) {
-        // Non-fatal: instance may already be disconnected
-        console.warn("[whatsapp/connect] logout before pairing (non-fatal):", le instanceof Error ? le.message : le);
+        await evolution.deleteInstance(instanceName);
+        console.log("[whatsapp/connect] deleted existing instance for fresh pairing state");
+      } catch {
+        /* ignore if instance doesn't exist */
       }
+      await createFresh();
+      console.log("[whatsapp/connect] fresh instance created — requesting pairing code");
 
       const pairingRes = await evolution.getPairingCode(instanceName, phoneNumber);
       const pairingCode = extractPairingCode(pairingRes);
