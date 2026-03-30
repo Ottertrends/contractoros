@@ -1,12 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyAdminToken } from "@/lib/admin/auth";
-import { createClient } from "@supabase/supabase-js";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { cookies } from "next/headers";
-
-const admin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
 
 export async function GET(_req: NextRequest) {
   const cookieStore = await cookies();
@@ -14,6 +9,7 @@ export async function GET(_req: NextRequest) {
   if (!token || !(await verifyAdminToken(token))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  const admin = createSupabaseAdminClient();
 
   // Get all profiles
   const { data: profiles, error } = await admin

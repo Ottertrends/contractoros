@@ -1,13 +1,8 @@
 import { isAdminAuthenticated } from "@/lib/admin/auth";
 import { redirect } from "next/navigation";
-import { createClient } from "@supabase/supabase-js";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import Link from "next/link";
 import { AdminLogoutButton } from "@/app/admin/AdminLogoutButton";
-
-const admin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
 
 function planBadge(plan: string) {
   if (plan === "free") return "Free";
@@ -35,6 +30,7 @@ function statusColor(status: string) {
 
 export default async function AdminUsersPage() {
   if (!(await isAdminAuthenticated())) redirect("/admin/login");
+  const admin = createSupabaseAdminClient();
 
   const { data: profiles } = await admin
     .from("profiles")

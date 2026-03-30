@@ -1,18 +1,14 @@
 import { isAdminAuthenticated } from "@/lib/admin/auth";
 import { redirect } from "next/navigation";
-import { createClient } from "@supabase/supabase-js";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import Link from "next/link";
 import { AdminUserDetailClient } from "./AdminUserDetailClient";
-
-const admin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
 
 export default async function AdminUserDetailPage({ params }: { params: Promise<{ id: string }> }) {
   if (!(await isAdminAuthenticated())) redirect("/admin/login");
 
   const { id } = await params;
+  const admin = createSupabaseAdminClient();
 
   const [
     { data: profile },
