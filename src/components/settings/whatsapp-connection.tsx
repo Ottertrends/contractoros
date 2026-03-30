@@ -335,6 +335,17 @@ function LineBlock({
             </div>
           ) : null}
 
+          {/* Pairing code toggle — shown below buttons once Connect is clicked (QR visible or loading) */}
+          {!pairingMode && (qrDataUrl || connecting) ? (
+            <button
+              type="button"
+              className="text-xs text-slate-500 underline underline-offset-2 w-fit hover:text-slate-700 dark:hover:text-slate-300 transition-colors"
+              onClick={() => { setPairingMode(true); setQrDataUrl(null); }}
+            >
+              Or use pairing code (same-device setup — no second device needed)
+            </button>
+          ) : null}
+
           {/* Back to QR link — shown only in pairing mode */}
           {pairingMode ? (
             <button
@@ -430,14 +441,6 @@ function LineBlock({
             WorkSupp may include Amazon affiliate links when recommending products.{" "}
             <span className="font-medium">As an Amazon Associate, WorkSupp earns from qualifying purchases.</span>
           </p>
-          {/* Pairing code toggle — appears below QR after Connect is clicked */}
-          <button
-            type="button"
-            className="text-xs text-slate-500 underline underline-offset-2 w-fit hover:text-slate-700 dark:hover:text-slate-300 transition-colors mt-1"
-            onClick={() => { setPairingMode(true); setQrDataUrl(null); }}
-          >
-            Or use pairing code (same-device setup — no second device needed)
-          </button>
         </div>
       ) : !connected && connecting && !pairingMode ? (
         <div className="rounded-xl border border-slate-200 bg-slate-50 px-6 py-10 text-center text-sm text-slate-600 dark:border-slate-800 dark:bg-slate-900">
