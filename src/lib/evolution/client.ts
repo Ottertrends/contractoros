@@ -87,6 +87,7 @@ export interface EvolutionClient {
     instanceName: string,
     messageData: unknown,
   ): Promise<MediaBase64Response>;
+  getPairingCode(instanceName: string, phoneNumber: string): Promise<QRCodeResponse>;
 }
 
 export function createEvolutionClient(): EvolutionClient {
@@ -168,6 +169,14 @@ export function createEvolutionClient(): EvolutionClient {
         { method: "POST", body: JSON.stringify({ message: messageData }) },
       );
       return result;
+    },
+
+    async getPairingCode(instanceName: string, phoneNumber: string) {
+      const digits = phoneNumber.replace(/\D/g, "");
+      return evolutionFetch<QRCodeResponse>(
+        `/instance/connect/${encodeURIComponent(instanceName)}?number=${encodeURIComponent(digits)}`,
+        { method: "GET" },
+      );
     },
   };
 }
@@ -256,6 +265,19 @@ export async function resolveQrDataUrl(
       /* ignore */
     }
   }
+  return null;
+}
+
+/**
+ * Extract the 8-character pairing code from an Evolution connect response
+ * when a phone number was supplied. Response looks like { code: "ABCD-EFGH" }.
+ * Uses < 24 length guard (inverse of extractWhatsAppQrString which skips short codes).
+ */
+export function extractPairingCode(payload: unknown): string | null {
+  if (!payload || typeof payload !== "object") return null;
+  const c = (payload as Record<string, unknown>).code;
+  if (typeof c === "string" && c.trim().length > 0 && c.trim().length < 24)
+    return c.trim().toUpperCase();
   return null;
 }
 

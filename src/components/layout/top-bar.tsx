@@ -47,7 +47,7 @@ export function TopBar({ profile }: { profile: Profile }) {
 
         <div className="flex items-center gap-3">
           {/* Mobile hamburger menu */}
-          <MobileNav />
+          <MobileNav userName={profile.full_name ?? undefined} userEmail={profile.email ?? undefined} />
 
           {/* Theme toggle */}
           <ThemeToggle />

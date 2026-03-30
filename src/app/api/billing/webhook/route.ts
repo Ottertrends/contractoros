@@ -40,8 +40,12 @@ export async function POST(req: NextRequest) {
       const session = event.data.object as { customer: string; subscription: string; metadata?: { supabase_user_id?: string } };
       const userId = session.metadata?.supabase_user_id ?? await getSupabaseUserId(session.customer);
       if (userId) {
+        const { data: prof } = await admin.from("profiles").select("subscription_plan").eq("id", userId).single();
+        const planUpdate = (prof?.subscription_plan !== "free" && prof?.subscription_plan !== "discounted")
+          ? { subscription_plan: "paid" } : {};
         await updateProfile(userId, {
           subscription_status: "active",
+          ...planUpdate,
           stripe_customer_id: session.customer,
           stripe_subscription_id: session.subscription,
           subscription_started_at: new Date().toISOString(),
@@ -53,7 +57,12 @@ export async function POST(req: NextRequest) {
     case "invoice.payment_succeeded": {
       const invoice = event.data.object as { customer: string };
       const userId = await getSupabaseUserId(invoice.customer);
-      if (userId) await updateProfile(userId, { subscription_status: "active" });
+      if (userId) {
+        const { data: prof } = await admin.from("profiles").select("subscription_plan").eq("id", userId).single();
+        const planUpdate = (prof?.subscription_plan !== "free" && prof?.subscription_plan !== "discounted")
+          ? { subscription_plan: "paid" } : {};
+        await updateProfile(userId, { subscription_status: "active", ...planUpdate });
+      }
       break;
     }
     case "invoice.payment_failed": {

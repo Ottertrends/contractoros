@@ -7,6 +7,7 @@ import { getServerLang } from "@/lib/i18n/server";
 import { Sidebar } from "@/components/layout/sidebar";
 import { TopBar } from "@/components/layout/top-bar";
 import { DashboardRealtimeBridge } from "@/components/dashboard/dashboard-realtime-bridge";
+import { OnboardingGuide } from "@/components/onboarding/onboarding-guide";
 
 export default async function DashboardLayout({
   children,
@@ -43,9 +44,12 @@ export default async function DashboardLayout({
     whatsapp_instance_id: null,
     whatsapp_secondary_connected: false,
     whatsapp_secondary_instance_id: null,
+    onboarding_completed_at: null,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   };
+
+  const showOnboarding = !(safeProfile as { onboarding_completed_at?: string | null }).onboarding_completed_at;
 
   const lang = await getServerLang();
 
@@ -53,10 +57,11 @@ export default async function DashboardLayout({
     <LanguageProvider initialLang={lang}>
       <div className="min-h-screen bg-background">
         <div className="flex">
-          <Sidebar />
+          <Sidebar userName={safeProfile.full_name} userEmail={safeProfile.email} />
           <div className="flex-1 min-w-0">
             <DashboardRealtimeBridge userId={user.id} />
             <TopBar profile={safeProfile} />
+            <OnboardingGuide show={showOnboarding} />
             <main className="px-4 py-6 md:px-6">{children}</main>
           </div>
         </div>

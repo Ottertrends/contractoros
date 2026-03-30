@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import {
   createEvolutionClient,
+  extractPairingCode,
   resolveQrDataUrl,
 } from "@/lib/evolution/client";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
@@ -22,11 +23,16 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     let slot: "primary" | "secondary" = "primary";
+    let phoneNumber: string | null = null;
     try {
       const ct = request.headers.get("content-type") ?? "";
       if (ct.includes("application/json")) {
-        const j = (await request.json()) as { slot?: string };
+        const j = (await request.json()) as { slot?: string; phoneNumber?: string };
         if (j.slot === "secondary") slot = "secondary";
+        if (typeof j.phoneNumber === "string") {
+          const digits = j.phoneNumber.replace(/\D/g, "");
+          if (digits.length >= 10) phoneNumber = digits;
+        }
       }
     } catch {
       /* default primary */
@@ -92,6 +98,34 @@ export async function POST(request: Request) {
       }
     }
 
+    // --- Pairing code path (no QR needed, user enters code in WhatsApp) ---
+    if (phoneNumber) {
+      const profilePatch =
+        slot === "secondary"
+          ? { whatsapp_secondary_instance_id: instanceName, whatsapp_secondary_connected: false }
+          : { whatsapp_instance_id: instanceName, whatsapp_connected: false, whatsapp_owner_lid: null, whatsapp_lid_pending: true };
+
+      const { error: profileErr } = await supabase.from("profiles").update(profilePatch).eq("id", user.id);
+      if (profileErr) return NextResponse.json({ error: profileErr.message }, { status: 500 });
+
+      const admin = createSupabaseAdminClient();
+      await mergeWaSession(admin, user.id, instanceName, { owner_jid: null, owner_lid: null, lid_pending: true });
+
+      const pairingRes = await evolution.getPairingCode(instanceName, phoneNumber);
+      const pairingCode = extractPairingCode(pairingRes);
+      console.log("[whatsapp/connect] pairing code:", pairingCode ? "obtained" : "not found", "| raw:", JSON.stringify(pairingRes).slice(0, 120));
+
+      if (!pairingCode) {
+        return NextResponse.json(
+          { error: "Evolution did not return a pairing code. Ensure the instance is in connecting state and the phone number is correct (with country code, e.g. 15551234567)." },
+          { status: 500 },
+        );
+      }
+
+      return NextResponse.json({ instanceName, slot, pairingCode });
+    }
+
+    // --- QR code path ---
     let qr = await resolveQrDataUrl(created);
 
     if (!qr) {

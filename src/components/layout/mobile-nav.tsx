@@ -16,14 +16,22 @@ import {
   Palette,
   Settings as SettingsIcon,
   CreditCard,
+  HelpCircle,
 } from "lucide-react";
 
 import Image from "next/image";
 import { useLanguage } from "@/lib/i18n/client";
+import { HelpModal } from "@/components/help/help-modal";
 
-export function MobileNav() {
+type Props = {
+  userName?: string;
+  userEmail?: string;
+};
+
+export function MobileNav({ userName, userEmail }: Props) {
   const [open, setOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
   const { t } = useLanguage();
   const pathname = usePathname();
 
@@ -59,11 +67,8 @@ export function MobileNav() {
     { href: "/dashboard/settings", label: t.nav.settings, icon: SettingsIcon },
   ];
 
-  // Rendered via portal directly into document.body so it escapes
-  // the TopBar's backdrop-filter stacking context (iOS Safari fix)
   const overlay = (
     <>
-      {/* Full-screen backdrop */}
       <div
         className={`fixed inset-0 md:hidden transition-opacity duration-200 bg-black/65 ${
           open ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
@@ -73,14 +78,12 @@ export function MobileNav() {
         aria-hidden="true"
       />
 
-      {/* Slide-in drawer */}
       <div
         className={`fixed inset-y-0 left-0 md:hidden flex flex-col w-80 transform transition-transform duration-200 ease-in-out bg-white dark:bg-slate-950 border-r border-slate-200 dark:border-slate-800 shadow-2xl ${
           open ? "translate-x-0" : "-translate-x-full"
         }`}
         style={{ zIndex: 9999 }}
       >
-        {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 shrink-0 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
           <div className="flex items-center gap-2">
             <Image src="/logo.png" alt="WorkSupp" width={48} height={48} className="object-contain" />
@@ -96,7 +99,6 @@ export function MobileNav() {
           </button>
         </div>
 
-        {/* Nav items */}
         <nav className="flex flex-col gap-1 p-4 flex-1 overflow-y-auto bg-white dark:bg-slate-950">
           {navItems.map((item) => {
             const Icon = item.icon;
@@ -119,13 +121,24 @@ export function MobileNav() {
             );
           })}
         </nav>
+
+        {/* Help button at the bottom of the drawer */}
+        <div className="shrink-0 p-4 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
+          <button
+            type="button"
+            onClick={() => { setOpen(false); setHelpOpen(true); }}
+            className="flex items-center gap-4 px-4 py-3.5 w-full rounded-xl text-base font-medium text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+          >
+            <HelpCircle className="h-5 w-5 shrink-0" />
+            <span>Help</span>
+          </button>
+        </div>
       </div>
     </>
   );
 
   return (
     <>
-      {/* Hamburger button */}
       <button
         type="button"
         onClick={() => setOpen(true)}
@@ -135,8 +148,14 @@ export function MobileNav() {
         <Menu className="h-4 w-4" />
       </button>
 
-      {/* Portal: renders directly in document.body, outside all stacking contexts */}
       {mounted && createPortal(overlay, document.body)}
+
+      <HelpModal
+        open={helpOpen}
+        onClose={() => setHelpOpen(false)}
+        userName={userName}
+        userEmail={userEmail}
+      />
     </>
   );
 }

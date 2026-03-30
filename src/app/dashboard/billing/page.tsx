@@ -33,6 +33,8 @@ export default async function BillingPage() {
                 ? "Free (Complimentary)"
                 : plan === "discounted"
                 ? "Standard — 50% Discount"
+                : plan === "paid"
+                ? "Paid — $50/month"
                 : "Standard — $50/month"}
             </div>
           </div>

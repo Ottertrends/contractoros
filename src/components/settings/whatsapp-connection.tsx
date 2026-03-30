@@ -6,6 +6,7 @@ import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import {
   Dialog,
   DialogContent,
@@ -36,14 +37,14 @@ export function WhatsAppConnection({
       <LineBlock
         slot="primary"
         title="Primary WhatsApp line"
-        description="Main number linked to your account (Evolution instance user_<your id>)."
+        description="Main number linked to your account."
         initiallyConnected={primaryInitiallyConnected}
       />
       <div className="border-t border-slate-200 dark:border-slate-800 pt-8">
         <LineBlock
           slot="secondary"
           title="Second WhatsApp line"
-          description="Optional second number. Scan the QR with the other phone. Self-chat on that line to use the bot."
+          description="Optional second number. Self-chat on that line to use the bot."
           initiallyConnected={secondaryInitiallyConnected}
         />
       </div>
@@ -65,6 +66,14 @@ function LineBlock({
   const router = useRouter();
   const [connected, setConnected] = React.useState(initiallyConnected);
   const [phone, setPhone] = React.useState<string | null>(null);
+
+  // Pairing code state
+  const [pairingMode, setPairingMode] = React.useState(false);
+  const [pairingPhone, setPairingPhone] = React.useState("");
+  const [pairingCode, setPairingCode] = React.useState<string | null>(null);
+  const [pairingLoading, setPairingLoading] = React.useState(false);
+  const [pairingSecondsLeft, setPairingSecondsLeft] = React.useState<number | null>(null);
+  const pairingTimerRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
 
   React.useEffect(() => {
     setConnected(initiallyConnected);
@@ -107,6 +116,7 @@ function LineBlock({
   React.useEffect(() => {
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
+      if (pairingTimerRef.current) clearInterval(pairingTimerRef.current);
     };
   }, []);
 
@@ -135,15 +145,13 @@ function LineBlock({
   }
 
   function stopPollingSuccess() {
-    if (pollRef.current) {
-      clearInterval(pollRef.current);
-      pollRef.current = null;
-    }
+    if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+    if (pairingTimerRef.current) { clearInterval(pairingTimerRef.current); pairingTimerRef.current = null; }
     setQrDataUrl(null);
+    setPairingCode(null);
+    setPairingMode(false);
     setConnecting(false);
-    toast.success(
-      slot === "primary" ? "WhatsApp connected" : "Second line connected",
-    );
+    toast.success(slot === "primary" ? "WhatsApp connected" : "Second line connected");
     router.refresh();
   }
 
@@ -151,6 +159,55 @@ function LineBlock({
     if (pollRef.current) clearInterval(pollRef.current);
     void pollStatus();
     pollRef.current = setInterval(() => void pollStatus(), 3000);
+  }
+
+  function normalizePairingPhone(raw: string): string | null {
+    const digits = raw.replace(/\D/g, "");
+    return digits.length >= 10 ? digits : null;
+  }
+
+  function startPairingTimer() {
+    if (pairingTimerRef.current) clearInterval(pairingTimerRef.current);
+    setPairingSecondsLeft(60);
+    pairingTimerRef.current = setInterval(() => {
+      setPairingSecondsLeft((s) => {
+        if (s === null || s <= 1) {
+          clearInterval(pairingTimerRef.current!);
+          pairingTimerRef.current = null;
+          return 0;
+        }
+        return s - 1;
+      });
+    }, 1000);
+  }
+
+  async function onGetPairingCode() {
+    const phone = normalizePairingPhone(pairingPhone);
+    if (!phone) {
+      toast.error("Enter a valid phone number (10+ digits with country code, e.g. 15551234567).");
+      return;
+    }
+    setPairingLoading(true);
+    setPairingCode(null);
+    try {
+      const res = await fetch("/api/whatsapp/connect", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(
+          slot === "secondary" ? { slot: "secondary", phoneNumber: phone } : { phoneNumber: phone }
+        ),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error ?? "Failed to get pairing code");
+      if (!body.pairingCode) throw new Error("No pairing code in response");
+      setPairingCode(body.pairingCode as string);
+      startPairingTimer();
+      startPolling();
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Failed to get pairing code");
+    } finally {
+      setPairingLoading(false);
+    }
   }
 
   async function onConnect() {
@@ -215,11 +272,11 @@ function LineBlock({
       setConnected(false);
       setPhone(null);
       setQrDataUrl(null);
+      setPairingCode(null);
+      setPairingMode(false);
       setConnecting(false);
-      if (pollRef.current) {
-        clearInterval(pollRef.current);
-        pollRef.current = null;
-      }
+      if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+      if (pairingTimerRef.current) { clearInterval(pairingTimerRef.current); pairingTimerRef.current = null; }
       toast.success(
         slot === "primary" ? "Primary line disconnected" : "Second line disconnected",
       );
@@ -255,27 +312,117 @@ function LineBlock({
       </div>
 
       {!connected ? (
-        <div className="flex flex-wrap gap-2">
-          <Button
-            type="button"
-            onClick={() => void onConnect()}
-            disabled={connecting}
-          >
-            {connecting ? "Starting…" : slot === "primary" ? "Connect WhatsApp" : "Connect second line"}
-          </Button>
-          {qrDataUrl ? (
-            <Button
+        <div className="flex flex-col gap-3">
+          {/* Primary action row — hidden in pairing mode */}
+          {!pairingMode ? (
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                onClick={() => void onConnect()}
+                disabled={connecting}
+              >
+                {connecting ? "Starting…" : slot === "primary" ? "Connect WhatsApp" : "Connect second line"}
+              </Button>
+              {qrDataUrl ? (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => void onRefreshQr()}
+                >
+                  Refresh QR
+                </Button>
+              ) : null}
+            </div>
+          ) : null}
+
+          {/* Mode toggle */}
+          {!pairingMode ? (
+            <button
               type="button"
-              variant="secondary"
-              onClick={() => void onRefreshQr()}
+              className="text-xs text-slate-500 underline underline-offset-2 w-fit hover:text-slate-700 dark:hover:text-slate-300 transition-colors"
+              onClick={() => { setPairingMode(true); setQrDataUrl(null); }}
             >
-              Refresh QR
-            </Button>
+              Or use pairing code (same-device setup — no second device needed)
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="text-xs text-slate-500 underline underline-offset-2 w-fit hover:text-slate-700 dark:hover:text-slate-300 transition-colors"
+              onClick={() => { setPairingMode(false); setPairingCode(null); }}
+            >
+              ← Back to QR code
+            </button>
+          )}
+
+          {/* Pairing code: phone input */}
+          {pairingMode && !pairingCode ? (
+            <div className="flex flex-col gap-2 max-w-sm">
+              <label className="text-xs font-medium text-slate-700 dark:text-slate-300">
+                Your WhatsApp number (with country code, e.g. 15551234567)
+              </label>
+              <div className="flex gap-2">
+                <Input
+                  type="tel"
+                  placeholder="15551234567"
+                  value={pairingPhone}
+                  onChange={(e) => setPairingPhone(e.target.value)}
+                  disabled={pairingLoading}
+                  className="max-w-[200px]"
+                />
+                <Button
+                  type="button"
+                  onClick={() => void onGetPairingCode()}
+                  disabled={pairingLoading || normalizePairingPhone(pairingPhone) === null}
+                >
+                  {pairingLoading ? "Getting…" : "Get Code"}
+                </Button>
+              </div>
+            </div>
+          ) : null}
+
+          {/* Pairing code: display */}
+          {pairingMode && pairingCode ? (
+            <div className="flex flex-col items-center gap-3 rounded-xl border border-slate-200 bg-white p-6 dark:border-slate-800 dark:bg-slate-950 max-w-sm">
+              <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">Your pairing code</p>
+              <div className="flex items-center gap-3">
+                <span className="text-4xl font-mono font-bold tracking-widest text-slate-900 dark:text-slate-100 select-all">
+                  {pairingCode}
+                </span>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => {
+                    void navigator.clipboard.writeText(pairingCode);
+                    toast.success("Code copied");
+                  }}
+                >
+                  Copy
+                </Button>
+              </div>
+              {pairingSecondsLeft !== null && pairingSecondsLeft > 0 ? (
+                <p className="text-xs text-slate-500">Expires in {pairingSecondsLeft}s</p>
+              ) : pairingSecondsLeft === 0 ? (
+                <p className="text-xs text-red-500 font-medium">Code expired — get a new one</p>
+              ) : null}
+              <p className="text-sm text-slate-600 dark:text-slate-400 text-center leading-relaxed">
+                Open WhatsApp → Settings → Linked Devices → Link with phone number → enter this code
+              </p>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={() => { setPairingCode(null); setPairingSecondsLeft(null); }}
+              >
+                Get a new code
+              </Button>
+            </div>
           ) : null}
         </div>
       ) : null}
 
-      {qrDataUrl && !connected ? (
+      {/* QR code display (only in QR mode) */}
+      {qrDataUrl && !connected && !pairingMode ? (
         <div className="flex flex-col items-center gap-3 rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
@@ -291,11 +438,11 @@ function LineBlock({
             <span className="font-medium">As an Amazon Associate, WorkSupp earns from qualifying purchases.</span>
           </p>
         </div>
-      ) : !connected && connecting ? (
+      ) : !connected && connecting && !pairingMode ? (
         <div className="rounded-xl border border-slate-200 bg-slate-50 px-6 py-10 text-center text-sm text-slate-600 dark:border-slate-800 dark:bg-slate-900">
           Generating QR code…
         </div>
-      ) : !connected && !qrDataUrl && !connecting ? (
+      ) : !connected && !qrDataUrl && !connecting && !pairingMode ? (
         <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-6 py-6 text-center text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-900">
           {slot === "primary" ? (
             <>
