@@ -1,10 +1,16 @@
 "use client";
 
 import * as React from "react";
+import dynamic from "next/dynamic";
 import { toast } from "sonner";
 
 import type { ProposalData } from "@/app/api/proposals/generate/route";
-import { ProposalDownloadButton } from "./proposal-pdf";
+
+// Load jsPDF-dependent component only on the client (fflate uses Node Workers incompatible with SSR)
+const ProposalDownloadButton = dynamic(
+  () => import("./proposal-pdf").then((m) => m.ProposalDownloadButton),
+  { ssr: false },
+);
 
 interface Project {
   id: string;

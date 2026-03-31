@@ -100,7 +100,7 @@ Project name: ${project.name ?? "Untitled"}
 Client: ${(project as Record<string, unknown>).client_name ?? "Client"}
 Description: ${project.description ?? "No description"}
 Status: ${project.status ?? "active"}
-Location: ${[(project as Record<string, unknown>).city, (project as Record<string, unknown>).state].filter(Boolean).join(", ") || (project as Record<string, unknown>).location ?? ""}
+Location: ${[(project as Record<string, unknown>).city, (project as Record<string, unknown>).state].filter(Boolean).join(", ") || ((project as Record<string, unknown>).location ?? "")}
 
 Project notes:
 ${notesText}
