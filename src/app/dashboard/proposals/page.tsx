@@ -2,6 +2,8 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import { ProposalsClient } from "@/components/proposals/proposals-client";
 
+export const dynamic = "force-dynamic";
+
 export default async function ProposalsPage() {
   const supabase = await createSupabaseServerClient();
   const {

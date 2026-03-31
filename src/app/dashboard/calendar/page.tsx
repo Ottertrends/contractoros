@@ -41,6 +41,8 @@ export default async function CalendarPage() {
     start_date: r.start_date as string,
     next_occurrence: r.next_occurrence as string,
     active: r.active as boolean,
+    event_time: (r.event_time as string | null) ?? null,
+    notes: (r.notes as string | null) ?? null,
   }));
 
   const notificationsEnabled = ((profile as unknown) as { notifications_enabled?: boolean | null } | null)
