@@ -55,7 +55,7 @@ export async function POST(request: Request) {
       .order("created_at", { ascending: false })
       .limit(20);
 
-    // Fetch media (just count + names, not full URLs)
+    // Fetch media
     const { data: media } = await admin
       .from("project_media")
       .select("file_name, media_type, created_at")
@@ -70,6 +70,22 @@ export async function POST(request: Request) {
       .order("created_at", { ascending: false })
       .limit(5);
 
+    // Fetch invoice line items for this project's invoices
+    const invoiceIds = (invoices ?? []).map((inv) => inv.id).filter(Boolean);
+    let lineItemsText = "No line item detail available.";
+    if (invoiceIds.length > 0) {
+      const { data: lineItems } = await admin
+        .from("invoice_line_items")
+        .select("description, quantity, unit_price, total")
+        .in("invoice_id", invoiceIds)
+        .limit(30);
+      if (lineItems?.length) {
+        lineItemsText = lineItems
+          .map((li) => `  - ${li.description ?? "Item"}: qty=${li.quantity}, unit=$${li.unit_price}, total=$${li.total}`)
+          .join("\n");
+      }
+    }
+
     // Fetch profile for company info + invoice design
     const { data: profile } = await admin
       .from("profiles")
@@ -77,62 +93,78 @@ export async function POST(request: Request) {
       .eq("id", user.id)
       .single();
 
-    // Build context for Claude
     const notesText = notes?.length
       ? notes.map((n) => `- ${n.content}`).join("\n")
-      : "No notes recorded.";
+      : "(no notes recorded)";
 
     const invoicesText = invoices?.length
       ? invoices
-          .map((inv) => `Invoice #${inv.invoice_number ?? "draft"}: $${inv.total} (${inv.status})`)
+          .map((inv) => `Invoice #${inv.invoice_number ?? "draft"}: total=$${inv.total}, status=${inv.status}${inv.notes ? `, notes: ${inv.notes}` : ""}`)
           .join("\n")
-      : "No prior invoices for this project.";
+      : "(no prior invoices for this project)";
 
     const mediaText = media?.length
-      ? `${media.length} files (${media.map((m) => m.media_type ?? "file").join(", ")})`
-      : "No media attached.";
+      ? `${media.length} file(s): ${media.map((m) => m.file_name ?? m.media_type ?? "file").join(", ")}`
+      : "(no media attached)";
 
     const today = new Date();
     const validUntilDate = new Date(today);
     validUntilDate.setDate(today.getDate() + 30);
 
-    const strictInstruction = mode === "strict"
-      ? `IMPORTANT: Use ONLY the information explicitly provided above. Do NOT infer, guess, or use typical market rates. If a price or quantity is not mentioned, use 0 or 1 as placeholder. Do not add line items that are not mentioned in the notes or description.`
-      : `Use the following custom instructions from the contractor to shape this proposal:\n${customInstructions ?? ""}`;
+    const proj = project as Record<string, unknown>;
 
-    const prompt = `You are generating a professional contractor proposal/quote document.
+    let modeBlock: string;
+    if (mode === "strict") {
+      modeBlock = `STRICT MODE — ABSOLUTE RULES:
+1. You MUST NOT invent, guess, or estimate ANY line item, price, quantity, or description that is not explicitly present in the data above.
+2. If no line items or prices are recorded in the notes or invoice line items, output an EMPTY lineItems array [].
+3. Do NOT use "typical contractor rates" or any external knowledge to fill in prices.
+4. Use ONLY text from the project notes and invoice line items above to populate line items.
+5. The scope paragraph must be based exclusively on the project description and notes — do not add anything not mentioned.
+6. If terms are not mentioned in the notes, output an empty string "" for terms.
+7. Every field you populate must be directly traceable to the data provided above.`;
+    } else {
+      modeBlock = `CUSTOM MODE — Use the following contractor-provided instructions to shape this document. You may use these instructions to fill in terms, scope language, and any details the contractor specifies. Do NOT invent prices or line items not mentioned in the project data or custom instructions below.
 
+Custom instructions:
+${customInstructions?.trim() ?? "(none provided)"}`;
+    }
+
+    const prompt = `You are building a contractor quote document from REAL project data stored in a database. Your job is to format this data into a structured JSON — not to write a proposal from scratch.
+
+=== PROJECT DATA ===
 Company: ${profile?.company_name ?? "Contractor"}
 Contractor: ${profile?.full_name ?? ""}
+Project name: ${proj.name ?? "Untitled"}
+Client: ${proj.client_name ?? "Client"}
+Description: ${proj.description ?? "(no description)"}
+Status: ${proj.status ?? "active"}
+Location: ${[proj.city, proj.state].filter(Boolean).join(", ") || ((proj.location as string | null) ?? "(none)")}
 
-Project name: ${project.name ?? "Untitled"}
-Client: ${(project as Record<string, unknown>).client_name ?? "Client"}
-Description: ${project.description ?? "No description"}
-Status: ${project.status ?? "active"}
-Location: ${[(project as Record<string, unknown>).city, (project as Record<string, unknown>).state].filter(Boolean).join(", ") || ((project as Record<string, unknown>).location ?? "")}
-
-Project notes:
+Project notes (recorded by contractor):
 ${notesText}
 
-Prior invoices / billing history:
+Invoice line items (exactly as stored in DB):
+${lineItemsText}
+
+Invoice summaries:
 ${invoicesText}
 
-Attached media: ${mediaText}
+Attached files: ${mediaText}
 
 Today: ${today.toLocaleDateString("en-US")}
 Valid until: ${validUntilDate.toLocaleDateString("en-US")}
+=== END PROJECT DATA ===
 
-${strictInstruction}
+${modeBlock}
 
-Return ONLY valid JSON, no markdown, no explanation:
+Return ONLY valid JSON with exactly these fields, no markdown, no explanation:
 {
-  "title": "Proposal title (e.g. 'Bathroom Remodel Proposal')",
-  "clientName": "Client name or 'Valued Client' if unknown",
-  "scope": "2-4 sentence paragraph describing the full scope of work",
-  "lineItems": [
-    {"description": "...", "qty": 1, "unitPrice": 0}
-  ],
-  "terms": "1-2 sentence payment terms and warranty",
+  "title": "short title based on project name",
+  "clientName": "client name from data, or 'Valued Client' if not recorded",
+  "scope": "paragraph based only on the description and notes",
+  "lineItems": [{"description": "exactly as in DB", "qty": 1, "unitPrice": 0}],
+  "terms": "from notes/instructions only, empty string if none",
   "validUntil": "${validUntilDate.toLocaleDateString("en-US")}"
 }`;
 
@@ -169,7 +201,7 @@ Return ONLY valid JSON, no markdown, no explanation:
       companyName: profile?.company_name ?? "",
       companyEmail: profile?.email ?? "",
       companyPhone: profile?.phone ?? "",
-      clientName: (project as Record<string, unknown>).client_name ?? null,
+      clientName: proj.client_name ?? null,
       design: {
         primaryColor: profileData?.invoice_primary_color ?? null,
         logoUrl: profileData?.invoice_logo_url ?? null,
