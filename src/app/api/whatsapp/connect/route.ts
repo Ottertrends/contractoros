@@ -13,6 +13,8 @@ import {
 } from "@/lib/whatsapp/instance-name";
 import { mergeWaSession } from "@/lib/whatsapp/session-store";
 
+export const maxDuration = 60; // pairing code polling can take up to 12s
+
 export async function POST(request: Request) {
   try {
     const supabase = await createSupabaseServerClient();
@@ -154,8 +156,9 @@ export async function POST(request: Request) {
       console.log("[whatsapp/connect] pairing code:", pairingCode ? "obtained" : "not found", "| raw:", JSON.stringify(pairingRes).slice(0, 120));
 
       if (!pairingCode) {
+        const rawStr = JSON.stringify(pairingRes ?? null).slice(0, 400);
         return NextResponse.json(
-          { error: "Could not get pairing code. Make sure you include + and country code (e.g. +17372969713). Check Vercel logs for the raw Evolution response." },
+          { error: `Could not extract pairing code. Evolution raw response: ${rawStr}` },
           { status: 500 },
         );
       }
