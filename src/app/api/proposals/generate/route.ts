@@ -20,6 +20,13 @@ export interface ProposalData {
   validUntil: string;
 }
 
+export interface MediaItem {
+  id: string;
+  description: string | null;
+  signedUrl: string;
+  media_type: string;
+}
+
 export async function POST(request: Request) {
   try {
     const supabase = await createSupabaseServerClient();
@@ -32,8 +39,11 @@ export async function POST(request: Request) {
       projectId: string;
       mode?: "strict" | "custom";
       customInstructions?: string;
+      validUntil?: string;
+      terms?: string;
+      scope?: string;
     };
-    const { projectId, mode = "strict", customInstructions } = body;
+    const { projectId, mode = "strict", customInstructions, validUntil: validUntilOverride, terms: termsOverride, scope: scopeOverride } = body;
     if (!projectId) return NextResponse.json({ error: "projectId required" }, { status: 400 });
 
     const admin = createSupabaseAdminClient();
@@ -55,12 +65,31 @@ export async function POST(request: Request) {
       .order("created_at", { ascending: false })
       .limit(20);
 
-    // Fetch media
+    // Fetch media (ordered by sort_order then created_at)
     const { data: media } = await admin
       .from("project_media")
-      .select("file_name, media_type, created_at")
+      .select("id, description, storage_path, media_type")
       .eq("project_id", projectId)
-      .limit(50);
+      .order("sort_order", { ascending: true })
+      .order("created_at", { ascending: true })
+      .limit(20);
+
+    // Generate signed URLs for images only
+    const mediaItems: MediaItem[] = [];
+    for (const m of media ?? []) {
+      if (m.media_type === "video") continue;
+      const { data: urlData } = await admin.storage
+        .from("project-media")
+        .createSignedUrl(m.storage_path, 3600);
+      if (urlData?.signedUrl) {
+        mediaItems.push({
+          id: m.id as string,
+          description: (m.description as string | null) ?? null,
+          signedUrl: urlData.signedUrl,
+          media_type: m.media_type as string,
+        });
+      }
+    }
 
     // Fetch invoices for this project
     const { data: invoices } = await admin
@@ -104,12 +133,14 @@ export async function POST(request: Request) {
       : "(no prior invoices for this project)";
 
     const mediaText = media?.length
-      ? `${media.length} file(s): ${media.map((m) => m.file_name ?? m.media_type ?? "file").join(", ")}`
+      ? `${media.length} file(s): ${media.map((m) => (m.description as string | null) ?? (m.media_type as string) ?? "file").join(", ")}`
       : "(no media attached)";
 
     const today = new Date();
-    const validUntilDate = new Date(today);
-    validUntilDate.setDate(today.getDate() + 30);
+    const validUntilDate = validUntilOverride
+      ? new Date(validUntilOverride)
+      : new Date(today);
+    if (!validUntilOverride) validUntilDate.setDate(today.getDate() + 30);
 
     const proj = project as Record<string, unknown>;
 
@@ -154,6 +185,8 @@ Attached files: ${mediaText}
 
 Today: ${today.toLocaleDateString("en-US")}
 Valid until: ${validUntilDate.toLocaleDateString("en-US")}
+${scopeOverride ? `\nContractor-provided scope of work (use this verbatim for the scope field):\n${scopeOverride.trim()}` : ""}
+${termsOverride ? `\nContractor-provided terms & conditions (use this verbatim for the terms field):\n${termsOverride.trim()}` : ""}
 === END PROJECT DATA ===
 
 ${modeBlock}
@@ -193,10 +226,16 @@ Return ONLY valid JSON with exactly these fields, no markdown, no explanation:
       return NextResponse.json({ error: "Claude returned invalid JSON", raw: text.slice(0, 500) }, { status: 500 });
     }
 
+    // Apply user overrides (take precedence over Claude output)
+    if (validUntilOverride) proposal.validUntil = validUntilOverride;
+    if (termsOverride?.trim()) proposal.terms = termsOverride.trim();
+    if (scopeOverride?.trim()) proposal.scope = scopeOverride.trim();
+
     const profileData = profile as Record<string, unknown> | null;
 
     return NextResponse.json({
       proposal,
+      mediaItems,
       projectName: project.name,
       companyName: profile?.company_name ?? "",
       companyEmail: profile?.email ?? "",

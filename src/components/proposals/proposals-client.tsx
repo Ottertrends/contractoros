@@ -4,7 +4,7 @@ import * as React from "react";
 import dynamic from "next/dynamic";
 import { toast } from "sonner";
 
-import type { ProposalData } from "@/app/api/proposals/generate/route";
+import type { ProposalData, MediaItem } from "@/app/api/proposals/generate/route";
 
 // Load jsPDF-dependent component only on the client (fflate uses Node Workers incompatible with SSR)
 const ProposalDownloadButton = dynamic(
@@ -35,10 +35,19 @@ function fmt(n: number) {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(n);
 }
 
+function defaultValidUntil() {
+  const d = new Date();
+  d.setDate(d.getDate() + 30);
+  return d.toISOString().split("T")[0];
+}
+
 export function ProposalsClient({ projects }: Props) {
   const [selectedId, setSelectedId] = React.useState<string>("");
   const [mode, setMode] = React.useState<"strict" | "custom">("strict");
   const [customInstructions, setCustomInstructions] = React.useState("");
+  const [formValidUntil, setFormValidUntil] = React.useState(defaultValidUntil);
+  const [formTerms, setFormTerms] = React.useState("");
+  const [formScope, setFormScope] = React.useState("");
   const [loading, setLoading] = React.useState(false);
   const [result, setResult] = React.useState<{
     proposal: ProposalData;
@@ -47,6 +56,7 @@ export function ProposalsClient({ projects }: Props) {
     companyEmail: string;
     companyPhone: string;
     design: ProposalDesign | null;
+    mediaItems: MediaItem[];
   } | null>(null);
 
   async function handleGenerate() {
@@ -64,6 +74,9 @@ export function ProposalsClient({ projects }: Props) {
           projectId: selectedId,
           mode,
           customInstructions: mode === "custom" ? customInstructions : undefined,
+          validUntil: formValidUntil || undefined,
+          terms: formTerms.trim() || undefined,
+          scope: formScope.trim() || undefined,
         }),
       });
       const data = (await res.json()) as {
@@ -73,6 +86,7 @@ export function ProposalsClient({ projects }: Props) {
         companyEmail?: string;
         companyPhone?: string;
         design?: ProposalDesign | null;
+        mediaItems?: MediaItem[];
         error?: string;
       };
       if (!res.ok || !data.proposal) {
@@ -85,6 +99,7 @@ export function ProposalsClient({ projects }: Props) {
         companyEmail: data.companyEmail ?? "",
         companyPhone: data.companyPhone ?? "",
         design: data.design ?? null,
+        mediaItems: data.mediaItems ?? [],
       });
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to generate proposal");
@@ -122,6 +137,42 @@ export function ProposalsClient({ projects }: Props) {
         {projects.length === 0 && (
           <p className="text-sm text-slate-400">No projects found. Create a project first via WhatsApp or the Projects page.</p>
         )}
+
+        {/* Optional overrides */}
+        <div className="space-y-3">
+          <p className="text-xs font-medium text-slate-500">Document settings (optional)</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs text-slate-500 block mb-1">Valid until</label>
+              <input
+                type="date"
+                value={formValidUntil}
+                onChange={(e) => setFormValidUntil(e.target.value)}
+                className="w-full rounded-md border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900 dark:text-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-slate-500 block mb-1">Scope of work <span className="text-slate-400">(overrides AI)</span></label>
+              <textarea
+                value={formScope}
+                onChange={(e) => setFormScope(e.target.value)}
+                placeholder="Describe the scope — leave blank for AI to generate from project notes"
+                rows={2}
+                className="w-full rounded-md border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900 dark:text-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500 resize-none"
+              />
+            </div>
+          </div>
+          <div>
+            <label className="text-xs text-slate-500 block mb-1">Terms & conditions <span className="text-slate-400">(overrides AI)</span></label>
+            <textarea
+              value={formTerms}
+              onChange={(e) => setFormTerms(e.target.value)}
+              placeholder="e.g. Payment is 50% upfront, 50% on completion. Work guaranteed for 1 year. — leave blank for AI to generate"
+              rows={2}
+              className="w-full rounded-md border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900 dark:text-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500 resize-none"
+            />
+          </div>
+        </div>
 
         {/* Mode selector */}
         <div>
@@ -218,6 +269,7 @@ export function ProposalsClient({ projects }: Props) {
               companyEmail={result.companyEmail}
               companyPhone={result.companyPhone}
               design={result.design}
+              mediaItems={result.mediaItems}
             />
           </div>
 

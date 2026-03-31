@@ -4,7 +4,7 @@ import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import { toast } from "sonner";
 
-import type { ProposalData } from "@/app/api/proposals/generate/route";
+import type { ProposalData, MediaItem } from "@/app/api/proposals/generate/route";
 
 interface ProposalDesign {
   primaryColor?: string | null;
@@ -21,6 +21,7 @@ interface Props {
   companyEmail: string;
   companyPhone: string;
   design?: ProposalDesign | null;
+  mediaItems?: MediaItem[];
 }
 
 function fmt(n: number) {
@@ -111,6 +112,7 @@ async function generateProposalPDF({
   companyEmail,
   companyPhone,
   design,
+  mediaItems,
 }: Props) {
   const doc = new jsPDF({ unit: "pt", format: "letter" });
   const margin = 40;
@@ -260,6 +262,104 @@ async function generateProposalPDF({
     doc.setTextColor(80);
     const termLines = doc.splitTextToSize(proposal.terms, pageWidth - margin * 2);
     doc.text(termLines, margin, ty);
+    ty += termLines.length * 12;
+  }
+
+  // ── Project Photos ────────────────────────────────────────────────────────
+  if (mediaItems && mediaItems.length > 0) {
+    ty += 24;
+    const maxImgW = (pageWidth - margin * 2 - 8) / 2; // 2 per row with gap
+    const maxImgH = 160;
+    const footerReserve = design?.footer ? 50 : 30;
+
+    doc.setFontSize(9);
+    doc.setFont(titleFont, "bold");
+    doc.setTextColor(60);
+
+    // Check if header + at least one image fits; if not, new page
+    if (ty + 20 + maxImgH > pageHeight - footerReserve) {
+      doc.addPage();
+      ty = margin;
+    }
+    doc.text("PROJECT PHOTOS", margin, ty);
+    ty += 14;
+
+    let col = 0; // 0 = left, 1 = right
+    for (const item of mediaItems) {
+      const img = await loadImageBase64(item.signedUrl);
+      if (!img) continue;
+
+      // Compute display dimensions preserving aspect ratio
+      let imgData = img.data;
+      let ptW = maxImgW;
+      let ptH = maxImgH;
+
+      // Resize using canvas for consistent quality
+      await new Promise<void>((resolve) => {
+        const image = new Image();
+        image.onload = () => {
+          const ar = image.naturalWidth / image.naturalHeight;
+          if (ar >= maxImgW / maxImgH) {
+            ptW = maxImgW;
+            ptH = maxImgW / ar;
+          } else {
+            ptH = maxImgH;
+            ptW = maxImgH * ar;
+          }
+          const scale = 2;
+          const canvas = document.createElement("canvas");
+          canvas.width = Math.round(ptW * scale);
+          canvas.height = Math.round(ptH * scale);
+          const ctx = canvas.getContext("2d");
+          if (ctx) {
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = "high";
+            ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+            const mime = img.format === "PNG" ? "image/png" : "image/jpeg";
+            imgData = canvas.toDataURL(mime, 0.9);
+          }
+          resolve();
+        };
+        image.onerror = () => resolve();
+        image.src = img.data;
+      });
+
+      const captionH = item.description ? 14 : 0;
+      const rowH = ptH + captionH + 8; // image + caption + gap
+
+      // If right column: x is margin + maxImgW + gap; ty stays from left column start
+      const xPos = col === 0 ? margin : margin + maxImgW + 8;
+
+      // For left column (start of a new row), check if row fits on page
+      if (col === 0 && ty + rowH > pageHeight - footerReserve) {
+        doc.addPage();
+        ty = margin;
+      }
+
+      try {
+        doc.addImage(imgData, img.format, xPos, ty, ptW, ptH, undefined, "SLOW");
+      } catch { /* skip bad image */ }
+
+      if (item.description) {
+        doc.setFontSize(7);
+        doc.setFont(bodyFont, "normal");
+        doc.setTextColor(100);
+        const captionLine = doc.splitTextToSize(item.description, maxImgW)[0] as string;
+        doc.text(captionLine, xPos, ty + ptH + 9);
+      }
+
+      if (col === 0) {
+        col = 1;
+      } else {
+        ty += rowH;
+        col = 0;
+      }
+    }
+
+    // If we ended on right column, advance ty
+    if (col === 1) {
+      ty += maxImgH + 14;
+    }
   }
 
   // ── Footer ────────────────────────────────────────────────────────────────
@@ -275,9 +375,9 @@ async function generateProposalPDF({
   doc.save(`quote-${slug}.pdf`);
 }
 
-export function ProposalDownloadButton({ proposal, projectName, companyName, companyEmail, companyPhone, design }: Props) {
+export function ProposalDownloadButton({ proposal, projectName, companyName, companyEmail, companyPhone, design, mediaItems }: Props) {
   function handleClick() {
-    generateProposalPDF({ proposal, projectName, companyName, companyEmail, companyPhone, design })
+    generateProposalPDF({ proposal, projectName, companyName, companyEmail, companyPhone, design, mediaItems })
       .catch((e) => {
         toast.error(e instanceof Error ? e.message : "Failed to generate PDF");
       });
