@@ -363,11 +363,11 @@ function LineBlock({
               <label className="text-xs font-medium text-slate-700 dark:text-slate-300">
                 Your WhatsApp number — include <strong>+</strong> and country code
               </label>
-              <p className="text-xs text-slate-400">e.g. +12125550000 (US) or +521234567890 (MX)</p>
+              <p className="text-xs text-slate-400">e.g. +17372979517 (US) or +521234567890 (MX)</p>
               <div className="flex gap-2">
                 <Input
                   type="tel"
-                  placeholder="+12125550000"
+                  placeholder="+17372979517"
                   value={pairingPhone}
                   onChange={(e) => setPairingPhone(e.target.value)}
                   disabled={pairingLoading}

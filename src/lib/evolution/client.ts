@@ -173,22 +173,30 @@ export function createEvolutionClient(): EvolutionClient {
 
     async getPairingCode(instanceName: string, phoneNumber: string) {
       const digits = phoneNumber.replace(/\D/g, "");
-      // Try Evolution v2 dedicated endpoint first; fall back to v1 GET with ?number param
-      try {
-        const result = await evolutionFetch<QRCodeResponse>(
-          `/instance/pairingCode/${encodeURIComponent(instanceName)}`,
-          { method: "POST", body: JSON.stringify({ number: digits }) },
-        );
-        console.log("[evolution-client] getPairingCode v2 POST succeeded:", JSON.stringify(result).slice(0, 200));
-        return result;
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        console.warn("[evolution-client] getPairingCode v2 POST failed, trying v1 GET:", msg.slice(0, 120));
-        return evolutionFetch<QRCodeResponse>(
-          `/instance/connect/${encodeURIComponent(instanceName)}?number=${encodeURIComponent(digits)}`,
-          { method: "GET" },
-        );
+      // Retry up to 6 times (3s total) — Evolution sometimes returns pairingCode:null
+      // on the first call even after the socket reaches 'connecting', then succeeds on retry.
+      // Do NOT fall back to GET /instance/connect (that returns a QR, not a pairing code).
+      let lastResult: QRCodeResponse | undefined;
+      for (let attempt = 1; attempt <= 6; attempt++) {
+        try {
+          const result = await evolutionFetch<QRCodeResponse>(
+            `/instance/pairingCode/${encodeURIComponent(instanceName)}`,
+            { method: "POST", body: JSON.stringify({ number: digits }) },
+          );
+          console.log(`[evolution-client] getPairingCode attempt ${attempt}:`, JSON.stringify(result).slice(0, 200));
+          // Success — pairingCode field is present and non-null
+          if (result && typeof (result as Record<string, unknown>).pairingCode === "string" && (result as Record<string, unknown>).pairingCode !== null) {
+            return result;
+          }
+          lastResult = result;
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          console.warn(`[evolution-client] getPairingCode attempt ${attempt} failed:`, msg.slice(0, 120));
+        }
+        if (attempt < 6) await new Promise((r) => setTimeout(r, 500));
       }
+      // Return last result (may have pairingCode:null — caller handles the error)
+      return lastResult ?? ({} as QRCodeResponse);
     },
   };
 }
