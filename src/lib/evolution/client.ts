@@ -173,30 +173,27 @@ export function createEvolutionClient(): EvolutionClient {
 
     async getPairingCode(instanceName: string, phoneNumber: string) {
       const digits = phoneNumber.replace(/\D/g, "");
-      // Retry up to 6 times (3s total) — Evolution sometimes returns pairingCode:null
-      // on the first call even after the socket reaches 'connecting', then succeeds on retry.
-      // Do NOT fall back to GET /instance/connect (that returns a QR, not a pairing code).
       let lastResult: QRCodeResponse | undefined;
+      let lastError = "";
       for (let attempt = 1; attempt <= 6; attempt++) {
         try {
           const result = await evolutionFetch<QRCodeResponse>(
             `/instance/pairingCode/${encodeURIComponent(instanceName)}`,
             { method: "POST", body: JSON.stringify({ number: digits }) },
           );
-          console.log(`[evolution-client] getPairingCode attempt ${attempt}:`, JSON.stringify(result).slice(0, 200));
-          // Success — pairingCode field is present and non-null
+          console.log(`[evolution-client] getPairingCode attempt ${attempt}:`, JSON.stringify(result).slice(0, 300));
           if (result && typeof (result as Record<string, unknown>).pairingCode === "string" && (result as Record<string, unknown>).pairingCode !== null) {
             return result;
           }
           lastResult = result;
         } catch (e) {
-          const msg = e instanceof Error ? e.message : String(e);
-          console.warn(`[evolution-client] getPairingCode attempt ${attempt} failed:`, msg.slice(0, 120));
+          lastError = e instanceof Error ? e.message : String(e);
+          console.warn(`[evolution-client] getPairingCode attempt ${attempt} error:`, lastError.slice(0, 200));
         }
         if (attempt < 6) await new Promise((r) => setTimeout(r, 500));
       }
-      // Return last result (may have pairingCode:null — caller handles the error)
-      return lastResult ?? ({} as QRCodeResponse);
+      // Return result with error detail so caller can surface it in UI
+      return { ...(lastResult ?? {}), _error: lastError } as unknown as QRCodeResponse;
     },
   };
 }

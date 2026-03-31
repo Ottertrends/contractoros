@@ -156,9 +156,10 @@ export async function POST(request: Request) {
       console.log("[whatsapp/connect] pairing code:", pairingCode ? "obtained" : "not found", "| raw:", JSON.stringify(pairingRes).slice(0, 120));
 
       if (!pairingCode) {
-        const rawStr = JSON.stringify(pairingRes ?? null).slice(0, 400);
+        const raw = pairingRes as Record<string, unknown> | null;
+        const detail = raw?._error ? `Error: ${raw._error}` : `Response: ${JSON.stringify(raw).slice(0, 300)}`;
         return NextResponse.json(
-          { error: `Could not extract pairing code. Evolution raw response: ${rawStr}` },
+          { error: `Could not get pairing code. ${detail}` },
           { status: 500 },
         );
       }
