@@ -113,42 +113,25 @@ export async function POST(request: Request) {
       const admin = createSupabaseAdminClient();
       await mergeWaSession(admin, user.id, instanceName, { owner_jid: null, owner_lid: null, lid_pending: true });
 
-      // For pairing code, delete and recreate the instance to guarantee a fresh
-      // connecting state. A previously-connected (state=open) or stale instance
-      // returns codes that WhatsApp rejects.
+      // Delete any existing instance and recreate with qrcode:false.
+      // This is the key fix: creating with qrcode:true locks Baileys into QR mode,
+      // causing GET /instance/connect?number= to always return pairingCode:null.
+      // With qrcode:false, Baileys starts in pairing mode and returns the code immediately.
       try {
         await evolution.deleteInstance(instanceName);
-        console.log("[whatsapp/connect] deleted existing instance for fresh pairing state");
+        console.log("[whatsapp/connect] deleted existing instance");
       } catch {
-        /* ignore if instance doesn't exist */
+        /* ignore if doesn't exist */
       }
-      await createFresh();
-      console.log("[whatsapp/connect] fresh instance created — polling for connecting state");
-
-      // Poll until Baileys WebSocket reaches 'connecting' state (up to 12s).
-      // A hardcoded sleep is unreliable; Evolution needs the socket open before
-      // it can issue a valid pairing code.
-      async function waitForConnecting(name: string, maxMs = 12000): Promise<boolean> {
-        const intervalMs = 500;
-        const attempts = Math.ceil(maxMs / intervalMs);
-        for (let i = 0; i < attempts; i++) {
-          await new Promise((r) => setTimeout(r, intervalMs));
-          try {
-            const status = await evolution.getInstanceStatus(name);
-            const state = String(
-              (status as Record<string, Record<string, string>>)?.instance?.state ?? ""
-            ).toLowerCase();
-            console.log(`[whatsapp/connect] state poll ${i + 1}/${attempts}:`, state || "(empty)");
-            if (state.includes("connecting") || state.includes("qr") || state.includes("open")) return true;
-          } catch {
-            /* instance not yet reachable — keep polling */
-          }
-        }
-        return false;
+      await evolution.createInstance(instanceName, webhookUrl, { qrcode: false });
+      console.log("[whatsapp/connect] created pairing instance (qrcode:false)");
+      try {
+        await evolution.setWebhook(instanceName, webhookUrl, WEBHOOK_EVENTS);
+      } catch (we) {
+        console.warn("[whatsapp/connect] setWebhook non-fatal:", we instanceof Error ? we.message : we);
       }
-
-      const ready = await waitForConnecting(instanceName);
-      console.log("[whatsapp/connect] instance ready for pairing:", ready);
+      // Brief pause for the instance to register before requesting pairing code
+      await new Promise((r) => setTimeout(r, 1000));
       console.log("[whatsapp/connect] requesting pairing code");
 
       const pairingRes = await evolution.getPairingCode(instanceName, phoneNumber);

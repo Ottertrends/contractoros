@@ -68,6 +68,7 @@ export interface EvolutionClient {
   createInstance(
     instanceName: string,
     webhookUrl: string,
+    opts?: { qrcode?: boolean },
   ): Promise<CreateInstanceResponse>;
   deleteInstance(instanceName: string): Promise<void>;
   getInstanceStatus(instanceName: string): Promise<InstanceStatusResponse>;
@@ -92,13 +93,14 @@ export interface EvolutionClient {
 
 export function createEvolutionClient(): EvolutionClient {
   return {
-    async createInstance(instanceName: string, _webhookUrl: string) {
+    async createInstance(instanceName: string, _webhookUrl: string, opts?: { qrcode?: boolean }) {
       // Evolution v2: minimal body only — extra fields (webhook, token, events)
       // cause strict-validation 400 errors on v2 and leave the instance in a broken state.
       // Webhook is always registered separately via setWebhook() after creation.
+      // Pass qrcode:false for pairing code path so Baileys starts in pairing mode.
       const body: CreateInstanceBody = {
         instanceName,
-        qrcode: true,
+        qrcode: opts?.qrcode !== false, // default true; false locks into pairing mode
         integration: "WHATSAPP-BAILEYS",
       };
       return evolutionFetch<CreateInstanceResponse>(
@@ -173,29 +175,21 @@ export function createEvolutionClient(): EvolutionClient {
 
     async getPairingCode(instanceName: string, phoneNumber: string) {
       const digits = phoneNumber.replace(/\D/g, "");
-      // Evolution v1/v2.1: GET /instance/connect?number= returns pairingCode once socket is open.
-      // Retry up to 10 times (5s total) — pairingCode is null until Baileys is fully in connecting state.
-      let lastResult: QRCodeResponse | undefined;
+      // Instance must have been created with qrcode:false for this to return a pairingCode.
+      // A single call is sufficient — no retry needed when the instance is in pairing mode.
       let lastError = "";
-      for (let attempt = 1; attempt <= 10; attempt++) {
-        try {
-          const result = await evolutionFetch<QRCodeResponse>(
-            `/instance/connect/${encodeURIComponent(instanceName)}?number=${encodeURIComponent(digits)}`,
-            { method: "GET" },
-          );
-          console.log(`[evolution-client] getPairingCode attempt ${attempt}:`, JSON.stringify(result).slice(0, 300));
-          const code = (result as Record<string, unknown>).pairingCode;
-          if (typeof code === "string" && code.trim().length > 0) {
-            return result;
-          }
-          lastResult = result;
-        } catch (e) {
-          lastError = e instanceof Error ? e.message : String(e);
-          console.warn(`[evolution-client] getPairingCode attempt ${attempt} error:`, lastError.slice(0, 200));
-        }
-        if (attempt < 10) await new Promise((r) => setTimeout(r, 500));
+      try {
+        const result = await evolutionFetch<QRCodeResponse>(
+          `/instance/connect/${encodeURIComponent(instanceName)}?number=${encodeURIComponent(digits)}`,
+          { method: "GET" },
+        );
+        console.log("[evolution-client] getPairingCode response:", JSON.stringify(result).slice(0, 300));
+        return result;
+      } catch (e) {
+        lastError = e instanceof Error ? e.message : String(e);
+        console.warn("[evolution-client] getPairingCode error:", lastError.slice(0, 200));
       }
-      return { ...(lastResult ?? {}), _error: lastError || "pairingCode was null after 10 attempts" } as unknown as QRCodeResponse;
+      return { _error: lastError } as unknown as QRCodeResponse;
     },
   };
 }
