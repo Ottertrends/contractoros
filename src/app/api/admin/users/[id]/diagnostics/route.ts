@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyAdminToken } from "@/lib/admin/auth";
-import { createClient } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
 import Anthropic from "@anthropic-ai/sdk";
 import { createEvolutionClient } from "@/lib/evolution/client";
@@ -12,11 +11,6 @@ import {
 import { DEFAULT_ANTHROPIC_MODEL } from "@/lib/agent/model";
 
 export const dynamic = "force-dynamic";
-
-const adminDb = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
 
 interface CheckResult {
   ok: boolean;
@@ -118,6 +112,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const { id: userId } = await params;
+  const adminDb = createSupabaseAdminClient();
 
   const { data: profile } = await adminDb
     .from("profiles")
