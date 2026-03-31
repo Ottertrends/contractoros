@@ -370,9 +370,15 @@ async function handleMessagesUpsert(
         console.log("[evolution-webhook] @lid — owner LID match ✅ | jid:", jid);
       }
     } else {
-      console.log("[evolution-webhook] @lid — no ownerLid and not pending, skipping");
-      await logBotEvent(admin, userId, "skipped", "no-lid-pending", jid);
-      return;
+      // No ownerLid and not pending — happens on iPhone when lid_pending was never set
+      // or was cleared. Since fromMe=true, this IS the owner's LID — bootstrap it now.
+      console.log("[evolution-webhook] @lid — no ownerLid and not pending — auto-bootstrapping LID:", jid);
+      await logBotEvent(admin, userId, "bootstrap", "lid-bootstrap-auto", jid);
+      await mergeWaSession(admin, userId, instance, { owner_lid: jid, lid_pending: false });
+      if (isPrimaryInstance(instance, prof, userId)) {
+        await admin.from("profiles").update({ whatsapp_owner_lid: jid, whatsapp_lid_pending: false }).eq("id", userId);
+      }
+      // fall through — "/" gate will decide if this message triggers the bot
     }
   } else {
     if (!ownerJid) {
