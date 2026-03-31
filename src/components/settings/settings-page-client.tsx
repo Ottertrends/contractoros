@@ -30,6 +30,65 @@ const passwordSchema = z
     path: ["confirmPassword"],
   });
 
+function NotificationsToggleCard({ initialEnabled }: { initialEnabled: boolean }) {
+  const [enabled, setEnabled] = React.useState(initialEnabled);
+  const [saving, setSaving] = React.useState(false);
+
+  async function handleToggle() {
+    const next = !enabled;
+    setSaving(true);
+    try {
+      const res = await fetch("/api/notifications/toggle", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled: next }),
+      });
+      if (!res.ok) throw new Error("Failed to save");
+      setEnabled(next);
+      toast.success(next ? "Notifications enabled" : "Notifications disabled");
+    } catch {
+      toast.error("Failed to update notification setting");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Notifications</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <p className="text-sm font-medium text-slate-800 dark:text-slate-200">
+              Upcoming job reminders
+            </p>
+            <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
+              Receive a WhatsApp message (or email fallback) the day before any recurring scheduled job.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => void handleToggle()}
+            disabled={saving}
+            aria-pressed={enabled}
+            className={`relative inline-flex h-6 w-11 flex-shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none ${
+              enabled ? "bg-slate-900 dark:bg-white" : "bg-slate-200 dark:bg-slate-700"
+            } disabled:opacity-50`}
+          >
+            <span
+              className={`inline-block h-5 w-5 transform rounded-full bg-white dark:bg-slate-900 shadow transition-transform duration-200 ${
+                enabled ? "translate-x-5" : "translate-x-0"
+              }`}
+            />
+          </button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 export function SettingsPageClient({ userId, profile }: { userId: string; profile: Profile }) {
   const router = useRouter();
   const { t } = useLanguage();
@@ -297,6 +356,9 @@ export function SettingsPageClient({ userId, profile }: { userId: string; profil
           />
         </CardContent>
       </Card>
+
+      {/* Notifications */}
+      <NotificationsToggleCard initialEnabled={!!(profile as Record<string, unknown>).notifications_enabled} />
 
       {/* Account */}
       <Card>

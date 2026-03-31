@@ -17,6 +17,8 @@ import {
   Settings as SettingsIcon,
   CreditCard,
   HelpCircle,
+  CalendarDays,
+  ClipboardList,
 } from "lucide-react";
 
 import Image from "next/image";
@@ -59,6 +61,8 @@ export function MobileNav({ userName, userEmail }: Props) {
     { href: "/dashboard", label: t.nav.dashboard, icon: LayoutDashboard },
     { href: "/dashboard/projects", label: t.nav.projects, icon: FolderKanban },
     { href: "/dashboard/invoices", label: t.nav.invoices, icon: FileText },
+    { href: "/dashboard/proposals", label: "Proposals", icon: ClipboardList },
+    { href: "/dashboard/calendar", label: "Calendar", icon: CalendarDays },
     { href: "/dashboard/price-book", label: t.nav.priceBook, icon: Boxes },
     { href: "/dashboard/clients", label: t.nav.clients, icon: Users },
     { href: "/dashboard/invoice-design", label: t.nav.invoiceDesign, icon: Palette },

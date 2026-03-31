@@ -1,0 +1,12 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/update-recurring",
+      "schedule": "0 6 * * *"
+    },
+    {
+      "path": "/api/cron/notify-upcoming",
+      "schedule": "0 8 * * *"
+    }
+  ]
+}
