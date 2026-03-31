@@ -173,16 +173,19 @@ export function createEvolutionClient(): EvolutionClient {
 
     async getPairingCode(instanceName: string, phoneNumber: string) {
       const digits = phoneNumber.replace(/\D/g, "");
+      // Evolution v1/v2.1: GET /instance/connect?number= returns pairingCode once socket is open.
+      // Retry up to 10 times (5s total) — pairingCode is null until Baileys is fully in connecting state.
       let lastResult: QRCodeResponse | undefined;
       let lastError = "";
-      for (let attempt = 1; attempt <= 6; attempt++) {
+      for (let attempt = 1; attempt <= 10; attempt++) {
         try {
           const result = await evolutionFetch<QRCodeResponse>(
-            `/instance/pairingCode/${encodeURIComponent(instanceName)}`,
-            { method: "POST", body: JSON.stringify({ number: digits }) },
+            `/instance/connect/${encodeURIComponent(instanceName)}?number=${encodeURIComponent(digits)}`,
+            { method: "GET" },
           );
           console.log(`[evolution-client] getPairingCode attempt ${attempt}:`, JSON.stringify(result).slice(0, 300));
-          if (result && typeof (result as Record<string, unknown>).pairingCode === "string" && (result as Record<string, unknown>).pairingCode !== null) {
+          const code = (result as Record<string, unknown>).pairingCode;
+          if (typeof code === "string" && code.trim().length > 0) {
             return result;
           }
           lastResult = result;
@@ -190,10 +193,9 @@ export function createEvolutionClient(): EvolutionClient {
           lastError = e instanceof Error ? e.message : String(e);
           console.warn(`[evolution-client] getPairingCode attempt ${attempt} error:`, lastError.slice(0, 200));
         }
-        if (attempt < 6) await new Promise((r) => setTimeout(r, 500));
+        if (attempt < 10) await new Promise((r) => setTimeout(r, 500));
       }
-      // Return result with error detail so caller can surface it in UI
-      return { ...(lastResult ?? {}), _error: lastError } as unknown as QRCodeResponse;
+      return { ...(lastResult ?? {}), _error: lastError || "pairingCode was null after 10 attempts" } as unknown as QRCodeResponse;
     },
   };
 }
