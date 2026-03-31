@@ -121,7 +121,11 @@ export async function POST(request: Request) {
         /* ignore if instance doesn't exist */
       }
       await createFresh();
-      console.log("[whatsapp/connect] fresh instance created — requesting pairing code");
+      console.log("[whatsapp/connect] fresh instance created — waiting for socket to open");
+      // Evolution needs ~2s for the Baileys WebSocket to reach connecting state
+      // before it can issue a valid pairing code. Requesting too early returns null.
+      await new Promise((r) => setTimeout(r, 2500));
+      console.log("[whatsapp/connect] requesting pairing code");
 
       const pairingRes = await evolution.getPairingCode(instanceName, phoneNumber);
       const pairingCode = extractPairingCode(pairingRes);
