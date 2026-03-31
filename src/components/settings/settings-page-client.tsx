@@ -358,7 +358,7 @@ export function SettingsPageClient({ userId, profile }: { userId: string; profil
       </Card>
 
       {/* Notifications */}
-      <NotificationsToggleCard initialEnabled={!!(profile as Record<string, unknown>).notifications_enabled} />
+      <NotificationsToggleCard initialEnabled={!!((profile as unknown as { notifications_enabled?: boolean | null }).notifications_enabled)} />
 
       {/* Account */}
       <Card>
