@@ -289,7 +289,7 @@ export function extractPairingCode(payload: unknown): string | null {
   if (!payload || typeof payload !== "object") return null;
   const o = payload as Record<string, unknown>;
 
-  console.log("[evolution-client] extractPairingCode raw payload:", JSON.stringify(o).slice(0, 300));
+  console.log("[evolution-client] extractPairingCode raw payload:", JSON.stringify(o).slice(0, 500));
 
   // v2: explicit pairingCode field
   if (typeof o.pairingCode === "string" && o.pairingCode.trim().length > 0) {
@@ -301,11 +301,14 @@ export function extractPairingCode(payload: unknown): string | null {
     return o.code.trim().toUpperCase();
   }
 
-  // Nested under `instance` key
+  // Nested under `instance` key — check both pairingCode and short code
   if (o.instance && typeof o.instance === "object") {
     const inst = o.instance as Record<string, unknown>;
     if (typeof inst.pairingCode === "string" && inst.pairingCode.trim().length > 0) {
       return inst.pairingCode.trim().toUpperCase();
+    }
+    if (typeof inst.code === "string" && inst.code.trim().length > 0 && inst.code.trim().length <= 16) {
+      return inst.code.trim().toUpperCase();
     }
   }
 

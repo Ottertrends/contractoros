@@ -121,10 +121,32 @@ export async function POST(request: Request) {
         /* ignore if instance doesn't exist */
       }
       await createFresh();
-      console.log("[whatsapp/connect] fresh instance created — waiting for socket to open");
-      // Evolution needs ~2s for the Baileys WebSocket to reach connecting state
-      // before it can issue a valid pairing code. Requesting too early returns null.
-      await new Promise((r) => setTimeout(r, 2500));
+      console.log("[whatsapp/connect] fresh instance created — polling for connecting state");
+
+      // Poll until Baileys WebSocket reaches 'connecting' state (up to 12s).
+      // A hardcoded sleep is unreliable; Evolution needs the socket open before
+      // it can issue a valid pairing code.
+      async function waitForConnecting(name: string, maxMs = 12000): Promise<boolean> {
+        const intervalMs = 500;
+        const attempts = Math.ceil(maxMs / intervalMs);
+        for (let i = 0; i < attempts; i++) {
+          await new Promise((r) => setTimeout(r, intervalMs));
+          try {
+            const status = await evolution.getInstanceStatus(name);
+            const state = String(
+              (status as Record<string, Record<string, string>>)?.instance?.state ?? ""
+            ).toLowerCase();
+            console.log(`[whatsapp/connect] state poll ${i + 1}/${attempts}:`, state || "(empty)");
+            if (state.includes("connecting") || state.includes("qr") || state.includes("open")) return true;
+          } catch {
+            /* instance not yet reachable — keep polling */
+          }
+        }
+        return false;
+      }
+
+      const ready = await waitForConnecting(instanceName);
+      console.log("[whatsapp/connect] instance ready for pairing:", ready);
       console.log("[whatsapp/connect] requesting pairing code");
 
       const pairingRes = await evolution.getPairingCode(instanceName, phoneNumber);
