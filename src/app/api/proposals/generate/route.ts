@@ -28,7 +28,12 @@ export async function POST(request: Request) {
     } = await supabase.auth.getUser();
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    const { projectId } = (await request.json()) as { projectId: string };
+    const body = (await request.json()) as {
+      projectId: string;
+      mode?: "strict" | "custom";
+      customInstructions?: string;
+    };
+    const { projectId, mode = "strict", customInstructions } = body;
     if (!projectId) return NextResponse.json({ error: "projectId required" }, { status: 400 });
 
     const admin = createSupabaseAdminClient();
@@ -65,10 +70,10 @@ export async function POST(request: Request) {
       .order("created_at", { ascending: false })
       .limit(5);
 
-    // Fetch profile for company info
+    // Fetch profile for company info + invoice design
     const { data: profile } = await admin
       .from("profiles")
-      .select("full_name, company_name, email, phone")
+      .select("full_name, company_name, email, phone, invoice_primary_color, invoice_logo_url, invoice_title_font, invoice_body_font, invoice_footer")
       .eq("id", user.id)
       .single();
 
@@ -90,6 +95,10 @@ export async function POST(request: Request) {
     const today = new Date();
     const validUntilDate = new Date(today);
     validUntilDate.setDate(today.getDate() + 30);
+
+    const strictInstruction = mode === "strict"
+      ? `IMPORTANT: Use ONLY the information explicitly provided above. Do NOT infer, guess, or use typical market rates. If a price or quantity is not mentioned, use 0 or 1 as placeholder. Do not add line items that are not mentioned in the notes or description.`
+      : `Use the following custom instructions from the contractor to shape this proposal:\n${customInstructions ?? ""}`;
 
     const prompt = `You are generating a professional contractor proposal/quote document.
 
@@ -113,7 +122,7 @@ Attached media: ${mediaText}
 Today: ${today.toLocaleDateString("en-US")}
 Valid until: ${validUntilDate.toLocaleDateString("en-US")}
 
-Generate a professional proposal JSON. Use the notes and project description to infer realistic line items with quantities and unit prices. If no specific prices are mentioned, use typical contractor market rates.
+${strictInstruction}
 
 Return ONLY valid JSON, no markdown, no explanation:
 {
@@ -146,12 +155,13 @@ Return ONLY valid JSON, no markdown, no explanation:
 
     let proposal: ProposalData;
     try {
-      // Strip potential markdown code fences
       const cleaned = text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
       proposal = JSON.parse(cleaned) as ProposalData;
     } catch {
       return NextResponse.json({ error: "Claude returned invalid JSON", raw: text.slice(0, 500) }, { status: 500 });
     }
+
+    const profileData = profile as Record<string, unknown> | null;
 
     return NextResponse.json({
       proposal,
@@ -160,6 +170,13 @@ Return ONLY valid JSON, no markdown, no explanation:
       companyEmail: profile?.email ?? "",
       companyPhone: profile?.phone ?? "",
       clientName: (project as Record<string, unknown>).client_name ?? null,
+      design: {
+        primaryColor: profileData?.invoice_primary_color ?? null,
+        logoUrl: profileData?.invoice_logo_url ?? null,
+        titleFont: profileData?.invoice_title_font ?? null,
+        bodyFont: profileData?.invoice_body_font ?? null,
+        footer: profileData?.invoice_footer ?? null,
+      },
     });
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : "Failed to generate proposal";

@@ -144,7 +144,7 @@ export function InvoiceDesignClient({ userId, companyName, initialDesign }: Prop
   return (
     <div className="flex flex-col gap-6 max-w-3xl">
       <div>
-        <div className="text-lg font-semibold text-slate-900 dark:text-slate-50">Invoice Design</div>
+        <div className="text-lg font-semibold text-slate-900 dark:text-slate-50">Document Design</div>
         <div className="text-sm text-slate-500">
           Customize the look of all exported PDF invoices.
         </div>

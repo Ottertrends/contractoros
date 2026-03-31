@@ -3,11 +3,17 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
 
+function skipSunday(d: Date): Date {
+  if (d.getDay() === 0) d.setDate(d.getDate() + 1);
+  return d;
+}
+
 function advanceDate(
   recurrence_type: string,
   day_of_week: number | null,
   interval_days: number | null,
   day_of_month: number | null,
+  manual_dates: string[] | null,
   from: string,
 ): string {
   const d = new Date(from + "T00:00:00");
@@ -19,6 +25,7 @@ function advanceDate(
 
   if (recurrence_type === "interval" && interval_days != null) {
     d.setDate(d.getDate() + interval_days);
+    skipSunday(d);
     return d.toISOString().slice(0, 10);
   }
 
@@ -26,6 +33,15 @@ function advanceDate(
     d.setMonth(d.getMonth() + 1);
     d.setDate(day_of_month);
     return d.toISOString().slice(0, 10);
+  }
+
+  if (recurrence_type === "manual" && manual_dates?.length) {
+    const today = new Date().toISOString().slice(0, 10);
+    const sorted = [...manual_dates].sort();
+    const future = sorted.find((date) => date > from && date > today);
+    if (future) return future;
+    // All manual dates passed — keep last date (won't re-trigger)
+    return sorted[sorted.length - 1];
   }
 
   // fallback: 7 days
@@ -47,7 +63,7 @@ export async function GET(req: NextRequest) {
   // Fetch all active rules with next_occurrence <= today
   const { data: overdue, error } = await admin
     .from("recurring_projects")
-    .select("id, recurrence_type, day_of_week, interval_days, day_of_month, next_occurrence")
+    .select("id, recurrence_type, day_of_week, interval_days, day_of_month, manual_dates, next_occurrence")
     .eq("active", true)
     .lte("next_occurrence", today);
 
@@ -67,6 +83,7 @@ export async function GET(req: NextRequest) {
         rule.day_of_week as number | null,
         rule.interval_days as number | null,
         rule.day_of_month as number | null,
+        rule.manual_dates as string[] | null,
         next,
       );
       iterations++;

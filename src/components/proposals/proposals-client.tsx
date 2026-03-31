@@ -23,12 +23,22 @@ interface Props {
   projects: Project[];
 }
 
+interface ProposalDesign {
+  primaryColor?: string | null;
+  logoUrl?: string | null;
+  titleFont?: string | null;
+  bodyFont?: string | null;
+  footer?: string | null;
+}
+
 function fmt(n: number) {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(n);
 }
 
 export function ProposalsClient({ projects }: Props) {
   const [selectedId, setSelectedId] = React.useState<string>("");
+  const [mode, setMode] = React.useState<"strict" | "custom">("strict");
+  const [customInstructions, setCustomInstructions] = React.useState("");
   const [loading, setLoading] = React.useState(false);
   const [result, setResult] = React.useState<{
     proposal: ProposalData;
@@ -36,6 +46,7 @@ export function ProposalsClient({ projects }: Props) {
     companyName: string;
     companyEmail: string;
     companyPhone: string;
+    design: ProposalDesign | null;
   } | null>(null);
 
   async function handleGenerate() {
@@ -49,7 +60,11 @@ export function ProposalsClient({ projects }: Props) {
       const res = await fetch("/api/proposals/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId: selectedId }),
+        body: JSON.stringify({
+          projectId: selectedId,
+          mode,
+          customInstructions: mode === "custom" ? customInstructions : undefined,
+        }),
       });
       const data = (await res.json()) as {
         proposal?: ProposalData;
@@ -57,6 +72,7 @@ export function ProposalsClient({ projects }: Props) {
         companyName?: string;
         companyEmail?: string;
         companyPhone?: string;
+        design?: ProposalDesign | null;
         error?: string;
       };
       if (!res.ok || !data.proposal) {
@@ -68,6 +84,7 @@ export function ProposalsClient({ projects }: Props) {
         companyName: data.companyName ?? "",
         companyEmail: data.companyEmail ?? "",
         companyPhone: data.companyPhone ?? "",
+        design: data.design ?? null,
       });
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to generate proposal");
@@ -78,12 +95,16 @@ export function ProposalsClient({ projects }: Props) {
 
   return (
     <div className="space-y-6">
-      {/* Project selector */}
-      <div className="rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950 p-6 space-y-4">
-        <h2 className="text-base font-semibold text-slate-900 dark:text-white">Generate Proposal</h2>
-        <p className="text-sm text-slate-500 dark:text-slate-400">
-          Select a project and let AI generate a professional proposal/quote PDF using your project notes, media, and billing history.
-        </p>
+      {/* Project selector + mode */}
+      <div className="rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950 p-6 space-y-5">
+        <div>
+          <h2 className="text-base font-semibold text-slate-900 dark:text-white">Generate Quote</h2>
+          <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+            Select a project and let AI generate a professional quote PDF using your project notes, media, and billing history.
+          </p>
+        </div>
+
+        {/* Project selector */}
         <div className="flex flex-col sm:flex-row gap-3">
           <select
             value={selectedId}
@@ -97,25 +118,89 @@ export function ProposalsClient({ projects }: Props) {
               </option>
             ))}
           </select>
-          <button
-            type="button"
-            onClick={() => void handleGenerate()}
-            disabled={loading || !selectedId}
-            className="inline-flex items-center gap-2 rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {loading ? (
-              <>
-                <span className="h-4 w-4 border-2 border-white border-t-transparent dark:border-slate-900 dark:border-t-transparent rounded-full animate-spin" />
-                Generating...
-              </>
-            ) : (
-              "Generate Proposal"
-            )}
-          </button>
         </div>
         {projects.length === 0 && (
           <p className="text-sm text-slate-400">No projects found. Create a project first via WhatsApp or the Projects page.</p>
         )}
+
+        {/* Mode selector */}
+        <div>
+          <p className="text-xs font-medium text-slate-500 mb-2">Generation mode</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <label
+              className={`flex flex-col gap-1 rounded-lg border p-3 cursor-pointer transition-colors ${
+                mode === "strict"
+                  ? "border-slate-900 bg-slate-50 dark:border-white dark:bg-slate-900"
+                  : "border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-900"
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <input
+                  type="radio"
+                  name="mode"
+                  value="strict"
+                  checked={mode === "strict"}
+                  onChange={() => setMode("strict")}
+                  className="accent-slate-900 dark:accent-white"
+                />
+                <span className="text-sm font-medium text-slate-800 dark:text-slate-200">Strict</span>
+              </div>
+              <p className="text-xs text-slate-400 pl-5">Claude uses only the data you have uploaded — no inferred prices or invented line items.</p>
+            </label>
+            <label
+              className={`flex flex-col gap-1 rounded-lg border p-3 cursor-pointer transition-colors ${
+                mode === "custom"
+                  ? "border-slate-900 bg-slate-50 dark:border-white dark:bg-slate-900"
+                  : "border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-900"
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <input
+                  type="radio"
+                  name="mode"
+                  value="custom"
+                  checked={mode === "custom"}
+                  onChange={() => setMode("custom")}
+                  className="accent-slate-900 dark:accent-white"
+                />
+                <span className="text-sm font-medium text-slate-800 dark:text-slate-200">Custom</span>
+              </div>
+              <p className="text-xs text-slate-400 pl-5">Add your own instructions, T&Cs, or scope for Claude to polish the document.</p>
+            </label>
+          </div>
+        </div>
+
+        {/* Custom instructions textarea */}
+        {mode === "custom" && (
+          <div>
+            <label className="text-xs font-medium text-slate-500 block mb-1">
+              Your instructions / T&Cs / scope
+            </label>
+            <textarea
+              value={customInstructions}
+              onChange={(e) => setCustomInstructions(e.target.value)}
+              placeholder="e.g. Payment is 50% upfront, 50% on completion. All work is guaranteed for 1 year. Include a mobilization fee of $500..."
+              rows={4}
+              className="w-full rounded-md border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900 dark:text-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500 resize-none"
+            />
+          </div>
+        )}
+
+        <button
+          type="button"
+          onClick={() => void handleGenerate()}
+          disabled={loading || !selectedId}
+          className="inline-flex items-center gap-2 rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {loading ? (
+            <>
+              <span className="h-4 w-4 border-2 border-white border-t-transparent dark:border-slate-900 dark:border-t-transparent rounded-full animate-spin" />
+              Generating...
+            </>
+          ) : (
+            "Generate Quote"
+          )}
+        </button>
       </div>
 
       {/* Result preview */}
@@ -132,6 +217,7 @@ export function ProposalsClient({ projects }: Props) {
               companyName={result.companyName}
               companyEmail={result.companyEmail}
               companyPhone={result.companyPhone}
+              design={result.design}
             />
           </div>
 

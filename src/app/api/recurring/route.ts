@@ -6,13 +6,20 @@ export interface RecurringRule {
   id: string;
   project_id: string;
   project_name: string | null;
-  recurrence_type: "weekly" | "interval" | "monthly";
+  recurrence_type: "weekly" | "interval" | "monthly" | "manual";
   day_of_week: number | null;
   interval_days: number | null;
   day_of_month: number | null;
+  manual_dates: string[] | null;
   start_date: string;
   next_occurrence: string;
   active: boolean;
+}
+
+/** Skip Sundays: if date falls on Sunday, advance to Monday. */
+function skipSunday(d: Date): Date {
+  if (d.getDay() === 0) d.setDate(d.getDate() + 1);
+  return d;
 }
 
 function computeFirstOccurrence(
@@ -20,12 +27,12 @@ function computeFirstOccurrence(
   day_of_week: number | null,
   interval_days: number | null,
   day_of_month: number | null,
+  manual_dates: string[] | null,
   start_date: string,
 ): string {
   const start = new Date(start_date + "T00:00:00");
 
   if (recurrence_type === "weekly" && day_of_week != null) {
-    // Find the first occurrence of day_of_week on or after start
     const d = new Date(start);
     while (d.getDay() !== day_of_week) {
       d.setDate(d.getDate() + 1);
@@ -34,15 +41,21 @@ function computeFirstOccurrence(
   }
 
   if (recurrence_type === "interval" && interval_days != null) {
-    return start_date;
+    return skipSunday(new Date(start)).toISOString().slice(0, 10);
   }
 
   if (recurrence_type === "monthly" && day_of_month != null) {
     const d = new Date(start);
     d.setDate(day_of_month);
-    // If this day already passed this month, move to next month
     if (d < start) d.setMonth(d.getMonth() + 1);
     return d.toISOString().slice(0, 10);
+  }
+
+  if (recurrence_type === "manual" && manual_dates?.length) {
+    const sorted = [...manual_dates].sort();
+    const today = new Date().toISOString().slice(0, 10);
+    const future = sorted.find((d) => d >= today);
+    return future ?? sorted[sorted.length - 1];
   }
 
   return start_date;
@@ -72,6 +85,7 @@ export async function GET() {
     day_of_week: r.day_of_week as number | null,
     interval_days: r.interval_days as number | null,
     day_of_month: r.day_of_month as number | null,
+    manual_dates: (r.manual_dates as string[] | null) ?? null,
     start_date: r.start_date as string,
     next_occurrence: r.next_occurrence as string,
     active: r.active as boolean,
@@ -89,16 +103,21 @@ export async function POST(request: Request) {
 
   const body = (await request.json()) as {
     projectId: string;
-    recurrence_type: "weekly" | "interval" | "monthly";
+    recurrence_type: "weekly" | "interval" | "monthly" | "manual";
     day_of_week?: number | null;
     interval_days?: number | null;
     day_of_month?: number | null;
+    manual_dates?: string[] | null;
     start_date?: string;
   };
 
-  const { projectId, recurrence_type, day_of_week, interval_days, day_of_month } = body;
+  const { projectId, recurrence_type, day_of_week, interval_days, day_of_month, manual_dates } = body;
   if (!projectId || !recurrence_type) {
     return NextResponse.json({ error: "projectId and recurrence_type required" }, { status: 400 });
+  }
+
+  if (recurrence_type === "manual" && (!manual_dates || manual_dates.length === 0)) {
+    return NextResponse.json({ error: "manual_dates required for manual type" }, { status: 400 });
   }
 
   const start_date = body.start_date ?? new Date().toISOString().slice(0, 10);
@@ -107,6 +126,7 @@ export async function POST(request: Request) {
     day_of_week ?? null,
     interval_days ?? null,
     day_of_month ?? null,
+    manual_dates ?? null,
     start_date,
   );
 
@@ -119,6 +139,7 @@ export async function POST(request: Request) {
       day_of_week: day_of_week ?? null,
       interval_days: interval_days ?? null,
       day_of_month: day_of_month ?? null,
+      manual_dates: manual_dates ?? [],
       start_date,
       next_occurrence,
     })
