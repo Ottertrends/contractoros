@@ -14,6 +14,8 @@ export interface RecurringRule {
   start_date: string;
   next_occurrence: string;
   active: boolean;
+  event_time: string | null;
+  notes: string | null;
 }
 
 /** Skip Sundays: if date falls on Sunday, advance to Monday. */
@@ -89,6 +91,8 @@ export async function GET() {
     start_date: r.start_date as string,
     next_occurrence: r.next_occurrence as string,
     active: r.active as boolean,
+    event_time: (r.event_time as string | null) ?? null,
+    notes: (r.notes as string | null) ?? null,
   }));
 
   return NextResponse.json({ rules: result });
@@ -109,6 +113,8 @@ export async function POST(request: Request) {
     day_of_month?: number | null;
     manual_dates?: string[] | null;
     start_date?: string;
+    event_time?: string | null;
+    notes?: string | null;
   };
 
   const { projectId, recurrence_type, day_of_week, interval_days, day_of_month, manual_dates } = body;
@@ -142,6 +148,8 @@ export async function POST(request: Request) {
       manual_dates: manual_dates ?? [],
       start_date,
       next_occurrence,
+      event_time: body.event_time?.trim() || null,
+      notes: body.notes?.trim() || null,
     })
     .select()
     .single();

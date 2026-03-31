@@ -22,6 +22,8 @@ interface RecurringRow {
   project_id: string;
   recurrence_type: string;
   next_occurrence: string;
+  event_time: string | null;
+  notes: string | null;
   projects: { name: string | null } | null;
 }
 
@@ -59,7 +61,7 @@ export async function GET(req: NextRequest) {
       // Find recurring rules with next_occurrence tomorrow
       const { data: rules } = await admin
         .from("recurring_projects")
-        .select("id, project_id, recurrence_type, next_occurrence, projects(name)")
+        .select("id, project_id, recurrence_type, next_occurrence, event_time, notes, projects(name)")
         .eq("user_id", profile.id)
         .eq("active", true)
         .eq("next_occurrence", tomorrowStr) as { data: RecurringRow[] | null };
@@ -72,7 +74,9 @@ export async function GET(req: NextRequest) {
           r.recurrence_type === "weekly" ? "weekly"
           : r.recurrence_type === "monthly" ? "monthly"
           : "recurring";
-        return `• ${name} (${type})`;
+        const timePart = r.event_time ? ` at ${r.event_time}` : "";
+        const notesPart = r.notes ? `\n    📝 ${r.notes}` : "";
+        return `• ${name} (${type})${timePart}${notesPart}`;
       });
 
       const message = `WorkSupp reminder 📋\n\nTomorrow's scheduled jobs (${tomorrowStr}):\n${projectLines.join("\n")}\n\nSent by WorkSupp`;

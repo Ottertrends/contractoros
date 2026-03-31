@@ -97,6 +97,8 @@ export function CalendarClient({ initialRules, projects, initialNotificationsEna
   const [formDayOfWeek, setFormDayOfWeek] = React.useState<number>(1); // Monday
   const [formIntervalDays, setFormIntervalDays] = React.useState<number>(7);
   const [formDayOfMonth, setFormDayOfMonth] = React.useState<number>(1);
+  const [formTime, setFormTime] = React.useState<string>("");
+  const [formNotes, setFormNotes] = React.useState<string>("");
   const [formSaving, setFormSaving] = React.useState(false);
 
   // Manual date selection state
@@ -183,6 +185,8 @@ export function CalendarClient({ initialRules, projects, initialNotificationsEna
       if (formType === "interval") body.interval_days = formIntervalDays;
       if (formType === "monthly") body.day_of_month = formDayOfMonth;
       if (formType === "manual") body.manual_dates = Array.from(selectedDates).sort();
+      if (formTime) body.event_time = formTime;
+      if (formNotes.trim()) body.notes = formNotes.trim();
 
       const res = await fetch("/api/recurring", {
         method: "POST",
@@ -198,6 +202,8 @@ export function CalendarClient({ initialRules, projects, initialNotificationsEna
       toast.success("Recurring schedule saved");
       setFormProjectId("");
       setSelectedDates(new Set());
+      setFormTime("");
+      setFormNotes("");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed");
     } finally {
@@ -339,9 +345,10 @@ export function CalendarClient({ initialRules, projects, initialNotificationsEna
                       <div
                         key={r.id}
                         className="truncate rounded px-1 py-0.5 text-[10px] font-medium bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-300"
-                        title={r.project_name ?? "Project"}
+                        title={[r.project_name ?? "Project", r.event_time, r.notes].filter(Boolean).join(" · ")}
                       >
                         {r.project_name ?? "Project"}
+                        {r.event_time ? ` ${r.event_time}` : ""}
                       </div>
                     ))}
                     {dayRules.length > 3 && (
@@ -446,6 +453,33 @@ export function CalendarClient({ initialRules, projects, initialNotificationsEna
               </div>
             )}
 
+            {/* Optional time */}
+            <div>
+              <label className="text-xs font-medium text-slate-500 mb-1 block">
+                Time <span className="text-slate-400 font-normal">(optional)</span>
+              </label>
+              <input
+                type="time"
+                value={formTime}
+                onChange={e => setFormTime(e.target.value)}
+                className="w-full rounded-md border border-slate-200 dark:border-slate-700 dark:bg-slate-900 dark:text-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500"
+              />
+            </div>
+
+            {/* Optional notes */}
+            <div>
+              <label className="text-xs font-medium text-slate-500 mb-1 block">
+                Notes <span className="text-slate-400 font-normal">(optional)</span>
+              </label>
+              <textarea
+                value={formNotes}
+                onChange={e => setFormNotes(e.target.value)}
+                placeholder="e.g. Bring extra tools, confirm with client beforehand…"
+                rows={2}
+                className="w-full rounded-md border border-slate-200 dark:border-slate-700 dark:bg-slate-900 dark:text-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500 resize-none"
+              />
+            </div>
+
             <button
               type="button"
               onClick={() => void handleAddRule()}
@@ -462,9 +496,15 @@ export function CalendarClient({ initialRules, projects, initialNotificationsEna
               <h3 className="text-sm font-semibold text-slate-900 dark:text-white">Active Schedules</h3>
               {rules.map(r => (
                 <div key={r.id} className="flex items-start justify-between gap-2 text-sm">
-                  <div>
+                  <div className="min-w-0">
                     <p className="font-medium text-slate-800 dark:text-slate-200">{r.project_name ?? "Project"}</p>
-                    <p className="text-xs text-slate-400">{describeRule(r)} · Next: {r.next_occurrence}</p>
+                    <p className="text-xs text-slate-400">
+                      {describeRule(r)} · Next: {r.next_occurrence}
+                      {r.event_time ? ` · ${r.event_time}` : ""}
+                    </p>
+                    {r.notes && (
+                      <p className="text-xs text-slate-400 mt-0.5 truncate" title={r.notes}>{r.notes}</p>
+                    )}
                   </div>
                   <button
                     type="button"
