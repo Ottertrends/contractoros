@@ -65,7 +65,7 @@ export async function POST(request: Request) {
     // Fetch invoices for this project
     const { data: invoices } = await admin
       .from("invoices")
-      .select("invoice_number, total, status, notes, created_at")
+      .select("id, invoice_number, total, status, notes, created_at")
       .eq("project_id", projectId)
       .order("created_at", { ascending: false })
       .limit(5);
