@@ -1,6 +1,10 @@
+import Anthropic from "@anthropic-ai/sdk";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { syncDraftFromProject } from "@/lib/invoice/sync-draft";
+import { syncRecurringRuleToGoogle, deleteGoogleEventForRule } from "@/lib/integrations/google-calendar-sync";
+import { DEFAULT_ANTHROPIC_MODEL } from "@/lib/agent/model";
 import type { ProjectStatus } from "@/lib/types/database";
+import type { ContentBlock, ProposalLineItem } from "@/lib/types/proposals";
 
 function jsonResult(data: unknown) {
   return JSON.stringify(data);
@@ -732,6 +736,432 @@ export async function executeTool(
 
       if (error) return jsonResult({ error: error.message });
       return jsonResult({ ok: true, media_id: mediaId, project_id: projectId });
+    }
+
+    // ── Calendar / Recurring Events ──────────────────────────────────────────
+
+    case "list_calendar_events": {
+      const { data: rules, error } = await admin
+        .from("recurring_projects")
+        .select("id, project_id, recurrence_type, day_of_week, interval_days, day_of_month, manual_dates, next_occurrence, event_time, notes, projects(name)")
+        .eq("user_id", userId)
+        .eq("active", true)
+        .order("next_occurrence", { ascending: true })
+        .limit(20);
+
+      if (error) return jsonResult({ error: error.message });
+      const events = (rules ?? []).map((r) => ({
+        id: r.id,
+        project_name: (r.projects as { name?: string | null } | null)?.name ?? null,
+        project_id: r.project_id,
+        recurrence_type: r.recurrence_type,
+        day_of_week: r.day_of_week,
+        interval_days: r.interval_days,
+        day_of_month: r.day_of_month,
+        manual_dates: r.manual_dates,
+        next_occurrence: r.next_occurrence,
+        event_time: r.event_time,
+        notes: r.notes,
+      }));
+      return jsonResult({ ok: true, events, count: events.length });
+    }
+
+    case "create_calendar_event": {
+      const projectId = String(input.project_id ?? "").trim();
+      const recurrenceType = String(input.recurrence_type ?? "").trim() as "weekly" | "interval" | "monthly" | "manual";
+      if (!projectId) return jsonResult({ error: "project_id is required" });
+      if (!["weekly", "interval", "monthly", "manual"].includes(recurrenceType)) {
+        return jsonResult({ error: "recurrence_type must be one of: weekly, interval, monthly, manual" });
+      }
+
+      const manualDates = Array.isArray(input.manual_dates) ? (input.manual_dates as string[]) : null;
+      if (recurrenceType === "manual" && (!manualDates || manualDates.length === 0)) {
+        return jsonResult({ error: "manual_dates (array of YYYY-MM-DD) required for manual type" });
+      }
+
+      const today = new Date().toISOString().slice(0, 10);
+      const startDate = input.start_date ? String(input.start_date) : today;
+      const dayOfWeek = typeof input.day_of_week === "number" ? input.day_of_week : null;
+      const intervalDays = typeof input.interval_days === "number" ? input.interval_days : null;
+      const dayOfMonth = typeof input.day_of_month === "number" ? input.day_of_month : null;
+
+      // Inline computeFirstOccurrence (mirrors logic in /api/recurring/route.ts)
+      function computeFirstOccurrence(): string {
+        const start = new Date(startDate + "T00:00:00");
+        if (recurrenceType === "weekly" && dayOfWeek != null) {
+          const d = new Date(start);
+          while (d.getDay() !== dayOfWeek) d.setDate(d.getDate() + 1);
+          return d.toISOString().slice(0, 10);
+        }
+        if (recurrenceType === "interval") {
+          const d = new Date(start);
+          if (d.getDay() === 0) d.setDate(d.getDate() + 1); // skip Sunday
+          return d.toISOString().slice(0, 10);
+        }
+        if (recurrenceType === "monthly" && dayOfMonth != null) {
+          const d = new Date(start);
+          d.setDate(dayOfMonth);
+          if (d < start) d.setMonth(d.getMonth() + 1);
+          return d.toISOString().slice(0, 10);
+        }
+        if (recurrenceType === "manual" && manualDates?.length) {
+          const sorted = [...manualDates].sort();
+          const future = sorted.find((d) => d >= today);
+          return future ?? sorted[sorted.length - 1];
+        }
+        return startDate;
+      }
+
+      const nextOccurrence = computeFirstOccurrence();
+      const eventTime = input.event_time ? String(input.event_time).trim() : null;
+      const notes = input.notes ? String(input.notes).trim() : null;
+
+      const { data, error } = await admin
+        .from("recurring_projects")
+        .insert({
+          user_id: userId,
+          project_id: projectId,
+          recurrence_type: recurrenceType,
+          day_of_week: dayOfWeek,
+          interval_days: intervalDays,
+          day_of_month: dayOfMonth,
+          manual_dates: manualDates ?? [],
+          start_date: startDate,
+          next_occurrence: nextOccurrence,
+          event_time: eventTime,
+          notes,
+        })
+        .select("id, project_id, recurrence_type, next_occurrence, event_time, notes")
+        .single();
+
+      if (error) return jsonResult({ error: error.message });
+
+      // Sync to Google Calendar if connected
+      if (data?.id) {
+        const sync = await syncRecurringRuleToGoogle(data.id as string);
+        if (!sync.ok) console.warn("[agent create_calendar_event] Google sync:", sync.error);
+      }
+
+      return jsonResult({ ok: true, rule: data });
+    }
+
+    case "delete_calendar_event": {
+      const ruleId = String(input.rule_id ?? "").trim();
+      if (!ruleId) return jsonResult({ error: "rule_id is required" });
+      if (input.confirmed !== true) return jsonResult({ error: "confirmed must be true to delete a calendar event" });
+
+      // Delete Google Calendar event first (non-fatal)
+      try {
+        await deleteGoogleEventForRule(ruleId, userId);
+      } catch (e) {
+        console.warn("[agent delete_calendar_event] Google delete:", e instanceof Error ? e.message : e);
+      }
+
+      const { error } = await admin
+        .from("recurring_projects")
+        .delete()
+        .eq("id", ruleId)
+        .eq("user_id", userId);
+
+      if (error) return jsonResult({ error: error.message });
+      return jsonResult({ ok: true, deleted_rule_id: ruleId });
+    }
+
+    // ── Proposals ─────────────────────────────────────────────────────────────
+
+    case "generate_proposal": {
+      const projectId = String(input.project_id ?? "").trim();
+      if (!projectId) return jsonResult({ error: "project_id is required" });
+
+      const mode = input.mode === "custom" ? "custom" : "strict";
+      const customInstructions = input.custom_instructions ? String(input.custom_instructions).trim() : undefined;
+      const scopeOverride = input.scope_override ? String(input.scope_override).trim() : undefined;
+      const termsOverride = input.terms_override ? String(input.terms_override).trim() : undefined;
+      const validUntilDays = typeof input.valid_until_days === "number" ? input.valid_until_days : 30;
+
+      // Fetch project
+      const { data: project, error: projErr } = await admin
+        .from("projects")
+        .select("*")
+        .eq("id", projectId)
+        .eq("user_id", userId)
+        .single();
+      if (projErr || !project) return jsonResult({ error: "Project not found" });
+
+      // Fetch notes
+      const { data: notes } = await admin
+        .from("project_notes")
+        .select("id, content, created_at")
+        .eq("project_id", projectId)
+        .order("created_at", { ascending: true })
+        .limit(50);
+
+      // Fetch media
+      const { data: media } = await admin
+        .from("project_media")
+        .select("id, description, storage_path, media_type, created_at")
+        .eq("project_id", projectId)
+        .order("sort_order", { ascending: true })
+        .order("created_at", { ascending: true })
+        .limit(30);
+
+      // Build content blocks (interleaved by date)
+      const contentBlocks: ContentBlock[] = [];
+      for (const n of notes ?? []) {
+        contentBlocks.push({ type: "note", content: n.content as string, createdAt: n.created_at as string, included: true });
+      }
+      for (const m of media ?? []) {
+        if ((m.media_type as string) === "video") continue;
+        const { data: urlData } = await admin.storage.from("project-media").createSignedUrl(m.storage_path as string, 3600);
+        if (urlData?.signedUrl) {
+          contentBlocks.push({
+            type: "image",
+            content: (m.description as string) ?? "",
+            imageUrl: urlData.signedUrl,
+            storagePath: m.storage_path as string,
+            description: (m.description as string | null) ?? null,
+            mediaId: m.id as string,
+            mediaType: m.media_type as string,
+            createdAt: m.created_at as string,
+            included: true,
+          });
+        }
+      }
+      contentBlocks.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+
+      // Fetch invoices & line items for AI context
+      const { data: invoices } = await admin
+        .from("invoices")
+        .select("id, invoice_number, total, status, notes, created_at")
+        .eq("project_id", projectId)
+        .order("created_at", { ascending: false })
+        .limit(5);
+      const invoiceIds = (invoices ?? []).map((inv) => inv.id).filter(Boolean);
+      let lineItemsText = "No line item detail available.";
+      if (invoiceIds.length > 0) {
+        const { data: lineItems } = await admin
+          .from("invoice_line_items")
+          .select("description, quantity, unit_price, total")
+          .in("invoice_id", invoiceIds)
+          .limit(30);
+        if (lineItems?.length) {
+          lineItemsText = lineItems
+            .map((li) => `  - ${li.description ?? "Item"}: qty=${li.quantity}, unit=$${li.unit_price}, total=$${li.total}`)
+            .join("\n");
+        }
+      }
+
+      // Fetch profile for design info
+      const { data: profile } = await admin
+        .from("profiles")
+        .select("full_name, company_name, email, phone, invoice_primary_color, invoice_logo_url, invoice_title_font, invoice_body_font, invoice_footer")
+        .eq("id", userId)
+        .single();
+
+      const today = new Date();
+      const validUntilDate = new Date(today);
+      validUntilDate.setDate(today.getDate() + validUntilDays);
+      const validUntilStr = validUntilDate.toLocaleDateString("en-US");
+
+      const proj = project as Record<string, unknown>;
+      const notesText = notes?.length ? notes.map((n) => `- ${n.content}`).join("\n") : "(no notes recorded)";
+      const invoicesText = invoices?.length
+        ? invoices.map((inv) => `Invoice #${inv.invoice_number ?? "draft"}: total=$${inv.total}, status=${inv.status}${inv.notes ? `, notes: ${inv.notes}` : ""}`).join("\n")
+        : "(no prior invoices for this project)";
+      const mediaText = media?.length
+        ? `${media.length} file(s): ${media.map((m) => (m.description as string | null) ?? (m.media_type as string) ?? "file").join(", ")}`
+        : "(no media attached)";
+
+      let modeBlock: string;
+      if (mode === "strict") {
+        modeBlock = `STRICT MODE — ABSOLUTE RULES:
+1. Do NOT invent, guess, or estimate ANY line item, price, quantity, or description not explicitly present in the data above.
+2. If no line items or prices are recorded, output an EMPTY lineItems array [].
+3. Do NOT use typical contractor rates or external knowledge to fill in prices.
+4. Use ONLY text from project notes and invoice line items to populate line items.
+5. The scope paragraph must be based exclusively on the project description and notes.
+6. If terms are not mentioned in the notes, output an empty string "" for terms.`;
+      } else {
+        modeBlock = `CUSTOM MODE — Use the following contractor-provided instructions to shape this document. Do NOT invent prices or line items not mentioned in the project data or custom instructions.
+
+Custom instructions:
+${customInstructions ?? "(none provided)"}`;
+      }
+
+      const prompt = `You are building a contractor quote document from REAL project data. Return ONLY valid JSON.
+
+=== PROJECT DATA ===
+Company: ${profile?.company_name ?? "Contractor"}
+Contractor: ${profile?.full_name ?? ""}
+Project name: ${proj.name ?? "Untitled"}
+Client: ${proj.client_name ?? "Client"}
+Description: ${proj.description ?? "(no description)"}
+Location: ${[proj.city, proj.state].filter(Boolean).join(", ") || ((proj.location as string | null) ?? "(none)")}
+
+Project notes:
+${notesText}
+
+Invoice line items:
+${lineItemsText}
+
+Invoice summaries:
+${invoicesText}
+
+Attached files: ${mediaText}
+
+Today: ${today.toLocaleDateString("en-US")}
+Valid until: ${validUntilStr}
+${scopeOverride ? `\nContractor scope (use verbatim): ${scopeOverride}` : ""}
+${termsOverride ? `\nContractor terms (use verbatim): ${termsOverride}` : ""}
+=== END PROJECT DATA ===
+
+${modeBlock}
+
+Return ONLY valid JSON, no markdown:
+{"title":"...","clientName":"...","scope":"...","lineItems":[{"description":"...","qty":1,"unitPrice":0}],"terms":"...","validUntil":"${validUntilStr}"}`;
+
+      const apiKey = process.env.ANTHROPIC_API_KEY?.trim();
+      if (!apiKey) return jsonResult({ error: "ANTHROPIC_API_KEY not set" });
+
+      const anthropic = new Anthropic({ apiKey });
+      const aiResponse = await anthropic.messages.create({
+        model: process.env.ANTHROPIC_MODEL?.trim() || DEFAULT_ANTHROPIC_MODEL,
+        max_tokens: 1500,
+        messages: [{ role: "user", content: prompt }],
+      });
+
+      const rawText = aiResponse.content
+        .filter((b): b is Anthropic.TextBlock => b.type === "text")
+        .map((b) => b.text)
+        .join("");
+
+      let proposal: { title: string; clientName: string; scope: string; lineItems: ProposalLineItem[]; terms: string; validUntil: string };
+      try {
+        const cleaned = rawText.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
+        proposal = JSON.parse(cleaned);
+      } catch {
+        return jsonResult({ error: "AI returned invalid JSON for proposal. Try again.", raw: rawText.slice(0, 200) });
+      }
+
+      // Apply overrides
+      if (scopeOverride) proposal.scope = scopeOverride;
+      if (termsOverride) proposal.terms = termsOverride;
+      proposal.validUntil = validUntilStr;
+
+      const profileData = profile as Record<string, unknown> | null;
+
+      // Strip imageUrl before saving to DB
+      const persistBlocks = contentBlocks.map((b) => ({ ...b, imageUrl: undefined }));
+
+      const { data: saved, error: saveErr } = await admin
+        .from("proposals")
+        .insert({
+          user_id: userId,
+          project_id: projectId,
+          title: proposal.title,
+          client_name: proposal.clientName ?? null,
+          scope: proposal.scope ?? null,
+          terms: proposal.terms ?? null,
+          valid_until: validUntilDate.toISOString().slice(0, 10),
+          line_items: proposal.lineItems ?? [],
+          content_blocks: persistBlocks,
+          company_name: profile?.company_name ?? null,
+          company_email: profile?.email ?? null,
+          company_phone: profile?.phone ?? null,
+          project_name: (proj.name as string) ?? null,
+          design: {
+            primaryColor: profileData?.invoice_primary_color ?? null,
+            logoUrl: profileData?.invoice_logo_url ?? null,
+            titleFont: profileData?.invoice_title_font ?? null,
+            bodyFont: profileData?.invoice_body_font ?? null,
+            footer: profileData?.invoice_footer ?? null,
+          },
+          status: "draft",
+        })
+        .select("id")
+        .single();
+
+      if (saveErr) return jsonResult({ error: saveErr.message });
+
+      const total = (proposal.lineItems ?? []).reduce((s: number, i: ProposalLineItem) => s + i.qty * i.unitPrice, 0);
+      return jsonResult({
+        ok: true,
+        proposal_id: saved.id,
+        title: proposal.title,
+        client_name: proposal.clientName,
+        total,
+        line_item_count: (proposal.lineItems ?? []).length,
+        scope_preview: (proposal.scope ?? "").slice(0, 120),
+        valid_until: validUntilStr,
+      });
+    }
+
+    case "list_proposals": {
+      const { data, error } = await admin
+        .from("proposals")
+        .select("id, title, client_name, project_name, status, valid_until, line_items, created_at")
+        .eq("user_id", userId)
+        .order("created_at", { ascending: false })
+        .limit(10);
+
+      if (error) return jsonResult({ error: error.message });
+      const proposals = (data ?? []).map((p) => {
+        const items = (p.line_items ?? []) as ProposalLineItem[];
+        const total = items.reduce((s, i) => s + i.qty * i.unitPrice, 0);
+        return {
+          id: p.id,
+          title: p.title,
+          client_name: p.client_name,
+          project_name: p.project_name,
+          status: p.status,
+          valid_until: p.valid_until,
+          total,
+          line_item_count: items.length,
+          created_at: p.created_at,
+        };
+      });
+      return jsonResult({ ok: true, proposals, count: proposals.length });
+    }
+
+    case "get_proposal": {
+      const proposalId = String(input.proposal_id ?? "").trim();
+      if (!proposalId) return jsonResult({ error: "proposal_id is required" });
+
+      const { data, error } = await admin
+        .from("proposals")
+        .select("*")
+        .eq("id", proposalId)
+        .eq("user_id", userId)
+        .single();
+
+      if (error || !data) return jsonResult({ error: "Proposal not found" });
+
+      // Regenerate signed URLs for image blocks
+      const blocks = (data.content_blocks ?? []) as ContentBlock[];
+      for (const block of blocks) {
+        if (block.type === "image" && block.storagePath) {
+          const { data: urlData } = await admin.storage.from("project-media").createSignedUrl(block.storagePath, 3600);
+          if (urlData?.signedUrl) block.imageUrl = urlData.signedUrl;
+        }
+      }
+
+      const items = (data.line_items ?? []) as ProposalLineItem[];
+      const total = items.reduce((s, i) => s + i.qty * i.unitPrice, 0);
+      return jsonResult({
+        ok: true,
+        id: data.id,
+        title: data.title,
+        client_name: data.client_name,
+        project_name: data.project_name,
+        scope: data.scope,
+        terms: data.terms,
+        valid_until: data.valid_until,
+        status: data.status,
+        line_items: items,
+        total,
+        content_block_count: blocks.length,
+        share_token: data.share_token,
+      });
     }
 
     default:

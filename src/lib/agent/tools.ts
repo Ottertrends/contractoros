@@ -279,6 +279,135 @@ export const CONTRACTOR_TOOLS: Tool[] = [
       },
       required: ["media_id", "project_id"],
     },
+  },
+
+  // ── Calendar / Recurring Events ──────────────────────────────────────
+  {
+    name: "list_calendar_events",
+    description:
+      "List all active recurring calendar events for the contractor, showing project name, recurrence type, next occurrence date, and optional time/notes. Use when they ask about their schedule, upcoming jobs, or recurring work.",
+    input_schema: {
+      type: "object",
+      properties: {},
+    },
+  },
+  {
+    name: "create_calendar_event",
+    description:
+      "Create a recurring calendar event for a project. Use when the contractor says they have a recurring job, weekly visit, monthly service, or specific scheduled dates. Requires project_id — call list_projects first to identify it.",
+    input_schema: {
+      type: "object",
+      properties: {
+        project_id: { type: "string", description: "UUID of the project this event belongs to" },
+        recurrence_type: {
+          type: "string",
+          enum: ["weekly", "interval", "monthly", "manual"],
+          description: "weekly = same day every week; interval = every N days; monthly = same day of month; manual = specific dates",
+        },
+        day_of_week: {
+          type: "number",
+          description: "For weekly: day of week (0=Sunday, 1=Monday, …, 6=Saturday)",
+        },
+        interval_days: {
+          type: "number",
+          description: "For interval: number of days between occurrences (e.g. 14 for every 2 weeks)",
+        },
+        day_of_month: {
+          type: "number",
+          description: "For monthly: day of month (1–28)",
+        },
+        manual_dates: {
+          type: "array",
+          items: { type: "string" },
+          description: "For manual: array of specific dates in YYYY-MM-DD format",
+        },
+        start_date: {
+          type: "string",
+          description: "Start date in YYYY-MM-DD format (defaults to today)",
+        },
+        event_time: {
+          type: "string",
+          description: "Optional time of day in HH:MM (24h) format, e.g. '08:00'",
+        },
+        notes: {
+          type: "string",
+          description: "Optional notes for this recurring event (e.g. 'bring extra material', 'call before arriving')",
+        },
+      },
+      required: ["project_id", "recurrence_type"],
+    },
+  },
+  {
+    name: "delete_calendar_event",
+    description:
+      "Permanently delete a recurring calendar event. Always confirm the event details with the contractor before calling. This cannot be undone.",
+    input_schema: {
+      type: "object",
+      properties: {
+        rule_id: { type: "string", description: "UUID of the recurring_projects rule to delete" },
+        confirmed: {
+          type: "boolean",
+          description: "Must be true — confirms the contractor explicitly approved the deletion",
+        },
+      },
+      required: ["rule_id", "confirmed"],
+    },
+  },
+
+  // ── Proposals ────────────────────────────────────────────────────────
+  {
+    name: "generate_proposal",
+    description:
+      "Generate a professional proposal/quote PDF for a project using AI. Fetches all project data (notes, media, invoices), generates structured content with Claude, and saves it to the proposals section. Use when contractor asks to generate a proposal, formal quote, or cotización. Call list_projects first to get the project_id.",
+    input_schema: {
+      type: "object",
+      properties: {
+        project_id: { type: "string", description: "UUID of the project to generate a proposal for" },
+        mode: {
+          type: "string",
+          enum: ["strict", "custom"],
+          description: "strict = AI uses only stored project data (default); custom = AI uses custom_instructions to enhance",
+        },
+        custom_instructions: {
+          type: "string",
+          description: "For custom mode: additional instructions (payment terms, scope language, special conditions)",
+        },
+        scope_override: {
+          type: "string",
+          description: "Optional: override the AI-generated scope of work with this exact text",
+        },
+        terms_override: {
+          type: "string",
+          description: "Optional: override the AI-generated terms with this exact text",
+        },
+        valid_until_days: {
+          type: "number",
+          description: "Number of days the proposal is valid (default: 30)",
+        },
+      },
+      required: ["project_id"],
+    },
+  },
+  {
+    name: "list_proposals",
+    description:
+      "List the contractor's saved proposals, showing title, client, status, validity date, and total amount. Use when they ask about existing proposals or want to review saved quotes.",
+    input_schema: {
+      type: "object",
+      properties: {},
+    },
+  },
+  {
+    name: "get_proposal",
+    description:
+      "Get the full details of a specific saved proposal including scope, line items, terms, and status. Use when the contractor asks about a specific proposal.",
+    input_schema: {
+      type: "object",
+      properties: {
+        proposal_id: { type: "string", description: "UUID of the proposal" },
+      },
+      required: ["proposal_id"],
+    },
     // cache_control marks the end of the cached tools prefix — all tools are cached together
     cache_control: { type: "ephemeral" } as { type: "ephemeral" },
   },
