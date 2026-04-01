@@ -1,7 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { syncDraftFromProject } from "@/lib/invoice/sync-draft";
-import { syncRecurringRuleToGoogle, deleteGoogleEventForRule } from "@/lib/integrations/google-calendar-sync";
 import { DEFAULT_ANTHROPIC_MODEL } from "@/lib/agent/model";
 import type { ProjectStatus } from "@/lib/types/database";
 import type { ContentBlock, ProposalLineItem } from "@/lib/types/proposals";
@@ -836,11 +835,7 @@ export async function executeTool(
 
       if (error) return jsonResult({ error: error.message });
 
-      // Sync to Google Calendar if connected
-      if (data?.id) {
-        const sync = await syncRecurringRuleToGoogle(data.id as string);
-        if (!sync.ok) console.warn("[agent create_calendar_event] Google sync:", sync.error);
-      }
+      // Note: Google Calendar sync handled separately by the calendar UI
 
       return jsonResult({ ok: true, rule: data });
     }
@@ -849,13 +844,6 @@ export async function executeTool(
       const ruleId = String(input.rule_id ?? "").trim();
       if (!ruleId) return jsonResult({ error: "rule_id is required" });
       if (input.confirmed !== true) return jsonResult({ error: "confirmed must be true to delete a calendar event" });
-
-      // Delete Google Calendar event first (non-fatal)
-      try {
-        await deleteGoogleEventForRule(ruleId, userId);
-      } catch (e) {
-        console.warn("[agent delete_calendar_event] Google delete:", e instanceof Error ? e.message : e);
-      }
 
       const { error } = await admin
         .from("recurring_projects")
