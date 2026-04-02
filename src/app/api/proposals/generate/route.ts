@@ -4,28 +4,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { DEFAULT_ANTHROPIC_MODEL } from "@/lib/agent/model";
-
-export interface ProposalLineItem {
-  description: string;
-  qty: number;
-  unitPrice: number;
-}
-
-export interface ProposalData {
-  title: string;
-  clientName: string;
-  scope: string;
-  lineItems: ProposalLineItem[];
-  terms: string;
-  validUntil: string;
-}
-
-export interface MediaItem {
-  id: string;
-  description: string | null;
-  signedUrl: string;
-  media_type: string;
-}
+import type { ProposalData, ContentBlock, ProposalDesign } from "@/lib/types/proposals";
 
 export async function POST(request: Request) {
   try {
@@ -43,55 +22,81 @@ export async function POST(request: Request) {
       terms?: string;
       scope?: string;
     };
-    const { projectId, mode = "strict", customInstructions, validUntil: validUntilOverride, terms: termsOverride, scope: scopeOverride } = body;
+    const {
+      projectId,
+      mode = "strict",
+      customInstructions,
+      validUntil: validUntilOverride,
+      terms: termsOverride,
+      scope: scopeOverride,
+    } = body;
     if (!projectId) return NextResponse.json({ error: "projectId required" }, { status: 400 });
 
     const admin = createSupabaseAdminClient();
 
-    // Fetch project
     const { data: project, error: projErr } = await admin
       .from("projects")
       .select("*")
       .eq("id", projectId)
       .eq("user_id", user.id)
       .single();
-    if (projErr || !project) return NextResponse.json({ error: "Project not found" }, { status: 404 });
+    if (projErr || !project)
+      return NextResponse.json({ error: "Project not found" }, { status: 404 });
 
-    // Fetch notes
+    // Fetch notes with timestamps for interleaving
     const { data: notes } = await admin
       .from("project_notes")
-      .select("content, created_at")
+      .select("id, content, created_at")
       .eq("project_id", projectId)
-      .order("created_at", { ascending: false })
-      .limit(20);
+      .order("created_at", { ascending: true })
+      .limit(50);
 
-    // Fetch media (ordered by sort_order then created_at)
+    // Fetch media with timestamps for interleaving
     const { data: media } = await admin
       .from("project_media")
-      .select("id, description, storage_path, media_type")
+      .select("id, description, storage_path, media_type, created_at")
       .eq("project_id", projectId)
       .order("sort_order", { ascending: true })
       .order("created_at", { ascending: true })
-      .limit(20);
+      .limit(30);
 
-    // Generate signed URLs for images only
-    const mediaItems: MediaItem[] = [];
+    // Build interleaved content blocks sorted by creation date
+    const contentBlocks: ContentBlock[] = [];
+
+    for (const n of notes ?? []) {
+      contentBlocks.push({
+        type: "note",
+        content: n.content as string,
+        createdAt: n.created_at as string,
+        included: true,
+      });
+    }
+
     for (const m of media ?? []) {
-      if (m.media_type === "video") continue;
+      if ((m.media_type as string) === "video") continue;
       const { data: urlData } = await admin.storage
         .from("project-media")
-        .createSignedUrl(m.storage_path, 3600);
+        .createSignedUrl(m.storage_path as string, 3600);
       if (urlData?.signedUrl) {
-        mediaItems.push({
-          id: m.id as string,
+        contentBlocks.push({
+          type: "image",
+          content: (m.description as string) ?? "",
+          imageUrl: urlData.signedUrl,
+          storagePath: m.storage_path as string,
           description: (m.description as string | null) ?? null,
-          signedUrl: urlData.signedUrl,
-          media_type: m.media_type as string,
+          mediaId: m.id as string,
+          mediaType: m.media_type as string,
+          createdAt: m.created_at as string,
+          included: true,
         });
       }
     }
 
-    // Fetch invoices for this project
+    contentBlocks.sort(
+      (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+    );
+
+    // Fetch invoices for AI context
     const { data: invoices } = await admin
       .from("invoices")
       .select("id, invoice_number, total, status, notes, created_at")
@@ -99,7 +104,6 @@ export async function POST(request: Request) {
       .order("created_at", { ascending: false })
       .limit(5);
 
-    // Fetch invoice line items for this project's invoices
     const invoiceIds = (invoices ?? []).map((inv) => inv.id).filter(Boolean);
     let lineItemsText = "No line item detail available.";
     if (invoiceIds.length > 0) {
@@ -110,15 +114,19 @@ export async function POST(request: Request) {
         .limit(30);
       if (lineItems?.length) {
         lineItemsText = lineItems
-          .map((li) => `  - ${li.description ?? "Item"}: qty=${li.quantity}, unit=$${li.unit_price}, total=$${li.total}`)
+          .map(
+            (li) =>
+              `  - ${li.description ?? "Item"}: qty=${li.quantity}, unit=$${li.unit_price}, total=$${li.total}`,
+          )
           .join("\n");
       }
     }
 
-    // Fetch profile for company info + invoice design
     const { data: profile } = await admin
       .from("profiles")
-      .select("full_name, company_name, email, phone, invoice_primary_color, invoice_logo_url, invoice_title_font, invoice_body_font, invoice_footer")
+      .select(
+        "full_name, company_name, email, phone, invoice_primary_color, invoice_logo_url, invoice_title_font, invoice_body_font, invoice_footer",
+      )
       .eq("id", user.id)
       .single();
 
@@ -128,7 +136,10 @@ export async function POST(request: Request) {
 
     const invoicesText = invoices?.length
       ? invoices
-          .map((inv) => `Invoice #${inv.invoice_number ?? "draft"}: total=$${inv.total}, status=${inv.status}${inv.notes ? `, notes: ${inv.notes}` : ""}`)
+          .map(
+            (inv) =>
+              `Invoice #${inv.invoice_number ?? "draft"}: total=$${inv.total}, status=${inv.status}${inv.notes ? `, notes: ${inv.notes}` : ""}`,
+          )
           .join("\n")
       : "(no prior invoices for this project)";
 
@@ -137,9 +148,7 @@ export async function POST(request: Request) {
       : "(no media attached)";
 
     const today = new Date();
-    const validUntilDate = validUntilOverride
-      ? new Date(validUntilOverride)
-      : new Date(today);
+    const validUntilDate = validUntilOverride ? new Date(validUntilOverride) : new Date(today);
     if (!validUntilOverride) validUntilDate.setDate(today.getDate() + 30);
 
     const proj = project as Record<string, unknown>;
@@ -202,7 +211,8 @@ Return ONLY valid JSON with exactly these fields, no markdown, no explanation:
 }`;
 
     const apiKey = process.env.ANTHROPIC_API_KEY?.trim();
-    if (!apiKey) return NextResponse.json({ error: "ANTHROPIC_API_KEY not set" }, { status: 500 });
+    if (!apiKey)
+      return NextResponse.json({ error: "ANTHROPIC_API_KEY not set" }, { status: 500 });
 
     const model = process.env.ANTHROPIC_MODEL?.trim() || DEFAULT_ANTHROPIC_MODEL;
     const client = new Anthropic({ apiKey });
@@ -220,34 +230,41 @@ Return ONLY valid JSON with exactly these fields, no markdown, no explanation:
 
     let proposal: ProposalData;
     try {
-      const cleaned = text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
+      const cleaned = text
+        .replace(/^```(?:json)?\s*/i, "")
+        .replace(/\s*```$/i, "")
+        .trim();
       proposal = JSON.parse(cleaned) as ProposalData;
     } catch {
-      return NextResponse.json({ error: "Claude returned invalid JSON", raw: text.slice(0, 500) }, { status: 500 });
+      return NextResponse.json(
+        { error: "Claude returned invalid JSON", raw: text.slice(0, 500) },
+        { status: 500 },
+      );
     }
 
-    // Apply user overrides (take precedence over Claude output)
     if (validUntilOverride) proposal.validUntil = validUntilOverride;
     if (termsOverride?.trim()) proposal.terms = termsOverride.trim();
     if (scopeOverride?.trim()) proposal.scope = scopeOverride.trim();
 
     const profileData = profile as Record<string, unknown> | null;
 
+    const design: ProposalDesign = {
+      primaryColor: (profileData?.invoice_primary_color as string) ?? null,
+      logoUrl: (profileData?.invoice_logo_url as string) ?? null,
+      titleFont: (profileData?.invoice_title_font as string) ?? null,
+      bodyFont: (profileData?.invoice_body_font as string) ?? null,
+      footer: (profileData?.invoice_footer as string) ?? null,
+    };
+
     return NextResponse.json({
       proposal,
-      mediaItems,
+      contentBlocks,
       projectName: project.name,
       companyName: profile?.company_name ?? "",
       companyEmail: profile?.email ?? "",
       companyPhone: profile?.phone ?? "",
       clientName: proj.client_name ?? null,
-      design: {
-        primaryColor: profileData?.invoice_primary_color ?? null,
-        logoUrl: profileData?.invoice_logo_url ?? null,
-        titleFont: profileData?.invoice_title_font ?? null,
-        bodyFont: profileData?.invoice_body_font ?? null,
-        footer: profileData?.invoice_footer ?? null,
-      },
+      design,
     });
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : "Failed to generate proposal";
