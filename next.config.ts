@@ -10,6 +10,7 @@ const nextConfig: NextConfig = {
   turbopack: {
     root: projectRoot,
   },
+  serverExternalPackages: ["jspdf", "jspdf-autotable"],
 };
 
 export default nextConfig;
