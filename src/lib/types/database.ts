@@ -24,6 +24,12 @@ export interface Profile {
   invoice_title_font: string | null;
   invoice_body_font: string | null;
   invoice_footer: string | null;
+  stripe_connect_account_id?: string | null;
+  stripe_connect_charges_enabled?: boolean | null;
+  stripe_connect_details_submitted?: boolean | null;
+  default_alternate_payment_instructions?: string | null;
+  default_zelle_info?: string | null;
+  default_venmo_handle?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -85,6 +91,11 @@ export interface Invoice {
   notes: string | null;
   /** Invoice date (ISO date string, e.g. "2026-03-20") */
   date: string | null;
+  stripe_payment_link_url?: string | null;
+  stripe_payment_link_id?: string | null;
+  stripe_checkout_session_id?: string | null;
+  alternate_payment_instructions?: string | null;
+  pay_with_ach_enabled?: boolean | null;
   created_at: string;
   updated_at: string;
 }
