@@ -16,7 +16,7 @@ export async function GET(_req: NextRequest) {
     return NextResponse.json({ error: "Stripe Connect not configured" }, { status: 500 });
   }
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL!.replace(/\/$/, "");
+  const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? "").trim().replace(/\/$/, "");
   const redirectUri = `${appUrl}/api/stripe-connect/callback`;
 
   const params = new URLSearchParams({

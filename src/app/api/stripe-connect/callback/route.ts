@@ -9,7 +9,7 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
  */
 export async function GET(req: NextRequest) {
   const url = new URL(req.url);
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL!.replace(/\/$/, "");
+  const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? "").trim().replace(/\/$/, "");
 
   const code = url.searchParams.get("code");
   const error = url.searchParams.get("error");
