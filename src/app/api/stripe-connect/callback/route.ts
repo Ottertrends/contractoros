@@ -16,7 +16,9 @@ export async function GET(req: NextRequest) {
   const errorDescription = url.searchParams.get("error_description");
 
   if (error) {
-    console.error("[stripe-connect/callback] OAuth error:", error, errorDescription);
+    console.error(
+      `[stripe-connect/callback] OAuth error — code: "${error}" | description: "${errorDescription ?? "none"}" | full_url: "${url.toString()}"`,
+    );
     return NextResponse.redirect(`${appUrl}/dashboard/settings?stripe=error&reason=${encodeURIComponent(errorDescription ?? error)}`);
   }
 

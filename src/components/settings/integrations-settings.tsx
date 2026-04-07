@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 
 import type { Profile } from "@/lib/types/database";
@@ -8,6 +9,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 export function IntegrationsSettings({ profile }: { profile: Profile }) {
+  const searchParams = useSearchParams();
+
   const [google, setGoogle] = React.useState<{ connected: boolean; googleEmail: string | null } | null>(
     null,
   );
@@ -22,6 +25,36 @@ export function IntegrationsSettings({ profile }: { profile: Profile }) {
   );
   const [stripeLoading, setStripeLoading] = React.useState(false);
   const [stripeDisconnecting, setStripeDisconnecting] = React.useState(false);
+
+  // Show toast for ?stripe=connected or ?stripe=error&reason=...
+  // Also re-fetch profile Stripe fields on successful connect so the UI updates immediately.
+  React.useEffect(() => {
+    const stripeParam = searchParams.get("stripe");
+    const reason = searchParams.get("reason");
+    if (stripeParam === "connected") {
+      toast.success("Stripe connected successfully!");
+      // Pull fresh Stripe state from the server without a full page reload
+      void fetch("/api/stripe-connect/status")
+        .then((r) => r.json())
+        .then((j: { account_id?: string | null; charges_enabled?: boolean }) => {
+          if (j.account_id) {
+            setStripeAccountId(j.account_id);
+            setStripeChargesOk(!!j.charges_enabled);
+          }
+        })
+        .catch(() => {
+          // Fallback: full page reload to pick up server-side profile
+          window.location.replace("/dashboard/settings");
+        });
+      window.history.replaceState({}, "", "/dashboard/settings");
+    } else if (stripeParam === "error") {
+      const msg = reason ? decodeURIComponent(reason) : "Stripe connection failed";
+      toast.error(`Stripe error: ${msg}`);
+      console.error("[stripe-connect] OAuth error from URL:", msg);
+      window.history.replaceState({}, "", "/dashboard/settings");
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   React.useEffect(() => {
     void fetch("/api/integrations/google")
