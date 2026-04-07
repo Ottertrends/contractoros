@@ -2,37 +2,26 @@ import type Stripe from "stripe";
 
 import { getStripe } from "@/lib/stripe";
 
-export async function createConnectExpressAccount(params: {
+/**
+ * Returns the Stripe Standard OAuth authorization URL.
+ * The user is redirected here to connect their own Stripe account.
+ */
+export function createConnectOAuthLink(params: {
   userId: string;
-  email: string;
-}): Promise<string> {
-  const stripe = getStripe();
-  const account = await stripe.accounts.create({
-    type: "express",
-    country: "US",
-    email: params.email,
-    capabilities: {
-      card_payments: { requested: true },
-      transfers: { requested: true },
-    },
-    metadata: { supabase_user_id: params.userId },
-  });
-  return account.id;
-}
+  redirectUri: string;
+}): string {
+  const clientId = process.env.STRIPE_LIVE_CLIENT_ID;
+  if (!clientId) throw new Error("Missing STRIPE_LIVE_CLIENT_ID env var");
 
-export async function createAccountOnboardingLink(params: {
-  accountId: string;
-  refreshUrl: string;
-  returnUrl: string;
-}): Promise<string> {
-  const stripe = getStripe();
-  const link = await stripe.accountLinks.create({
-    account: params.accountId,
-    refresh_url: params.refreshUrl,
-    return_url: params.returnUrl,
-    type: "account_onboarding",
+  const qs = new URLSearchParams({
+    client_id: clientId,
+    response_type: "code",
+    scope: "read_write",
+    redirect_uri: params.redirectUri,
+    state: params.userId,
   });
-  return link.url;
+
+  return `https://connect.stripe.com/oauth/authorize?${qs.toString()}`;
 }
 
 export async function createInvoicePaymentLink(params: {

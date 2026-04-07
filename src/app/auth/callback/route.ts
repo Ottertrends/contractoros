@@ -1,21 +1,34 @@
 import { NextRequest, NextResponse } from "next/server";
-
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { createServerClient } from "@supabase/ssr";
 
 export async function GET(req: NextRequest) {
-  const supabase = await createSupabaseServerClient();
   const url = new URL(req.url);
-
   const code = url.searchParams.get("code");
+  const redirectTo = url.searchParams.get("redirect") ?? "/dashboard";
+
+  const response = NextResponse.redirect(new URL(redirectTo, url.origin));
+
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll: () => req.cookies.getAll(),
+        setAll: (cookiesToSet) => {
+          cookiesToSet.forEach(({ name, value, options }) => {
+            response.cookies.set(name, value, options ?? {});
+          });
+        },
+      },
+    }
+  );
+
   if (code) {
     const { error } = await supabase.auth.exchangeCodeForSession(code);
-    // Even on error, redirect so user can try again.
     if (error) {
       console.error("Supabase callback exchange error:", error);
     }
   }
 
-  const redirectTo = url.searchParams.get("redirect") ?? "/dashboard";
-  return NextResponse.redirect(new URL(redirectTo, url.origin));
+  return response;
 }
-

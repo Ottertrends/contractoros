@@ -30,6 +30,8 @@ export interface Profile {
   default_alternate_payment_instructions?: string | null;
   default_zelle_info?: string | null;
   default_venmo_handle?: string | null;
+  zip_code?: string | null;
+  onboarding_completed_at?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -94,6 +96,9 @@ export interface Invoice {
   stripe_payment_link_url?: string | null;
   stripe_payment_link_id?: string | null;
   stripe_checkout_session_id?: string | null;
+  stripe_invoice_id?: string | null;
+  stripe_hosted_url?: string | null;
+  automatic_tax_enabled?: boolean | null;
   alternate_payment_instructions?: string | null;
   pay_with_ach_enabled?: boolean | null;
   created_at: string;

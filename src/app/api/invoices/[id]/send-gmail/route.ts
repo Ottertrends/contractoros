@@ -73,6 +73,7 @@ export async function POST(
       total: String(it.total),
     })),
     stripePaymentLinkUrl: (inv.stripe_payment_link_url as string | null) ?? null,
+    stripeHostedUrl: (inv.stripe_hosted_url as string | null) ?? null,
     alternatePaymentInstructions: (inv.alternate_payment_instructions as string | null) ?? null,
   });
 

@@ -52,18 +52,9 @@ export function IntegrationsSettings({ profile }: { profile: Profile }) {
     toast.success("Google disconnected");
   }
 
-  async function connectStripe() {
+  function connectStripe() {
     setStripeLoading(true);
-    try {
-      const res = await fetch("/api/stripe-connect/onboard", { method: "POST" });
-      const j = (await res.json()) as { error?: string; url?: string };
-      if (!res.ok) throw new Error(j.error ?? "Stripe Connect failed");
-      if (j.url) window.location.href = j.url;
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Stripe Connect failed");
-    } finally {
-      setStripeLoading(false);
-    }
+    window.location.href = "/api/stripe-connect/connect";
   }
 
   const connectId = profile.stripe_connect_account_id;
@@ -126,7 +117,7 @@ export function IntegrationsSettings({ profile }: { profile: Profile }) {
             disabled={stripeLoading}
             onClick={() => void connectStripe()}
           >
-            {stripeLoading ? "Opening Stripe…" : connectId ? "Open Stripe onboarding" : "Connect Stripe"}
+            {stripeLoading ? "Opening Stripe…" : connectId ? "Reconnect Stripe" : "Connect Stripe"}
           </Button>
         </div>
       </CardContent>

@@ -4,6 +4,7 @@
  */
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
+import QRCode from "qrcode";
 
 import type { InvoiceDesign, InvoiceStatus, Project } from "@/lib/types/database";
 
@@ -51,9 +52,12 @@ export async function buildInvoicePdfBuffer(opts: {
   design?: InvoiceDesign | null;
   items: ServerPdfLineItem[];
   stripePaymentLinkUrl?: string | null;
+  stripeHostedUrl?: string | null;
   alternatePaymentInstructions?: string | null;
 }): Promise<Buffer> {
-  const { invoice, project, profile, design, items, stripePaymentLinkUrl, alternatePaymentInstructions } = opts;
+  const { invoice, project, profile, design, items, stripePaymentLinkUrl, stripeHostedUrl, alternatePaymentInstructions } = opts;
+  // Prefer Stripe Invoices hosted URL over legacy payment link
+  const payOnlineUrl = stripeHostedUrl ?? stripePaymentLinkUrl ?? null;
 
   const doc = new jsPDF({ unit: "pt", format: "letter" });
   const margin = 40;
@@ -209,14 +213,34 @@ export async function buildInvoicePdfBuffer(opts: {
   doc.setFontSize(9);
   doc.setFont(titleFont, "bold");
   doc.setTextColor(60);
-  if (stripePaymentLinkUrl) {
-    doc.text("Pay online (card)", margin, ty);
-    ty += 12;
+  if (payOnlineUrl) {
+    // "Pay Online →" button box
+    const btnW = 100;
+    const btnH = 20;
+    doc.setFillColor(pr, pg, pb);
+    doc.roundedRect(margin, ty - 13, btnW, btnH, 3, 3, "F");
+    doc.setFont(titleFont, "bold");
+    doc.setFontSize(9);
+    doc.setTextColor(255, 255, 255);
+    doc.text("Pay Online →", margin + btnW / 2, ty - 13 + btnH / 2 + 3, { align: "center" });
+    doc.setTextColor(60);
     doc.setFont(bodyFont, "normal");
-    doc.setTextColor(40);
-    const linkLines = doc.splitTextToSize(stripePaymentLinkUrl, pageWidth - margin * 2);
+    ty += 16;
+
+    // QR code (80x80 pt) to the right of the text block
+    try {
+      const qrDataUrl = await QRCode.toDataURL(payOnlineUrl, { width: 200, margin: 1 });
+      const qrSize = 70;
+      doc.addImage(qrDataUrl, "PNG", pageWidth - margin - qrSize, ty - 30, qrSize, qrSize);
+    } catch {
+      /* skip QR on error */
+    }
+
+    doc.setFontSize(8);
+    doc.setTextColor(100);
+    const linkLines = doc.splitTextToSize(payOnlineUrl, pageWidth - margin * 2 - 80);
     doc.text(linkLines, margin, ty);
-    ty += linkLines.length * 12 + 8;
+    ty += linkLines.length * 10 + 8;
   }
   if (alternatePaymentInstructions) {
     doc.setFont(titleFont, "bold");

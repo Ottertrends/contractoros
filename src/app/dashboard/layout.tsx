@@ -8,6 +8,7 @@ import { Sidebar } from "@/components/layout/sidebar";
 import { TopBar } from "@/components/layout/top-bar";
 import { DashboardRealtimeBridge } from "@/components/dashboard/dashboard-realtime-bridge";
 import { OnboardingGuide } from "@/components/onboarding/onboarding-guide";
+import { ProfileSetupModal } from "@/components/onboarding/profile-setup-modal";
 
 export default async function DashboardLayout({
   children,
@@ -48,7 +49,11 @@ export default async function DashboardLayout({
     updated_at: new Date().toISOString(),
   };
 
-  const showOnboarding = !(safeProfile as { onboarding_completed_at?: string | null }).onboarding_completed_at;
+  const onboardingDone = !!(safeProfile as { onboarding_completed_at?: string | null }).onboarding_completed_at;
+  // Google users who bypassed signup have no phone — show profile setup modal instead of onboarding guide
+  const needsProfileSetup = !onboardingDone && !safeProfile.phone;
+  // Email/password users with phone but haven't completed the onboarding tour
+  const showOnboarding = !onboardingDone && !!safeProfile.phone;
 
   return (
     <LanguageProvider initialLang={lang}>
@@ -58,7 +63,8 @@ export default async function DashboardLayout({
           <div className="flex-1 min-w-0">
             <DashboardRealtimeBridge userId={user.id} />
             <TopBar profile={safeProfile} />
-            <OnboardingGuide show={showOnboarding} />
+            <ProfileSetupModal show={needsProfileSetup} defaultCompanyName={safeProfile.company_name} />
+            <OnboardingGuide show={!needsProfileSetup && showOnboarding} />
             <main className="px-4 py-6 md:px-6">{children}</main>
           </div>
         </div>
