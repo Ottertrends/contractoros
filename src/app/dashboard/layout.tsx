@@ -23,11 +23,10 @@ export default async function DashboardLayout({
     redirect("/auth/login?redirected=true");
   }
 
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("*")
-    .eq("id", user.id)
-    .single();
+  const [{ data: profile }, lang] = await Promise.all([
+    supabase.from("profiles").select("*").eq("id", user.id).single(),
+    getServerLang(),
+  ]);
 
   const safeProfile = profile ?? {
     id: user.id,
@@ -50,8 +49,6 @@ export default async function DashboardLayout({
   };
 
   const showOnboarding = !(safeProfile as { onboarding_completed_at?: string | null }).onboarding_completed_at;
-
-  const lang = await getServerLang();
 
   return (
     <LanguageProvider initialLang={lang}>
