@@ -37,7 +37,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 
 // jsPDF must never be SSR'd — dynamic import with ssr:false prevents the Node build from loading
@@ -71,9 +70,6 @@ type ProfileRow = {
   company_name: string | null;
   phone: string | null;
   email: string | null;
-  default_alternate_payment_instructions?: string | null;
-  default_zelle_info?: string | null;
-  default_venmo_handle?: string | null;
   stripe_connect_account_id?: string | null;
   stripe_connect_charges_enabled?: boolean | null;
 };
@@ -84,17 +80,10 @@ type ProfileDesignRow = ProfileRow & {
   invoice_title_font: string | null;
   invoice_body_font: string | null;
   invoice_footer: string | null;
+  default_alternate_payment_instructions?: string | null;
+  default_zelle_info?: string | null;
+  default_venmo_handle?: string | null;
 };
-
-function buildDefaultAltFromProfile(p: ProfileRow) {
-  const parts: string[] = [];
-  if (p.default_zelle_info?.trim()) parts.push(`Zelle: ${p.default_zelle_info.trim()}`);
-  if (p.default_venmo_handle?.trim()) parts.push(`Venmo: ${p.default_venmo_handle.trim()}`);
-  if (p.default_alternate_payment_instructions?.trim()) {
-    parts.push(p.default_alternate_payment_instructions.trim());
-  }
-  return parts.join("\n");
-}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -173,11 +162,8 @@ export function InvoiceFormClient({
     footer: null,
   });
 
-  const [alternateInstructions, setAlternateInstructions] = React.useState(
-    invoice?.alternate_payment_instructions ?? "",
-  );
-  const [payWithAch, setPayWithAch] = React.useState(!!invoice?.pay_with_ach_enabled);
   const [paymentLinkUrl, setPaymentLinkUrl] = React.useState(invoice?.stripe_payment_link_url ?? "");
+  const [stripeHostedUrl, setStripeHostedUrl] = React.useState(invoice?.stripe_hosted_url ?? "");
 
   const [gmailOpen, setGmailOpen] = React.useState(false);
   const [gmailTo, setGmailTo] = React.useState("");
@@ -190,7 +176,7 @@ export function InvoiceFormClient({
     supabase
       .from("profiles")
       .select(
-        "company_name, phone, email, default_alternate_payment_instructions, default_zelle_info, default_venmo_handle, stripe_connect_account_id, stripe_connect_charges_enabled, invoice_logo_url, invoice_primary_color, invoice_title_font, invoice_body_font, invoice_footer",
+        "company_name, phone, email, stripe_connect_account_id, stripe_connect_charges_enabled, invoice_logo_url, invoice_primary_color, invoice_title_font, invoice_body_font, invoice_footer",
       )
       .eq("id", userId)
       .single()
@@ -200,9 +186,6 @@ export function InvoiceFormClient({
           company_name: data.company_name,
           phone: data.phone,
           email: data.email,
-          default_alternate_payment_instructions: data.default_alternate_payment_instructions,
-          default_zelle_info: data.default_zelle_info,
-          default_venmo_handle: data.default_venmo_handle,
           stripe_connect_account_id: data.stripe_connect_account_id,
           stripe_connect_charges_enabled: data.stripe_connect_charges_enabled,
         });
@@ -218,14 +201,9 @@ export function InvoiceFormClient({
 
   React.useEffect(() => {
     if (!invoice) return;
-    setAlternateInstructions(invoice.alternate_payment_instructions ?? "");
-    setPayWithAch(!!invoice.pay_with_ach_enabled);
     setPaymentLinkUrl(invoice.stripe_payment_link_url ?? "");
-  }, [
-    invoice?.alternate_payment_instructions,
-    invoice?.pay_with_ach_enabled,
-    invoice?.stripe_payment_link_url,
-  ]);
+    setStripeHostedUrl(invoice.stripe_hosted_url ?? "");
+  }, [invoice?.stripe_payment_link_url, invoice?.stripe_hosted_url]);
 
   // Computed totals
   const subtotal = lineItems.reduce((acc, it) => acc + (parseFloat(it.total) || 0), 0);
@@ -319,8 +297,6 @@ export function InvoiceFormClient({
         tax_rate: String(parseFloat(taxRate) || 0),
         tax_amount: String(taxAmount),
         total: String(total),
-        alternate_payment_instructions: alternateInstructions.trim() || null,
-        pay_with_ach_enabled: payWithAch,
       };
 
       if (mode === "create") {
@@ -368,10 +344,19 @@ export function InvoiceFormClient({
 
         if (overrideStatus) setStatus(overrideStatus);
 
-        if (finalStatus === "sent") {
-          const plRes = await fetch(`/api/invoices/${invoice!.id}/payment-link`, { method: "POST" });
-          const plJson = (await plRes.json()) as { url?: string };
-          if (plRes.ok && plJson.url) setPaymentLinkUrl(plJson.url);
+        // Auto-sync to Stripe Invoices API when total > 0 and Stripe is connected
+        if (total > 0 && profile?.stripe_connect_charges_enabled) {
+          try {
+            const syncRes = await fetch(`/api/invoices/${invoice!.id}/sync-stripe`, { method: "POST" });
+            const syncJson = (await syncRes.json()) as { hosted_url?: string; error?: string };
+            if (syncRes.ok && syncJson.hosted_url) {
+              setStripeHostedUrl(syncJson.hosted_url);
+            } else if (syncJson.error) {
+              console.warn("[sync-stripe]", syncJson.error);
+            }
+          } catch {
+            // non-blocking — invoice is saved regardless
+          }
         }
 
         toast.success("Invoice saved");
@@ -440,23 +425,67 @@ export function InvoiceFormClient({
 
           <div className="flex flex-col gap-2">
             <Label>{ti.status}</Label>
-            <Select value={status} onValueChange={(v) => setStatus(v as InvoiceStatus)}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="draft">{ti.draft}</SelectItem>
-                <SelectItem value="sent">{ti.sent}</SelectItem>
-                <SelectItem value="paid">{ti.paid}</SelectItem>
-                <SelectItem value="cancelled">{ti.cancelled}</SelectItem>
-              </SelectContent>
-            </Select>
+            <div className="flex items-center gap-2">
+              {mode === "edit" && profile !== undefined && (
+                profile?.stripe_connect_charges_enabled ? (
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-800 shrink-0">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                    Stripe
+                  </span>
+                ) : (
+                  <a
+                    href="/dashboard/settings"
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium bg-slate-100 text-slate-500 border border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700 hover:border-primary/50 hover:text-primary transition-colors shrink-0"
+                  >
+                    Stripe
+                  </a>
+                )
+              )}
+              <Select value={status} onValueChange={(v) => setStatus(v as InvoiceStatus)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="draft">{ti.draft}</SelectItem>
+                  <SelectItem value="sent">{ti.sent}</SelectItem>
+                  <SelectItem value="paid">{ti.paid}</SelectItem>
+                  <SelectItem value="cancelled">{ti.cancelled}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
 
           <div className="md:col-span-2 flex flex-col gap-2">
             <Label>{ti.notes}</Label>
             <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} />
           </div>
+
+          {mode === "edit" && (stripeHostedUrl || paymentLinkUrl) && (
+            <div className="md:col-span-2 flex flex-col gap-1.5">
+              <Label className="text-xs text-slate-500">Stripe payment link</Label>
+              <div className="flex items-center gap-2 flex-wrap">
+                <a
+                  href={stripeHostedUrl || paymentLinkUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-sm text-primary break-all underline"
+                >
+                  {stripeHostedUrl || paymentLinkUrl}
+                </a>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    void navigator.clipboard.writeText(stripeHostedUrl || paymentLinkUrl);
+                    toast.success("Link copied");
+                  }}
+                >
+                  Copy
+                </Button>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -609,83 +638,6 @@ export function InvoiceFormClient({
         </CardContent>
       </Card>
 
-      {mode === "edit" && invoice && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-sm font-medium text-slate-500 uppercase tracking-wide">
-              Payment options (PDF and Stripe)
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-4">
-            <div className="flex flex-col gap-2">
-              <div className="flex items-center justify-between gap-3 flex-wrap">
-                <Label className="text-xs text-slate-500">Zelle, Venmo, bank transfer</Label>
-                {profile && (
-                  <button
-                    type="button"
-                    className="text-xs text-primary hover:underline"
-                    onClick={() => setAlternateInstructions(buildDefaultAltFromProfile(profile))}
-                  >
-                    Fill from Settings defaults
-                  </button>
-                )}
-              </div>
-              <Textarea
-                value={alternateInstructions}
-                onChange={(e) => setAlternateInstructions(e.target.value)}
-                rows={3}
-                placeholder="Shown on PDF under “Other payment options”"
-              />
-            </div>
-            <label className="flex items-start gap-3 cursor-pointer">
-              <Checkbox
-                checked={payWithAch}
-                onCheckedChange={(c) => setPayWithAch(!!c)}
-                className="mt-0.5"
-              />
-              <div>
-                <div className="text-sm font-medium">Offer ACH on Stripe payment link</div>
-                <div className="text-xs text-slate-500">
-                  Applied when the payment link is created (invoice status Sent, Stripe Connect ready).
-                </div>
-              </div>
-            </label>
-            {paymentLinkUrl && (
-              <div className="flex flex-col gap-1">
-                <div className="text-xs font-medium">Pay online</div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <a
-                    href={paymentLinkUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-sm text-primary break-all underline"
-                  >
-                    {paymentLinkUrl}
-                  </a>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      void navigator.clipboard.writeText(paymentLinkUrl);
-                      toast.success("Link copied");
-                    }}
-                  >
-                    Copy
-                  </Button>
-                </div>
-              </div>
-            )}
-            {status === "sent" &&
-              profile?.stripe_connect_account_id &&
-              !profile.stripe_connect_charges_enabled && (
-                <p className="text-xs text-amber-700 dark:text-amber-300">
-                  Complete Stripe Connect in Settings to generate a payment link.
-                </p>
-              )}
-          </CardContent>
-        </Card>
-      )}
 
       {/* Actions */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
@@ -727,8 +679,8 @@ export function InvoiceFormClient({
                 profile={profile}
                 design={design}
                 items={lineItems}
-                stripePaymentLinkUrl={paymentLinkUrl || null}
-                alternatePaymentInstructions={alternateInstructions.trim() || null}
+                stripePaymentLinkUrl={stripeHostedUrl || paymentLinkUrl || null}
+                alternatePaymentInstructions={null}
               />
               {status === "sent" && invoice && (
                 <Dialog open={gmailOpen} onOpenChange={setGmailOpen}>
