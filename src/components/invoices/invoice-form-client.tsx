@@ -4,11 +4,18 @@ import * as React from "react";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Trash2, Plus } from "lucide-react";
+import { Trash2, Plus, Mail } from "lucide-react";
 
 import { supabase } from "@/lib/supabase/client";
 import { useLanguage } from "@/lib/i18n/client";
-import type { Invoice, InvoiceItem, InvoiceStatus, PriceBookItem, Project } from "@/lib/types/database";
+import type {
+  Invoice,
+  InvoiceDesign,
+  InvoiceItem,
+  InvoiceStatus,
+  PriceBookItem,
+  Project,
+} from "@/lib/types/database";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -30,6 +37,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 
 // jsPDF must never be SSR'd — dynamic import with ssr:false prevents the Node build from loading
@@ -57,6 +65,35 @@ interface Props {
   invoice?: Invoice;
   existingItems?: InvoiceItem[];
   defaultProjectId?: string;
+}
+
+type ProfileRow = {
+  company_name: string | null;
+  phone: string | null;
+  email: string | null;
+  default_alternate_payment_instructions?: string | null;
+  default_zelle_info?: string | null;
+  default_venmo_handle?: string | null;
+  stripe_connect_account_id?: string | null;
+  stripe_connect_charges_enabled?: boolean | null;
+};
+
+type ProfileDesignRow = ProfileRow & {
+  invoice_logo_url: string | null;
+  invoice_primary_color: string | null;
+  invoice_title_font: string | null;
+  invoice_body_font: string | null;
+  invoice_footer: string | null;
+};
+
+function buildDefaultAltFromProfile(p: ProfileRow) {
+  const parts: string[] = [];
+  if (p.default_zelle_info?.trim()) parts.push(`Zelle: ${p.default_zelle_info.trim()}`);
+  if (p.default_venmo_handle?.trim()) parts.push(`Venmo: ${p.default_venmo_handle.trim()}`);
+  if (p.default_alternate_payment_instructions?.trim()) {
+    parts.push(p.default_alternate_payment_instructions.trim());
+  }
+  return parts.join("\n");
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -127,19 +164,68 @@ export function InvoiceFormClient({
   const [saving, setSaving] = React.useState(false);
   const [deleting, setDeleting] = React.useState(false);
   const [deleteOpen, setDeleteOpen] = React.useState(false);
-  const [profile, setProfile] = React.useState<{ company_name: string | null; phone: string | null; email: string | null } | null>(null);
+  const [profile, setProfile] = React.useState<ProfileRow | null>(null);
+  const [design, setDesign] = React.useState<InvoiceDesign>({
+    logoUrl: null,
+    primaryColor: "#111827",
+    titleFont: "helvetica",
+    bodyFont: "helvetica",
+    footer: null,
+  });
 
-  // Fetch profile for PDF (once, on mount if edit mode)
+  const [alternateInstructions, setAlternateInstructions] = React.useState(
+    invoice?.alternate_payment_instructions ?? "",
+  );
+  const [payWithAch, setPayWithAch] = React.useState(!!invoice?.pay_with_ach_enabled);
+  const [paymentLinkUrl, setPaymentLinkUrl] = React.useState(invoice?.stripe_payment_link_url ?? "");
+
+  const [gmailOpen, setGmailOpen] = React.useState(false);
+  const [gmailTo, setGmailTo] = React.useState("");
+  const [gmailMessage, setGmailMessage] = React.useState("Please find your invoice attached.");
+  const [gmailSending, setGmailSending] = React.useState(false);
+
+  // Fetch profile + design for PDF (edit mode)
   React.useEffect(() => {
-    if (mode === "edit") {
-      supabase
-        .from("profiles")
-        .select("company_name, phone, email")
-        .eq("id", userId)
-        .single()
-        .then(({ data }: { data: typeof profile }) => { if (data) setProfile(data); });
-    }
+    if (mode !== "edit") return;
+    supabase
+      .from("profiles")
+      .select(
+        "company_name, phone, email, default_alternate_payment_instructions, default_zelle_info, default_venmo_handle, stripe_connect_account_id, stripe_connect_charges_enabled, invoice_logo_url, invoice_primary_color, invoice_title_font, invoice_body_font, invoice_footer",
+      )
+      .eq("id", userId)
+      .single()
+      .then(({ data }: { data: ProfileDesignRow | null }) => {
+        if (!data) return;
+        setProfile({
+          company_name: data.company_name,
+          phone: data.phone,
+          email: data.email,
+          default_alternate_payment_instructions: data.default_alternate_payment_instructions,
+          default_zelle_info: data.default_zelle_info,
+          default_venmo_handle: data.default_venmo_handle,
+          stripe_connect_account_id: data.stripe_connect_account_id,
+          stripe_connect_charges_enabled: data.stripe_connect_charges_enabled,
+        });
+        setDesign({
+          logoUrl: data.invoice_logo_url,
+          primaryColor: data.invoice_primary_color ?? "#111827",
+          titleFont: (data.invoice_title_font as InvoiceDesign["titleFont"]) ?? "helvetica",
+          bodyFont: (data.invoice_body_font as InvoiceDesign["bodyFont"]) ?? "helvetica",
+          footer: data.invoice_footer,
+        });
+      });
   }, [mode, userId]);
+
+  React.useEffect(() => {
+    if (!invoice) return;
+    setAlternateInstructions(invoice.alternate_payment_instructions ?? "");
+    setPayWithAch(!!invoice.pay_with_ach_enabled);
+    setPaymentLinkUrl(invoice.stripe_payment_link_url ?? "");
+  }, [
+    invoice?.alternate_payment_instructions,
+    invoice?.pay_with_ach_enabled,
+    invoice?.stripe_payment_link_url,
+  ]);
 
   // Computed totals
   const subtotal = lineItems.reduce((acc, it) => acc + (parseFloat(it.total) || 0), 0);
@@ -194,6 +280,30 @@ export function InvoiceFormClient({
 
   // ── Save ──────────────────────────────────────────────────────────────────
 
+  async function sendGmail() {
+    if (!invoice?.id) return;
+    if (!gmailTo.trim()) {
+      toast.error("Recipient email required");
+      return;
+    }
+    setGmailSending(true);
+    try {
+      const res = await fetch(`/api/invoices/${invoice.id}/send-gmail`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ to: gmailTo.trim(), message: gmailMessage }),
+      });
+      const j = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) throw new Error(j.error ?? "Send failed");
+      toast.success("Sent via Gmail");
+      setGmailOpen(false);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to send");
+    } finally {
+      setGmailSending(false);
+    }
+  }
+
   async function save(overrideStatus?: InvoiceStatus) {
     if (!projectId) { toast.error("Please select a project"); return; }
     setSaving(true);
@@ -209,6 +319,8 @@ export function InvoiceFormClient({
         tax_rate: String(parseFloat(taxRate) || 0),
         tax_amount: String(taxAmount),
         total: String(total),
+        alternate_payment_instructions: alternateInstructions.trim() || null,
+        pay_with_ach_enabled: payWithAch,
       };
 
       if (mode === "create") {
@@ -255,6 +367,13 @@ export function InvoiceFormClient({
         }
 
         if (overrideStatus) setStatus(overrideStatus);
+
+        if (finalStatus === "sent") {
+          const plRes = await fetch(`/api/invoices/${invoice!.id}/payment-link`, { method: "POST" });
+          const plJson = (await plRes.json()) as { url?: string };
+          if (plRes.ok && plJson.url) setPaymentLinkUrl(plJson.url);
+        }
+
         toast.success("Invoice saved");
         router.refresh();
       }
@@ -490,6 +609,84 @@ export function InvoiceFormClient({
         </CardContent>
       </Card>
 
+      {mode === "edit" && invoice && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-sm font-medium text-slate-500 uppercase tracking-wide">
+              Payment options (PDF and Stripe)
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-4">
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center justify-between gap-3 flex-wrap">
+                <Label className="text-xs text-slate-500">Zelle, Venmo, bank transfer</Label>
+                {profile && (
+                  <button
+                    type="button"
+                    className="text-xs text-primary hover:underline"
+                    onClick={() => setAlternateInstructions(buildDefaultAltFromProfile(profile))}
+                  >
+                    Fill from Settings defaults
+                  </button>
+                )}
+              </div>
+              <Textarea
+                value={alternateInstructions}
+                onChange={(e) => setAlternateInstructions(e.target.value)}
+                rows={3}
+                placeholder="Shown on PDF under “Other payment options”"
+              />
+            </div>
+            <label className="flex items-start gap-3 cursor-pointer">
+              <Checkbox
+                checked={payWithAch}
+                onCheckedChange={(c) => setPayWithAch(!!c)}
+                className="mt-0.5"
+              />
+              <div>
+                <div className="text-sm font-medium">Offer ACH on Stripe payment link</div>
+                <div className="text-xs text-slate-500">
+                  Applied when the payment link is created (invoice status Sent, Stripe Connect ready).
+                </div>
+              </div>
+            </label>
+            {paymentLinkUrl && (
+              <div className="flex flex-col gap-1">
+                <div className="text-xs font-medium">Pay online</div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <a
+                    href={paymentLinkUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-sm text-primary break-all underline"
+                  >
+                    {paymentLinkUrl}
+                  </a>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      void navigator.clipboard.writeText(paymentLinkUrl);
+                      toast.success("Link copied");
+                    }}
+                  >
+                    Copy
+                  </Button>
+                </div>
+              </div>
+            )}
+            {status === "sent" &&
+              profile?.stripe_connect_account_id &&
+              !profile.stripe_connect_charges_enabled && (
+                <p className="text-xs text-amber-700 dark:text-amber-300">
+                  Complete Stripe Connect in Settings to generate a payment link.
+                </p>
+              )}
+          </CardContent>
+        </Card>
+      )}
+
       {/* Actions */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-2 flex-wrap">
@@ -528,8 +725,55 @@ export function InvoiceFormClient({
                 }}
                 project={selectedProject}
                 profile={profile}
+                design={design}
                 items={lineItems}
+                stripePaymentLinkUrl={paymentLinkUrl || null}
+                alternatePaymentInstructions={alternateInstructions.trim() || null}
               />
+              {status === "sent" && invoice && (
+                <Dialog open={gmailOpen} onOpenChange={setGmailOpen}>
+                  <DialogTrigger asChild>
+                    <Button type="button" variant="outline" className="gap-1.5">
+                      <Mail className="w-4 h-4" />
+                      Send via Gmail
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>Send invoice PDF</DialogTitle>
+                    </DialogHeader>
+                    <div className="flex flex-col gap-3 py-2">
+                      <div className="flex flex-col gap-1.5">
+                        <Label htmlFor="inv-gmail-to">To</Label>
+                        <Input
+                          id="inv-gmail-to"
+                          type="email"
+                          value={gmailTo}
+                          onChange={(e) => setGmailTo(e.target.value)}
+                          placeholder="client@email.com"
+                        />
+                      </div>
+                      <div className="flex flex-col gap-1.5">
+                        <Label htmlFor="inv-gmail-msg">Message</Label>
+                        <Textarea
+                          id="inv-gmail-msg"
+                          value={gmailMessage}
+                          onChange={(e) => setGmailMessage(e.target.value)}
+                          rows={3}
+                        />
+                      </div>
+                    </div>
+                    <DialogFooter>
+                      <Button type="button" variant="secondary" onClick={() => setGmailOpen(false)}>
+                        Cancel
+                      </Button>
+                      <Button type="button" disabled={gmailSending} onClick={() => void sendGmail()}>
+                        {gmailSending ? "Sending…" : "Send"}
+                      </Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
+              )}
               <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
                 <DialogTrigger asChild>
                   <Button type="button" variant="danger">

@@ -33,7 +33,26 @@ export async function POST(req: NextRequest) {
 
   switch (event.type) {
     case "checkout.session.completed": {
-      const session = event.data.object as { customer: string; subscription: string; metadata?: { supabase_user_id?: string } };
+      const session = event.data.object as {
+        customer: string;
+        subscription?: string | null;
+        metadata?: { supabase_user_id?: string; internal_invoice_id?: string };
+        payment_status?: string;
+      };
+
+      const contractorInvoiceId = session.metadata?.internal_invoice_id?.trim();
+      if (contractorInvoiceId && session.payment_status === "paid" && !session.subscription) {
+        await admin
+          .from("invoices")
+          .update({
+            status: "paid",
+            stripe_checkout_session_id: (session as { id?: string }).id ?? null,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", contractorInvoiceId);
+        break;
+      }
+
       const userId = session.metadata?.supabase_user_id ?? await getSupabaseUserId(session.customer);
       if (userId) {
         const { data: prof } = await admin.from("profiles").select("subscription_plan").eq("id", userId).single();
@@ -82,6 +101,30 @@ export async function POST(req: NextRequest) {
       const sub = event.data.object as { customer: string; status: string };
       const userId = await getSupabaseUserId(sub.customer);
       if (userId) await updateProfile(userId, { subscription_status: sub.status });
+      break;
+    }
+    case "account.updated": {
+      const account = event.data.object as {
+        id: string;
+        charges_enabled?: boolean;
+        details_submitted?: boolean;
+        metadata?: { supabase_user_id?: string };
+      };
+      const uid = account.metadata?.supabase_user_id;
+      if (uid) {
+        await updateProfile(uid, {
+          stripe_connect_charges_enabled: !!account.charges_enabled,
+          stripe_connect_details_submitted: !!account.details_submitted,
+        });
+      } else if (account.id) {
+        await admin
+          .from("profiles")
+          .update({
+            stripe_connect_charges_enabled: !!account.charges_enabled,
+            stripe_connect_details_submitted: !!account.details_submitted,
+          })
+          .eq("stripe_connect_account_id", account.id);
+      }
       break;
     }
   }

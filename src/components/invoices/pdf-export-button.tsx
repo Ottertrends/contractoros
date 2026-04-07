@@ -36,6 +36,10 @@ interface Props {
   profile: PdfProfile | null;
   design?: InvoiceDesign | null;
   items: LineItem[];
+  /** Stripe Connect payment link shown on PDF when sent */
+  stripePaymentLinkUrl?: string | null;
+  /** Zelle, Venmo, ACH — custom block */
+  alternatePaymentInstructions?: string | null;
 }
 
 function fmt(n: number) {
@@ -126,7 +130,15 @@ async function resizeLogoForPdf(
   });
 }
 
-async function generatePDF({ invoice, project, profile, design, items }: Props) {
+async function generatePDF({
+  invoice,
+  project,
+  profile,
+  design,
+  items,
+  stripePaymentLinkUrl,
+  alternatePaymentInstructions,
+}: Props) {
   const doc = new jsPDF({ unit: "pt", format: "letter" });
   const margin = 40;
   const pageWidth = doc.internal.pageSize.getWidth();
@@ -280,6 +292,31 @@ async function generatePDF({ invoice, project, profile, design, items }: Props) 
   doc.text("TOTAL:", col1, ty + 8, { align: "right" });
   doc.text(fmt(total), col2, ty + 8, { align: "right" });
 
+  ty += 36;
+  doc.setFontSize(9);
+  doc.setFont(titleFont, "bold");
+  doc.setTextColor(60);
+  if (stripePaymentLinkUrl) {
+    doc.text("Pay online (card)", margin, ty);
+    ty += 12;
+    doc.setFont(bodyFont, "normal");
+    doc.setTextColor(40);
+    const linkLines = doc.splitTextToSize(stripePaymentLinkUrl, pageWidth - margin * 2);
+    doc.text(linkLines, margin, ty);
+    ty += linkLines.length * 12 + 8;
+  }
+  if (alternatePaymentInstructions) {
+    doc.setFont(titleFont, "bold");
+    doc.setTextColor(60);
+    doc.text("Other payment options", margin, ty);
+    ty += 12;
+    doc.setFont(bodyFont, "normal");
+    doc.setTextColor(80);
+    const alt = doc.splitTextToSize(alternatePaymentInstructions, pageWidth - margin * 2);
+    doc.text(alt, margin, ty);
+    ty += alt.length * 12 + 8;
+  }
+
   // ── Invoice notes ─────────────────────────────────────────────────────────
   if (invoice.notes) {
     ty += 28;
@@ -308,10 +345,26 @@ async function generatePDF({ invoice, project, profile, design, items }: Props) 
   doc.save(filename);
 }
 
-export function PdfExportButton({ invoice, project, profile, design, items }: Props) {
+export function PdfExportButton({
+  invoice,
+  project,
+  profile,
+  design,
+  items,
+  stripePaymentLinkUrl,
+  alternatePaymentInstructions,
+}: Props) {
   async function handleClick() {
     try {
-      await generatePDF({ invoice, project, profile, design, items });
+      await generatePDF({
+        invoice,
+        project,
+        profile,
+        design,
+        items,
+        stripePaymentLinkUrl,
+        alternatePaymentInstructions,
+      });
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to generate PDF");
     }

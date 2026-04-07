@@ -59,6 +59,26 @@ export function LoginForm() {
     return () => sub.subscription.unsubscribe();
   }, [router]);
 
+  async function signInWithGoogle() {
+    setDebugError(null);
+    try {
+      const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? window.location.origin).replace(/\/$/, "");
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: { redirectTo: `${appUrl}/auth/callback` },
+      });
+      if (error) {
+        const msg = extractAuthErrorMessage(error);
+        setDebugError(msg);
+        toast.error(msg);
+      }
+    } catch (e: unknown) {
+      const msg = extractAuthErrorMessage(e);
+      setDebugError(msg);
+      toast.error(msg);
+    }
+  }
+
   async function onSubmit(values: LoginValues) {
     try {
       setDebugError(null);
@@ -170,6 +190,19 @@ export function LoginForm() {
       </div>
       <Button type="submit" disabled={isSubmitting} className="w-full">
         {isSubmitting ? "Signing in…" : "Sign In"}
+      </Button>
+      <div className="relative flex items-center gap-3 py-1">
+        <span className="h-px flex-1 bg-slate-200 dark:bg-slate-700" />
+        <span className="text-xs text-slate-500">or</span>
+        <span className="h-px flex-1 bg-slate-200 dark:bg-slate-700" />
+      </div>
+      <Button
+        type="button"
+        variant="outline"
+        className="w-full"
+        onClick={() => void signInWithGoogle()}
+      >
+        Continue with Google
       </Button>
       <div className="text-sm text-slate-500 text-center">
         No account?{" "}

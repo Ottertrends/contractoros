@@ -126,6 +126,19 @@ export default function SignupPage() {
     return () => sub.subscription.unsubscribe();
   }, [router]);
 
+  async function signInWithGoogle() {
+    try {
+      const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? window.location.origin).replace(/\/$/, "");
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: { redirectTo: `${appUrl}/auth/callback` },
+      });
+      if (error) throw error;
+    } catch (e: unknown) {
+      toast.error(extractAuthErrorMessage(e));
+    }
+  }
+
   async function onSubmit(values: SignupValues) {
     try {
       const appUrl = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") ?? "";
@@ -166,7 +179,7 @@ export default function SignupPage() {
         <CardHeader>
           <CardTitle>{ta.signupTitle}</CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="flex flex-col gap-6">
           <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-6">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="flex flex-col gap-2">
@@ -312,6 +325,18 @@ export default function SignupPage() {
               </div>
             </div>
           </form>
+
+          <div className="relative flex items-center gap-3">
+            <span className="h-px flex-1 bg-slate-200 dark:bg-slate-700" />
+            <span className="text-xs text-slate-500">or</span>
+            <span className="h-px flex-1 bg-slate-200 dark:bg-slate-700" />
+          </div>
+          <Button type="button" variant="outline" className="w-full" onClick={() => void signInWithGoogle()}>
+            Continue with Google
+          </Button>
+          <p className="text-xs text-slate-500 text-center -mt-2">
+            Profile details can be completed in Settings after Google sign-up.
+          </p>
         </CardContent>
       </Card>
     </div>

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { syncRecurringRuleToGoogle, deleteGoogleEventForRule } from "@/lib/integrations/google-calendar-sync";
 
 export interface RecurringRule {
   id: string;
@@ -155,6 +156,10 @@ export async function POST(request: Request) {
     .single();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (data?.id) {
+    const sync = await syncRecurringRuleToGoogle(data.id as string);
+    if (!sync.ok) console.warn("[recurring POST] Google Calendar:", sync.error);
+  }
   return NextResponse.json({ rule: data });
 }
 
@@ -167,6 +172,8 @@ export async function DELETE(request: Request) {
 
   const { id } = (await request.json()) as { id: string };
   if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
+
+  await deleteGoogleEventForRule(id, user.id);
 
   const { error } = await supabase
     .from("recurring_projects")

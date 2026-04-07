@@ -16,6 +16,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { IntegrationsSettings } from "@/components/settings/integrations-settings";
 import { WhatsAppConnection } from "@/components/settings/whatsapp-connection";
 
 const quotesOptions: QuotesPerMonth[] = ["1-5", "6-15", "16-30", "30+"];
@@ -126,6 +127,12 @@ export function SettingsPageClient({ userId, profile }: { userId: string; profil
   const [businessAreas, setBusinessAreas] = React.useState<string[]>(profile.business_areas ?? []);
   const [services, setServices] = React.useState<string[]>(profile.services ?? []);
 
+  const [defaultAlternatePayment, setDefaultAlternatePayment] = React.useState(
+    profile.default_alternate_payment_instructions ?? "",
+  );
+  const [defaultZelle, setDefaultZelle] = React.useState(profile.default_zelle_info ?? "");
+  const [defaultVenmo, setDefaultVenmo] = React.useState(profile.default_venmo_handle ?? "");
+
   const [newPassword, setNewPassword] = React.useState("");
   const [confirmPassword, setConfirmPassword] = React.useState("");
   const [resetSent, setResetSent] = React.useState(false);
@@ -152,6 +159,9 @@ export function SettingsPageClient({ userId, profile }: { userId: string; profil
           quotes_per_month: quotesPerMonth,
           business_areas: businessAreas.length ? businessAreas : [],
           services: services.length ? services : [],
+          default_alternate_payment_instructions: defaultAlternatePayment.trim() || null,
+          default_zelle_info: defaultZelle.trim() || null,
+          default_venmo_handle: defaultVenmo.trim() || null,
         })
         .eq("id", userId);
 
@@ -337,11 +347,49 @@ export function SettingsPageClient({ userId, profile }: { userId: string; profil
             </div>
           </div>
 
+          <div className="flex flex-col gap-4 border-t border-slate-200 dark:border-slate-800 pt-6">
+            <div className="text-sm font-medium">Default lower-fee payment text (invoices)</div>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Shown on PDFs when you add these to an invoice — e.g. Zelle, Venmo, or bank transfer instructions.
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="def-zelle">Default Zelle (phone or email)</Label>
+                <Input
+                  id="def-zelle"
+                  value={defaultZelle}
+                  onChange={(e) => setDefaultZelle(e.target.value)}
+                  placeholder="+1… or name@email.com"
+                />
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="def-venmo">Default Venmo handle</Label>
+                <Input
+                  id="def-venmo"
+                  value={defaultVenmo}
+                  onChange={(e) => setDefaultVenmo(e.target.value)}
+                  placeholder="@handle"
+                />
+              </div>
+            </div>
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="def-alt">Other instructions (ACH, wire, etc.)</Label>
+              <Input
+                id="def-alt"
+                value={defaultAlternatePayment}
+                onChange={(e) => setDefaultAlternatePayment(e.target.value)}
+                placeholder="Optional default block for every new invoice"
+              />
+            </div>
+          </div>
+
           <div className="flex items-center justify-end">
             <Button onClick={() => void onSaveProfile()}>{ts.save}</Button>
           </div>
         </CardContent>
       </Card>
+
+      <IntegrationsSettings profile={profile} />
 
       {/* WhatsApp */}
       <Card>
