@@ -3,14 +3,14 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export interface SyncStripeResult {
   stripe_invoice_id: string;
-  hosted_url: string;
+  /** null on draft — populated only after finalizeAndSendStripeInvoice() */
+  hosted_url: string | null;
 }
 
 /**
  * Creates or re-syncs a Stripe Invoice (as a DRAFT) for an existing WorkSupp invoice.
- * Does NOT finalize the invoice — call finalizeAndSendStripeInvoice() when sending.
- * Uses the connected Stripe account (Stripe-Account header).
- * Idempotency key: worksupp_sync_{invoiceId}
+ * NOTE: Stripe draft invoices do NOT have a hosted_invoice_url until finalized.
+ * Call finalizeAndSendStripeInvoice() when the user clicks "Send Via Stripe".
  */
 export async function syncToStripe(
   invoiceId: string,
@@ -43,11 +43,11 @@ export async function syncToStripe(
     throw new Error(profileError?.message ?? "Profile not found");
   }
 
-  const connectedAccountId = profile.stripe_connect_account_id as string | null;
+  const connectedAccountId = (profile as Record<string, unknown>).stripe_connect_account_id as string | null;
   if (!connectedAccountId) {
     throw new Error("Stripe account not connected. Go to Settings → Integrations to connect Stripe.");
   }
-  if (!profile.stripe_connect_charges_enabled) {
+  if (!(profile as Record<string, unknown>).stripe_connect_charges_enabled) {
     throw new Error("Stripe account not fully onboarded. Complete Stripe setup to accept payments.");
   }
 
@@ -55,17 +55,17 @@ export async function syncToStripe(
   const { data: project } = await supabase
     .from("projects")
     .select("client_name, id, client_email, address, city, state, zip")
-    .eq("id", invoice.project_id)
+    .eq("id", (invoice as Record<string, unknown>).project_id as string)
     .single();
 
   // 4. Auto-tax address guard
   const automaticTaxEnabled = !!(invoice as Record<string, unknown>).automatic_tax_enabled;
-  if (automaticTaxEnabled && !project?.address) {
+  if (automaticTaxEnabled && !(project as Record<string, unknown> | null)?.address) {
     throw new Error("Address required on the project when auto-tax is enabled");
   }
 
   // 5. Resolve client email directly from project.client_email
-  const clientEmail = (project as Record<string, unknown> | null)?.client_email as string | undefined || undefined;
+  const clientEmail = (project as Record<string, unknown> | null)?.client_email as string | null | undefined || undefined;
 
   const stripe = getStripe();
   const stripeOptions = { stripeAccount: connectedAccountId };
@@ -73,17 +73,14 @@ export async function syncToStripe(
   // 6. Upsert Stripe Customer (idempotent via email lookup)
   let stripeCustomerId: string | undefined;
   if (clientEmail) {
-    const existing = await stripe.customers.list(
-      { email: clientEmail, limit: 1 },
-      stripeOptions,
-    );
+    const existing = await stripe.customers.list({ email: clientEmail, limit: 1 }, stripeOptions);
     if (existing.data.length > 0) {
       stripeCustomerId = existing.data[0].id;
     } else {
       const customer = await stripe.customers.create(
         {
           email: clientEmail,
-          name: project?.client_name ?? undefined,
+          name: (project as Record<string, unknown> | null)?.client_name as string | undefined ?? undefined,
           metadata: { worksupp_user_id: userId },
         },
         stripeOptions,
@@ -103,7 +100,7 @@ export async function syncToStripe(
     }
   }
 
-  // 8. Create Stripe InvoiceItems for each line item
+  // 8. Create Stripe InvoiceItems
   for (const item of items ?? []) {
     const cents = Math.round((parseFloat(item.unit_price) || 0) * 100);
     if (cents < 1) continue;
@@ -121,9 +118,8 @@ export async function syncToStripe(
     );
   }
 
-  // 9. Create the Stripe Invoice as a DRAFT (auto_advance: false = no auto-finalization)
-  // On re-sync, use a versioned idempotency key so Stripe creates a fresh invoice
-  // (re-using the same key would return the voided invoice instead of a new one)
+  // 9. Create Stripe Invoice as DRAFT
+  // Versioned idempotency key on re-sync to avoid returning the voided invoice
   const idempotencyKey = isResync
     ? `worksupp_sync_${invoiceId}_v${Date.now()}`
     : `worksupp_sync_${invoiceId}`;
@@ -131,65 +127,48 @@ export async function syncToStripe(
   const stripeInvoice = await stripe.invoices.create(
     {
       customer: stripeCustomerId ?? undefined,
-      auto_advance: false,
+      auto_advance: false, // stay as draft — we finalize explicitly on send
       automatic_tax: { enabled: automaticTaxEnabled },
       metadata: { worksupp_invoice_id: invoiceId, worksupp_user_id: userId },
       description: `Invoice ${(invoice as Record<string, unknown>).invoice_number ?? invoiceId}`,
     },
-    {
-      ...stripeOptions,
-      idempotencyKey,
-    },
+    { ...stripeOptions, idempotencyKey },
   );
 
-  // Draft invoices include hosted_invoice_url (shows a preview to the client)
-  const hostedUrl = stripeInvoice.hosted_invoice_url;
-  if (!hostedUrl) {
-    throw new Error("Stripe did not return a hosted invoice URL");
-  }
+  // NOTE: hosted_invoice_url is null on Stripe draft invoices by design.
+  // It becomes available only after finalizeInvoice() is called (see finalizeAndSendStripeInvoice).
 
-  // 10. Update DB with draft stripe invoice info
+  // 10. Save stripe_invoice_id to DB (hosted_url stays null until finalized)
   await supabase
     .from("invoices")
     .update({
       stripe_invoice_id: stripeInvoice.id,
-      stripe_hosted_url: hostedUrl,
       updated_at: new Date().toISOString(),
     })
     .eq("id", invoiceId);
 
-  return { stripe_invoice_id: stripeInvoice.id, hosted_url: hostedUrl };
+  return { stripe_invoice_id: stripeInvoice.id, hosted_url: null };
 }
 
 /**
- * Finalizes and sends a Stripe Invoice to the client.
- * Called when the user clicks "Send Invoice Via Stripe".
- * The invoice must already exist in Stripe (call syncToStripe first if needed).
+ * Finalizes and sends a Stripe Invoice.
+ * Moves it from draft → open, sends email to customer via Stripe,
+ * saves the hosted_invoice_url to the DB, and returns it.
  */
 export async function finalizeAndSendStripeInvoice(
   invoiceId: string,
   userId: string,
-): Promise<void> {
+): Promise<string> {
   const supabase = await createSupabaseServerClient();
 
-  // Fetch stripe_invoice_id and connected account
   const [{ data: invoice }, { data: profile }] = await Promise.all([
-    supabase
-      .from("invoices")
-      .select("stripe_invoice_id")
-      .eq("id", invoiceId)
-      .eq("user_id", userId)
-      .single(),
-    supabase
-      .from("profiles")
-      .select("stripe_connect_account_id")
-      .eq("id", userId)
-      .single(),
+    supabase.from("invoices").select("stripe_invoice_id").eq("id", invoiceId).eq("user_id", userId).single(),
+    supabase.from("profiles").select("stripe_connect_account_id").eq("id", userId).single(),
   ]);
 
   const stripeInvoiceId = (invoice as Record<string, unknown> | null)?.stripe_invoice_id as string | null;
   if (!stripeInvoiceId) {
-    throw new Error("No Stripe invoice found. Save the invoice first to generate a Stripe invoice.");
+    throw new Error("No Stripe invoice found. Save the invoice first to sync it to Stripe.");
   }
 
   const connectedAccountId = (profile as Record<string, unknown> | null)?.stripe_connect_account_id as string | null;
@@ -200,40 +179,40 @@ export async function finalizeAndSendStripeInvoice(
   const stripe = getStripe();
   const stripeOptions = { stripeAccount: connectedAccountId };
 
-  // Finalize the invoice (moves it from draft → open)
-  await stripe.invoices.finalizeInvoice(stripeInvoiceId, undefined, stripeOptions);
+  // Finalize: draft → open (this generates the hosted_invoice_url)
+  const finalized = await stripe.invoices.finalizeInvoice(stripeInvoiceId, undefined, stripeOptions);
 
-  // Send it — Stripe emails the invoice to the customer
+  const hostedUrl = finalized.hosted_invoice_url;
+  if (!hostedUrl) {
+    throw new Error("Stripe did not return a payment URL after finalization.");
+  }
+
+  // Send the invoice email to the customer via Stripe
   await stripe.invoices.sendInvoice(stripeInvoiceId, undefined, stripeOptions);
+
+  // Save hosted URL to DB
+  await supabase
+    .from("invoices")
+    .update({ stripe_hosted_url: hostedUrl, updated_at: new Date().toISOString() })
+    .eq("id", invoiceId);
+
+  return hostedUrl;
 }
 
 /**
- * Voids a Stripe Invoice.
- * Called when a WorkSupp invoice is cancelled.
- * Silently ignores errors (invoice may already be voided or paid).
+ * Voids a Stripe Invoice when a WorkSupp invoice is cancelled.
+ * Silently ignores errors (already voided/paid/deleted).
  */
-export async function voidStripeInvoice(
-  invoiceId: string,
-  userId: string,
-): Promise<void> {
+export async function voidStripeInvoice(invoiceId: string, userId: string): Promise<void> {
   const supabase = await createSupabaseServerClient();
 
   const [{ data: invoice }, { data: profile }] = await Promise.all([
-    supabase
-      .from("invoices")
-      .select("stripe_invoice_id")
-      .eq("id", invoiceId)
-      .eq("user_id", userId)
-      .single(),
-    supabase
-      .from("profiles")
-      .select("stripe_connect_account_id")
-      .eq("id", userId)
-      .single(),
+    supabase.from("invoices").select("stripe_invoice_id").eq("id", invoiceId).eq("user_id", userId).single(),
+    supabase.from("profiles").select("stripe_connect_account_id").eq("id", userId).single(),
   ]);
 
   const stripeInvoiceId = (invoice as Record<string, unknown> | null)?.stripe_invoice_id as string | null;
-  if (!stripeInvoiceId) return; // nothing to void
+  if (!stripeInvoiceId) return;
 
   const connectedAccountId = (profile as Record<string, unknown> | null)?.stripe_connect_account_id as string | null;
   if (!connectedAccountId) return;
@@ -242,6 +221,6 @@ export async function voidStripeInvoice(
   try {
     await stripe.invoices.voidInvoice(stripeInvoiceId, undefined, { stripeAccount: connectedAccountId });
   } catch {
-    // Silently ignore — invoice may already be voided, paid, or deleted
+    // Silently ignore
   }
 }

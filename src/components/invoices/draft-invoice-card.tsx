@@ -349,15 +349,22 @@ export function DraftInvoiceCard({ projectName, invoice, items, priceBook, proje
     }
     setSaving(true);
     try {
-      // Save the invoice first (with "sent" status)
+      // Save the invoice first (line items + totals persisted before sending)
       await handleSave("sent");
 
-      // Finalize + send via Stripe
+      // Finalize + send via Stripe — returns the hosted invoice URL
       const res = await fetch(`/api/invoices/${invoice.id}/send-stripe`, { method: "POST" });
-      const j = (await res.json().catch(() => ({}))) as { error?: string };
+      const j = (await res.json().catch(() => ({}))) as { error?: string; hosted_url?: string };
       if (!res.ok) throw new Error(j.error ?? "Stripe send failed");
 
-      toast.success("Invoice sent via Stripe — your client will receive an email shortly.");
+      toast.success("Invoice sent via Stripe — your client will receive an email.");
+
+      // Update local state with the hosted URL and open it in a new tab
+      if (j.hosted_url) {
+        setStripeHostedUrl(j.hosted_url);
+        window.open(j.hosted_url, "_blank", "noopener,noreferrer");
+      }
+
       router.refresh();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to send via Stripe");
@@ -671,12 +678,21 @@ export function DraftInvoiceCard({ projectName, invoice, items, priceBook, proje
                 <span>{ti.grandTotal}</span>
                 <span className="font-mono">{fmt(total)}</span>
               </div>
-              {/* Auto-tax toggle */}
+              {/* Auto-tax toggle — requires complete project address */}
               <label className="flex items-center gap-2 pt-1 cursor-pointer select-none">
                 <input
                   type="checkbox"
                   checked={automaticTaxEnabled}
-                  onChange={(e) => setAutomaticTaxEnabled(e.target.checked)}
+                  onChange={(e) => {
+                    if (e.target.checked) {
+                      const hasAddress = project.address && project.city && project.state && project.zip;
+                      if (!hasAddress) {
+                        toast.warning("Fill in the client's complete address (address, city, state, zip) in the Edit Project form before enabling auto-tax.");
+                        return; // prevent checking
+                      }
+                    }
+                    setAutomaticTaxEnabled(e.target.checked);
+                  }}
                   className="rounded border-slate-300 text-primary focus:ring-primary"
                 />
                 <span className="text-xs text-slate-500">Stripe auto-tax</span>
@@ -684,10 +700,10 @@ export function DraftInvoiceCard({ projectName, invoice, items, priceBook, proje
             </div>
           </div>
 
-          {/* Stripe payment link — shown ABOVE notes */}
-          {(stripeHostedUrl || paymentLinkUrl) && (
-            <div className="flex flex-col gap-1.5">
-              <Label className="text-xs text-slate-500">Stripe payment link</Label>
+          {/* Stripe payment link — ALWAYS visible above notes */}
+          <div className="flex flex-col gap-1.5">
+            <Label className="text-xs text-slate-500">Stripe payment link</Label>
+            {(stripeHostedUrl || paymentLinkUrl) ? (
               <div className="flex flex-wrap items-center gap-2">
                 <a
                   href={stripeHostedUrl || paymentLinkUrl}
@@ -710,8 +726,14 @@ export function DraftInvoiceCard({ projectName, invoice, items, priceBook, proje
                   Copy
                 </Button>
               </div>
-            </div>
-          )}
+            ) : (
+              <p className="text-xs text-slate-400 italic">
+                {profile?.stripe_connect_charges_enabled
+                  ? "Generated after sending via Stripe."
+                  : "Connect Stripe in Settings to generate a payment link."}
+              </p>
+            )}
+          </div>
 
           {/* Invoice Notes */}
           <div className="flex flex-col gap-1.5">
