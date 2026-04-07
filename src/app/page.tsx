@@ -25,6 +25,7 @@ const features = [
 
 export default function LandingPage() {
   const [loginOpen, setLoginOpen] = useState(false);
+  const [privacyOpen, setPrivacyOpen] = useState(false);
 
   return (
     <div className="min-h-dvh bg-slate-50 dark:bg-slate-950 flex flex-col">
@@ -55,13 +56,56 @@ export default function LandingPage() {
         </div>
       </header>
 
-      {/* ── Modal ───────────────────────────────────────────────────── */}
+      {/* ── Login Modal ─────────────────────────────────────────────── */}
       <Dialog open={loginOpen} onOpenChange={setLoginOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>Sign in to WorkSupp</DialogTitle>
           </DialogHeader>
           <LoginForm />
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Privacy Policy Modal ─────────────────────────────────────── */}
+      <Dialog open={privacyOpen} onOpenChange={setPrivacyOpen}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Privacy Policy for Worksupp</DialogTitle>
+          </DialogHeader>
+          <div className="text-sm text-slate-600 dark:text-slate-300 space-y-4 leading-relaxed">
+            <p className="text-xs text-slate-400 dark:text-slate-500">Effective Date: April 6, 2026</p>
+            <p>At Worksupp, accessible from https://worksupp.co, one of our main priorities is the privacy of our visitors. This Privacy Policy document contains types of information that is collected and recorded by Worksupp and how we use it.</p>
+
+            <h2 className="font-semibold text-slate-800 dark:text-white">Information We Collect</h2>
+            <p>We only ask for personal information when we truly need it to provide a service to you.</p>
+            <p><strong>Account Information:</strong> When you register, we may ask for your name and email address.</p>
+            <p><strong>Google User Data:</strong> If you choose to log in via Google, we collect your email address and basic profile information (such as your name and profile picture) to identify you and provide our services.</p>
+
+            <h2 className="font-semibold text-slate-800 dark:text-white">How We Use Your Information</h2>
+            <p>We use the information we collect in various ways, including to:</p>
+            <ul className="list-disc list-inside space-y-1 pl-2">
+              <li>Provide, operate, and maintain our website.</li>
+              <li>Improve, personalize, and expand our website.</li>
+              <li>Understand and analyze how you use our website.</li>
+              <li>Communicate with you, either directly or through one of our partners, for customer service or updates.</li>
+            </ul>
+
+            <h2 className="font-semibold text-slate-800 dark:text-white">Google API Disclosure</h2>
+            <p>Worksupp&apos;s use and transfer to any other app of information received from Google APIs will adhere to the <a href="https://developers.google.com/terms/api-services-user-data-policy" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Google API Services User Data Policy</a>, including the Limited Use requirements. We do not share your Google user data with third-party &quot;AI models&quot; or other external tools.</p>
+
+            <h2 className="font-semibold text-slate-800 dark:text-white">Data Storage and Security</h2>
+            <p>We retain collected information for as long as necessary to provide you with your requested service. What data we store, we&apos;ll protect within commercially acceptable means to prevent loss and theft, as well as unauthorized access, disclosure, copying, use, or modification.</p>
+
+            <h2 className="font-semibold text-slate-800 dark:text-white">Third-Party Privacy Policies</h2>
+            <p>Worksupp&apos;s Privacy Policy does not apply to other advertisers or websites. Thus, we are advising you to consult the respective Privacy Policies of these third-party servers for more detailed information.</p>
+
+            <h2 className="font-semibold text-slate-800 dark:text-white">Your Data Protection Rights</h2>
+            <p>You have the right to request copies of your personal data, request that we correct any information you believe is inaccurate, or request that we erase your personal data under certain conditions.</p>
+
+            <h2 className="font-semibold text-slate-800 dark:text-white">Contact Us</h2>
+            <p>If you have additional questions or require more information about our Privacy Policy, do not hesitate to contact us at:</p>
+            <p>Email: <a href="mailto:support@worksupp.co" className="text-primary hover:underline">support@worksupp.co</a></p>
+          </div>
         </DialogContent>
       </Dialog>
 
@@ -109,7 +153,10 @@ export default function LandingPage() {
         <a href="https://otterq.com/" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
           OtterQ
         </a>
-        {" "}· Built for the trades
+        {" "}· Built for the trades ·{" "}
+        <button onClick={() => setPrivacyOpen(true)} className="text-primary hover:underline">
+          Privacy Policy
+        </button>
       </footer>
     </div>
   );
