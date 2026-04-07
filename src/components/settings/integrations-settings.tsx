@@ -12,7 +12,16 @@ export function IntegrationsSettings({ profile }: { profile: Profile }) {
     null,
   );
   const [syncing, setSyncing] = React.useState(false);
+
+  // Local Stripe state — starts from server-rendered profile props
+  const [stripeAccountId, setStripeAccountId] = React.useState<string | null>(
+    profile.stripe_connect_account_id ?? null,
+  );
+  const [stripeChargesOk, setStripeChargesOk] = React.useState<boolean>(
+    !!(profile.stripe_connect_charges_enabled),
+  );
   const [stripeLoading, setStripeLoading] = React.useState(false);
+  const [stripeDisconnecting, setStripeDisconnecting] = React.useState(false);
 
   React.useEffect(() => {
     void fetch("/api/integrations/google")
@@ -57,8 +66,23 @@ export function IntegrationsSettings({ profile }: { profile: Profile }) {
     window.location.href = "/api/stripe-connect/connect";
   }
 
-  const connectId = profile.stripe_connect_account_id;
-  const chargesOk = profile.stripe_connect_charges_enabled;
+  async function disconnectStripe() {
+    setStripeDisconnecting(true);
+    try {
+      const res = await fetch("/api/stripe-connect/disconnect", { method: "DELETE" });
+      if (!res.ok) {
+        const j = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(j.error ?? "Failed to disconnect");
+      }
+      setStripeAccountId(null);
+      setStripeChargesOk(false);
+      toast.success("Stripe disconnected");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to disconnect Stripe");
+    } finally {
+      setStripeDisconnecting(false);
+    }
+  }
 
   return (
     <Card>
@@ -66,6 +90,7 @@ export function IntegrationsSettings({ profile }: { profile: Profile }) {
         <CardTitle>Integrations</CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-6">
+        {/* ── Google ── */}
         <div className="space-y-3">
           <div className="text-sm font-medium">Google (Calendar and Gmail)</div>
           <p className="text-sm text-slate-500 dark:text-slate-400">
@@ -93,32 +118,58 @@ export function IntegrationsSettings({ profile }: { profile: Profile }) {
           )}
         </div>
 
+        {/* ── Stripe ── */}
         <div className="space-y-3 border-t border-slate-200 dark:border-slate-800 pt-4">
           <div className="text-sm font-medium">Stripe Connect (client payments)</div>
           <p className="text-sm text-slate-500 dark:text-slate-400">
             Clients pay you on your own Stripe account (cards; optional ACH on invoices that enable it).
             This is separate from your ContractorOS subscription billing.
           </p>
-          <div className="text-sm text-slate-800 dark:text-slate-200">
-            {connectId ? (
-              <>
-                {chargesOk
-                  ? "Onboarding complete — you can create payment links on sent invoices."
-                  : "Finish Stripe onboarding to accept payments."}
-              </>
-            ) : (
-              "Not connected."
-            )}
-          </div>
-          <Button
-            type="button"
-            variant="secondary"
-            size="sm"
-            disabled={stripeLoading}
-            onClick={() => void connectStripe()}
-          >
-            {stripeLoading ? "Opening Stripe…" : connectId ? "Reconnect Stripe" : "Connect Stripe"}
-          </Button>
+
+          {stripeAccountId ? (
+            <div className="flex flex-col gap-2">
+              <div className="text-sm text-slate-800 dark:text-slate-200">
+                {stripeChargesOk
+                  ? "✓ Connected — your Stripe account is active and ready to accept payments."
+                  : "Connected, but Stripe onboarding is not complete. Finish setup to accept payments."}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  disabled={stripeLoading}
+                  onClick={() => void connectStripe()}
+                >
+                  {stripeLoading ? "Opening Stripe…" : "Reconnect Stripe"}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={stripeDisconnecting}
+                  onClick={() => void disconnectStripe()}
+                >
+                  {stripeDisconnecting ? "Disconnecting…" : "Disconnect Stripe"}
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-2">
+              <div className="text-sm text-slate-500 dark:text-slate-400">Not connected.</div>
+              <div>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  disabled={stripeLoading}
+                  onClick={() => void connectStripe()}
+                >
+                  {stripeLoading ? "Opening Stripe…" : "Connect Stripe"}
+                </Button>
+              </div>
+            </div>
+          )}
         </div>
       </CardContent>
     </Card>
