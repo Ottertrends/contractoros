@@ -22,7 +22,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -62,9 +61,6 @@ type ProfileRow = {
   company_name: string | null;
   phone: string | null;
   email: string | null;
-  default_alternate_payment_instructions?: string | null;
-  default_zelle_info?: string | null;
-  default_venmo_handle?: string | null;
   stripe_connect_account_id?: string | null;
   stripe_connect_charges_enabled?: boolean | null;
 };
@@ -87,20 +83,6 @@ function newRow(description = "", qty = "1", price = "0"): LineItemRow {
     unit_price: price,
     total: calcRowTotal(qty, price),
   };
-}
-
-function buildDefaultAltFromProfile(p: {
-  default_alternate_payment_instructions?: string | null;
-  default_zelle_info?: string | null;
-  default_venmo_handle?: string | null;
-}) {
-  const parts: string[] = [];
-  if (p.default_zelle_info?.trim()) parts.push(`Zelle: ${p.default_zelle_info.trim()}`);
-  if (p.default_venmo_handle?.trim()) parts.push(`Venmo: ${p.default_venmo_handle.trim()}`);
-  if (p.default_alternate_payment_instructions?.trim()) {
-    parts.push(p.default_alternate_payment_instructions.trim());
-  }
-  return parts.join("\n");
 }
 
 function statusVariant(s: InvoiceStatus) {
@@ -129,11 +111,8 @@ export function DraftInvoiceCard({ projectName, invoice, items, priceBook, proje
   const [taxRate, setTaxRate] = React.useState(
     invoice.tax_rate ? String(parseFloat(invoice.tax_rate)) : "0",
   );
-  const [alternateInstructions, setAlternateInstructions] = React.useState(
-    invoice.alternate_payment_instructions ?? "",
-  );
-  const [payWithAch, setPayWithAch] = React.useState(!!invoice.pay_with_ach_enabled);
   const [paymentLinkUrl, setPaymentLinkUrl] = React.useState(invoice.stripe_payment_link_url ?? "");
+  const [stripeHostedUrl, setStripeHostedUrl] = React.useState(invoice.stripe_hosted_url ?? "");
 
   const [gmailOpen, setGmailOpen] = React.useState(false);
   const [gmailTo, setGmailTo] = React.useState("");
@@ -176,7 +155,7 @@ export function DraftInvoiceCard({ projectName, invoice, items, priceBook, proje
     supabase
       .from("profiles")
       .select(
-        "company_name, phone, email, default_alternate_payment_instructions, default_zelle_info, default_venmo_handle, stripe_connect_account_id, stripe_connect_charges_enabled",
+        "company_name, phone, email, stripe_connect_account_id, stripe_connect_charges_enabled",
       )
       .eq("id", userId)
       .single()
@@ -210,14 +189,9 @@ export function DraftInvoiceCard({ projectName, invoice, items, priceBook, proje
   }, [userId]);
 
   React.useEffect(() => {
-    setAlternateInstructions(invoice.alternate_payment_instructions ?? "");
-    setPayWithAch(!!invoice.pay_with_ach_enabled);
     setPaymentLinkUrl(invoice.stripe_payment_link_url ?? "");
-  }, [
-    invoice.alternate_payment_instructions,
-    invoice.pay_with_ach_enabled,
-    invoice.stripe_payment_link_url,
-  ]);
+    setStripeHostedUrl(invoice.stripe_hosted_url ?? "");
+  }, [invoice.stripe_payment_link_url, invoice.stripe_hosted_url]);
 
   // ── Computed totals ──
   const subtotal = rows.reduce(
@@ -303,8 +277,6 @@ export function DraftInvoiceCard({ projectName, invoice, items, priceBook, proje
           tax_rate: String(parseFloat(taxRate) || 0),
           tax_amount: String(taxAmount),
           total: String(total),
-          alternate_payment_instructions: alternateInstructions.trim() || null,
-          pay_with_ach_enabled: payWithAch,
           updated_at: new Date().toISOString(),
         })
         .eq("id", invoice.id);
@@ -329,10 +301,19 @@ export function DraftInvoiceCard({ projectName, invoice, items, priceBook, proje
 
       if (overrideStatus) setStatus(overrideStatus);
 
-      if (finalStatus === "sent") {
-        const plRes = await fetch(`/api/invoices/${invoice.id}/payment-link`, { method: "POST" });
-        const plJson = (await plRes.json()) as { url?: string; error?: string };
-        if (plRes.ok && plJson.url) setPaymentLinkUrl(plJson.url);
+      // Auto-sync to Stripe Invoices API when total > 0 and Stripe is connected
+      if (total > 0 && profile?.stripe_connect_charges_enabled) {
+        try {
+          const syncRes = await fetch(`/api/invoices/${invoice.id}/sync-stripe`, { method: "POST" });
+          const syncJson = (await syncRes.json()) as { hosted_url?: string; error?: string };
+          if (syncRes.ok && syncJson.hosted_url) {
+            setStripeHostedUrl(syncJson.hosted_url);
+          } else if (syncJson.error) {
+            console.warn("[sync-stripe]", syncJson.error);
+          }
+        } catch {
+          // non-blocking — invoice is saved regardless
+        }
       }
 
       toast.success("Invoice saved");
@@ -466,8 +447,21 @@ export function DraftInvoiceCard({ projectName, invoice, items, priceBook, proje
                 <span className="text-xs font-mono text-slate-500">{invoice.invoice_number}</span>
               )}
             </div>
-            {/* Status selector inline */}
+            {/* Status selector + Stripe indicator */}
             <div className="flex items-center gap-2">
+              {profile?.stripe_connect_charges_enabled ? (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-800 shrink-0">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                  Stripe
+                </span>
+              ) : (
+                <a
+                  href="/dashboard/settings"
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium bg-slate-100 text-slate-500 border border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700 hover:border-primary/50 hover:text-primary transition-colors shrink-0"
+                >
+                  Stripe
+                </a>
+              )}
               <Select value={status} onValueChange={(v) => setStatus(v as InvoiceStatus)}>
                 <SelectTrigger className="h-8 text-xs w-36">
                   <SelectValue />
@@ -648,81 +642,34 @@ export function DraftInvoiceCard({ projectName, invoice, items, priceBook, proje
             />
           </div>
 
-          {/* Lower-fee / alternate payments + Stripe ACH */}
-          <div className="flex flex-col gap-3 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/30 px-4 py-4">
-            <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-              Payment options on PDF
+          {/* Stripe payment link */}
+          {(stripeHostedUrl || paymentLinkUrl) && (
+            <div className="flex flex-col gap-1.5">
+              <Label className="text-xs text-slate-500">Stripe payment link</Label>
+              <div className="flex flex-wrap items-center gap-2">
+                <a
+                  href={stripeHostedUrl || paymentLinkUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-sm text-primary break-all underline"
+                >
+                  {stripeHostedUrl || paymentLinkUrl}
+                </a>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="shrink-0"
+                  onClick={() => {
+                    void navigator.clipboard.writeText(stripeHostedUrl || paymentLinkUrl);
+                    toast.success("Link copied");
+                  }}
+                >
+                  Copy
+                </Button>
+              </div>
             </div>
-            <div className="flex flex-col gap-2">
-              <div className="flex items-center justify-between gap-3 flex-wrap">
-                <Label className="text-xs text-slate-500">Zelle, Venmo, bank transfer, etc.</Label>
-                {profile && (
-                  <button
-                    type="button"
-                    className="text-xs text-primary hover:underline"
-                    onClick={() => setAlternateInstructions(buildDefaultAltFromProfile(profile))}
-                  >
-                    Fill from Settings defaults
-                  </button>
-                )}
-              </div>
-              <Textarea
-                value={alternateInstructions}
-                onChange={(e) => setAlternateInstructions(e.target.value)}
-                placeholder="e.g. Zelle: …  Venmo: …  ACH: …"
-                rows={3}
-                className="text-sm"
-              />
-            </div>
-            <label className="flex items-start gap-3 cursor-pointer">
-              <Checkbox
-                checked={payWithAch}
-                onCheckedChange={(c) => setPayWithAch(!!c)}
-                className="mt-0.5"
-              />
-              <div>
-                <div className="text-sm font-medium">Offer ACH (US bank) on Stripe link</div>
-                <div className="text-xs text-slate-500">
-                  Lower fees than cards when your Connect account supports it. Save as Sent, then we create
-                  the payment link with this option.
-                </div>
-              </div>
-            </label>
-            {paymentLinkUrl && (
-              <div className="flex flex-col gap-1">
-                <div className="text-xs font-medium text-slate-600 dark:text-slate-300">Pay online</div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <a
-                    href={paymentLinkUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-sm text-primary break-all underline"
-                  >
-                    {paymentLinkUrl}
-                  </a>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="shrink-0"
-                    onClick={() => {
-                      void navigator.clipboard.writeText(paymentLinkUrl);
-                      toast.success("Link copied");
-                    }}
-                  >
-                    Copy
-                  </Button>
-                </div>
-              </div>
-            )}
-            {status === "sent" &&
-              profile?.stripe_connect_account_id &&
-              !profile.stripe_connect_charges_enabled && (
-                <p className="text-xs text-amber-700 dark:text-amber-300">
-                  Complete Stripe Connect in Settings to generate a client payment link.
-                </p>
-              )}
-          </div>
+          )}
 
           {/* Action bar */}
           <div className="flex items-center justify-between gap-3 pt-2 border-t border-slate-200 dark:border-slate-800 flex-wrap">
@@ -747,8 +694,8 @@ export function DraftInvoiceCard({ projectName, invoice, items, priceBook, proje
                   unit_price: r.unit_price,
                   total: r.total,
                 }))}
-                stripePaymentLinkUrl={paymentLinkUrl || null}
-                alternatePaymentInstructions={alternateInstructions.trim() || null}
+                stripePaymentLinkUrl={stripeHostedUrl || paymentLinkUrl || null}
+                alternatePaymentInstructions={null}
               />
               {status === "sent" && (
                 <Dialog open={gmailOpen} onOpenChange={setGmailOpen}>
