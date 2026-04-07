@@ -22,6 +22,7 @@ import { Textarea } from "@/components/ui/textarea";
 const projectSchema = z.object({
   name: z.string().min(1, "Project name is required"),
   client_name: z.string().optional().nullable(),
+  client_email: z.string().email("Invalid email").optional().nullable().or(z.literal("")),
   address: z.string().optional().nullable(),
   city: z.string().optional().nullable(),
   state: z.string().optional().nullable(),
@@ -83,13 +84,15 @@ export function ProjectForm({
     return clients.filter(
       (c) =>
         c.client_name.toLowerCase().includes(lower) ||
-        (c.address ?? "").toLowerCase().includes(lower),
+        (c.address ?? "").toLowerCase().includes(lower) ||
+        (c.email ?? "").toLowerCase().includes(lower),
     );
   }, [clients, clientSearch]);
 
   const defaultValues: FormValues = {
     name: project?.name ?? "",
     client_name: project?.client_name ?? null,
+    client_email: project?.client_email ?? null,
     address: project?.address ?? null,
     city: project?.city ?? null,
     state: project?.state ?? null,
@@ -121,10 +124,13 @@ export function ProjectForm({
       const city = normalizeNullable(values.city);
       const state = normalizeNullable(values.state);
       const quoted_amount = normalizeNullable(values.quoted_amount);
+      const clientEmail = normalizeNullable(values.client_email);
+      const clientName = normalizeNullable(values.client_name);
 
       const payload = {
         name: values.name.trim(),
-        client_name: normalizeNullable(values.client_name),
+        client_name: clientName,
+        client_email: clientEmail,
         address: normalizeNullable(values.address),
         city,
         state,
@@ -147,11 +153,10 @@ export function ProjectForm({
         if (error) throw error;
 
         // Auto-save client — deduplicate by address (if provided) or by name
-        const clientName = payload.client_name;
-        const clientAddress = payload.address;
         if (clientName) {
           void (async () => {
             try {
+              const clientAddress = payload.address;
               if (clientAddress) {
                 // Address-based dedup: find any client with same address
                 const { data: byAddr } = await supabase
@@ -161,8 +166,11 @@ export function ProjectForm({
                   .eq("address", clientAddress)
                   .maybeSingle();
                 if (byAddr) {
-                  // Update existing record (name may have changed)
-                  await supabase.from("clients").update({ client_name: clientName }).eq("id", byAddr.id);
+                  // Update existing record (name + email may have changed)
+                  await supabase.from("clients").update({
+                    client_name: clientName,
+                    ...(clientEmail ? { email: clientEmail } : {}),
+                  }).eq("id", byAddr.id);
                 } else {
                   // New address — check if the same name exists to avoid duplicate names
                   const { data: sameNameRows } = await supabase
@@ -179,6 +187,7 @@ export function ProjectForm({
                     city: normalizeNullable(values.city),
                     state: normalizeNullable(values.state),
                     zip: normalizeNullable(values.zip),
+                    ...(clientEmail ? { email: clientEmail } : {}),
                   });
                 }
               } else {
@@ -189,8 +198,16 @@ export function ProjectForm({
                   .eq("user_id", userId)
                   .eq("client_name", clientName)
                   .maybeSingle();
-                if (!byName) {
-                  await supabase.from("clients").insert({ user_id: userId, client_name: clientName });
+                if (byName) {
+                  if (clientEmail) {
+                    await supabase.from("clients").update({ email: clientEmail }).eq("id", byName.id);
+                  }
+                } else {
+                  await supabase.from("clients").insert({
+                    user_id: userId,
+                    client_name: clientName,
+                    ...(clientEmail ? { email: clientEmail } : {}),
+                  });
                 }
               }
             } catch { /* silent — don't block project creation */ }
@@ -207,6 +224,16 @@ export function ProjectForm({
           .eq("id", project.id);
 
         if (error) throw error;
+
+        // Sync email back to the clients record (by matching client_name)
+        if (clientName && clientEmail) {
+          void supabase
+            .from("clients")
+            .update({ email: clientEmail })
+            .eq("user_id", userId)
+            .eq("client_name", clientName);
+        }
+
         toast.success("Project saved");
         router.refresh();
       }
@@ -274,73 +301,93 @@ export function ProjectForm({
             </div>
           </div>
 
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="client_name">{tp.clientName}</Label>
-            {/* Client name input + inline "Select" button */}
-            <div className="relative flex gap-2 items-start">
-              <div className="flex-1">
-                <Input id="client_name" {...register("client_name")} placeholder="Client name" />
+          {/* Client Name + Email */}
+          <div className="flex flex-col gap-3">
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="client_name">{tp.clientName}</Label>
+              {/* Client name input + inline "Select" button */}
+              <div className="relative flex gap-2 items-start">
+                <div className="flex-1">
+                  <Input id="client_name" {...register("client_name")} placeholder="Client name" />
+                </div>
+                {clients.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setClientPickerOpen((o) => !o)}
+                    className="shrink-0 h-10 px-3 rounded-md border border-slate-200 dark:border-slate-700 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 whitespace-nowrap transition-colors"
+                  >
+                    {clientPickerOpen ? "✕ Close" : "📋 Saved clients"}
+                  </button>
+                )}
               </div>
-              {clients.length > 0 && (
-                <button
-                  type="button"
-                  onClick={() => setClientPickerOpen((o) => !o)}
-                  className="shrink-0 h-10 px-3 rounded-md border border-slate-200 dark:border-slate-700 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 whitespace-nowrap transition-colors"
-                >
-                  {clientPickerOpen ? "✕ Close" : "📋 Saved clients"}
-                </button>
+              <p className="text-xs text-slate-400">Display name used in invoices and Stripe billing</p>
+
+              {clientPickerOpen && (
+                <div className="border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-950 shadow-sm overflow-hidden">
+                  <div className="p-2 border-b border-slate-100 dark:border-slate-800">
+                    <input
+                      autoFocus
+                      value={clientSearch}
+                      onChange={(e) => setClientSearch(e.target.value)}
+                      placeholder="Search clients…"
+                      className="flex h-8 w-full rounded-md border border-slate-200 bg-white px-3 py-1 text-sm placeholder:text-slate-400 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                    />
+                  </div>
+                  <div className="max-h-48 overflow-y-auto">
+                    {filteredClients.length === 0 ? (
+                      <div className="p-3 text-sm text-slate-400 text-center">No clients found</div>
+                    ) : (
+                      filteredClients.map((c) => (
+                        <button
+                          key={c.id}
+                          type="button"
+                          onClick={() => {
+                            setValue("client_name", c.client_name, { shouldDirty: true });
+                            setValue("client_email", c.email ?? "", { shouldDirty: true });
+                            if (c.address) setValue("address", c.address, { shouldDirty: true });
+                            if (c.city) setValue("city", c.city, { shouldDirty: true });
+                            if (c.state) setValue("state", c.state, { shouldDirty: true });
+                            if (c.zip) setValue("zip", c.zip, { shouldDirty: true });
+                            setClientPickerOpen(false);
+                            setClientSearch("");
+                          }}
+                          className="w-full flex items-start gap-3 px-3 py-2.5 text-left hover:bg-slate-50 dark:hover:bg-slate-900 border-b border-slate-50 dark:border-slate-800 last:border-0"
+                        >
+                          <div className="min-w-0 flex-1">
+                            <div className="text-sm font-medium text-slate-900 dark:text-slate-50">
+                              {c.client_name}
+                            </div>
+                            {(c.address || c.city) && (
+                              <div className="text-xs text-slate-400 truncate">
+                                {[c.address, c.city, c.state, c.zip].filter(Boolean).join(", ")}
+                              </div>
+                            )}
+                            {c.email && (
+                              <div className="text-xs text-slate-400 truncate">{c.email}</div>
+                            )}
+                          </div>
+                          {c.phone && (
+                            <div className="ml-auto shrink-0 text-xs text-slate-400">{c.phone}</div>
+                          )}
+                        </button>
+                      ))
+                    )}
+                  </div>
+                </div>
               )}
             </div>
 
-            {clientPickerOpen && (
-              <div className="border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-950 shadow-sm overflow-hidden">
-                <div className="p-2 border-b border-slate-100 dark:border-slate-800">
-                  <input
-                    autoFocus
-                    value={clientSearch}
-                    onChange={(e) => setClientSearch(e.target.value)}
-                    placeholder="Search clients…"
-                    className="flex h-8 w-full rounded-md border border-slate-200 bg-white px-3 py-1 text-sm placeholder:text-slate-400 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
-                  />
-                </div>
-                <div className="max-h-48 overflow-y-auto">
-                  {filteredClients.length === 0 ? (
-                    <div className="p-3 text-sm text-slate-400 text-center">No clients found</div>
-                  ) : (
-                    filteredClients.map((c) => (
-                      <button
-                        key={c.id}
-                        type="button"
-                        onClick={() => {
-                          setValue("client_name", c.client_name, { shouldDirty: true });
-                          if (c.address) setValue("address", c.address, { shouldDirty: true });
-                          if (c.city) setValue("city", c.city, { shouldDirty: true });
-                          if (c.state) setValue("state", c.state, { shouldDirty: true });
-                          if (c.zip) setValue("zip", c.zip, { shouldDirty: true });
-                          setClientPickerOpen(false);
-                          setClientSearch("");
-                        }}
-                        className="w-full flex items-start gap-3 px-3 py-2.5 text-left hover:bg-slate-50 dark:hover:bg-slate-900 border-b border-slate-50 dark:border-slate-800 last:border-0"
-                      >
-                        <div className="min-w-0 flex-1">
-                          <div className="text-sm font-medium text-slate-900 dark:text-slate-50">
-                            {c.client_name}
-                          </div>
-                          {(c.address || c.city) && (
-                            <div className="text-xs text-slate-400 truncate">
-                              {[c.address, c.city, c.state, c.zip].filter(Boolean).join(", ")}
-                            </div>
-                          )}
-                        </div>
-                        {c.phone && (
-                          <div className="ml-auto shrink-0 text-xs text-slate-400">{c.phone}</div>
-                        )}
-                      </button>
-                    ))
-                  )}
-                </div>
-              </div>
-            )}
+            {/* Client Email */}
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="client_email">Client Email</Label>
+              <Input
+                id="client_email"
+                type="email"
+                {...register("client_email")}
+                placeholder="client@email.com"
+              />
+              <p className="text-xs text-slate-400">Used to send Stripe invoices directly to your client</p>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

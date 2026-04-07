@@ -66,6 +66,7 @@ export interface Project {
   user_id: string;
   name: string;
   client_name: string | null;
+  client_email?: string | null;
   location: string | null;
   address: string | null;
   city: string | null;

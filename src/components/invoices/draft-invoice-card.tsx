@@ -4,7 +4,7 @@ import * as React from "react";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Trash2, Plus, BookOpen, X, Mail } from "lucide-react";
+import { Trash2, Plus, BookOpen, X, Mail, Send } from "lucide-react";
 
 import { supabase } from "@/lib/supabase/client";
 import { useLanguage } from "@/lib/i18n/client";
@@ -111,11 +111,15 @@ export function DraftInvoiceCard({ projectName, invoice, items, priceBook, proje
   const [taxRate, setTaxRate] = React.useState(
     invoice.tax_rate ? String(parseFloat(invoice.tax_rate)) : "0",
   );
+  const [automaticTaxEnabled, setAutomaticTaxEnabled] = React.useState(
+    !!(invoice.automatic_tax_enabled),
+  );
   const [paymentLinkUrl, setPaymentLinkUrl] = React.useState(invoice.stripe_payment_link_url ?? "");
   const [stripeHostedUrl, setStripeHostedUrl] = React.useState(invoice.stripe_hosted_url ?? "");
 
+  // Gmail dialog state — pre-fill with client email from project
   const [gmailOpen, setGmailOpen] = React.useState(false);
-  const [gmailTo, setGmailTo] = React.useState("");
+  const [gmailTo, setGmailTo] = React.useState(project.client_email ?? "");
   const [gmailMessage, setGmailMessage] = React.useState("Please find your invoice attached.");
   const [gmailSending, setGmailSending] = React.useState(false);
 
@@ -277,6 +281,7 @@ export function DraftInvoiceCard({ projectName, invoice, items, priceBook, proje
           tax_rate: String(parseFloat(taxRate) || 0),
           tax_amount: String(taxAmount),
           total: String(total),
+          automatic_tax_enabled: automaticTaxEnabled,
           updated_at: new Date().toISOString(),
         })
         .eq("id", invoice.id);
@@ -301,19 +306,29 @@ export function DraftInvoiceCard({ projectName, invoice, items, priceBook, proje
 
       if (overrideStatus) setStatus(overrideStatus);
 
-      // Auto-sync to Stripe Invoices API when total > 0 and Stripe is connected
-      if (total > 0 && profile?.stripe_connect_charges_enabled) {
-        try {
-          const syncRes = await fetch(`/api/invoices/${invoice.id}/sync-stripe`, { method: "POST" });
-          const syncJson = (await syncRes.json()) as { hosted_url?: string; error?: string };
-          if (syncRes.ok && syncJson.hosted_url) {
-            setStripeHostedUrl(syncJson.hosted_url);
-          } else if (syncJson.error) {
-            console.warn("[sync-stripe]", syncJson.error);
+      // Auto-sync to Stripe as DRAFT when total > 0 and Stripe is connected
+      if (total > 0 && profile?.stripe_connect_charges_enabled && finalStatus !== "cancelled") {
+        // Guard: auto-tax requires project address
+        if (automaticTaxEnabled && !project.address) {
+          toast.warning("Add an address to the project to enable auto-tax on Stripe.");
+        } else {
+          try {
+            const syncRes = await fetch(`/api/invoices/${invoice.id}/sync-stripe`, { method: "POST" });
+            const syncJson = (await syncRes.json()) as { hosted_url?: string; error?: string };
+            if (syncRes.ok && syncJson.hosted_url) {
+              setStripeHostedUrl(syncJson.hosted_url);
+            } else if (syncJson.error) {
+              console.warn("[sync-stripe]", syncJson.error);
+            }
+          } catch {
+            // non-blocking — invoice is saved regardless
           }
-        } catch {
-          // non-blocking — invoice is saved regardless
         }
+      }
+
+      // Void Stripe invoice if cancelling
+      if (finalStatus === "cancelled" && invoice.stripe_invoice_id) {
+        fetch(`/api/invoices/${invoice.id}/cancel-stripe`, { method: "POST" }).catch(() => {});
       }
 
       toast.success("Invoice saved");
@@ -324,6 +339,34 @@ export function DraftInvoiceCard({ projectName, invoice, items, priceBook, proje
       setSaving(false);
     }
   }
+
+  // ── Send Via Stripe ──
+
+  async function handleSendViaStripe() {
+    if (!project.client_email) {
+      toast.error("Add a client email to the project before sending via Stripe.");
+      return;
+    }
+    setSaving(true);
+    try {
+      // Save the invoice first (with "sent" status)
+      await handleSave("sent");
+
+      // Finalize + send via Stripe
+      const res = await fetch(`/api/invoices/${invoice.id}/send-stripe`, { method: "POST" });
+      const j = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) throw new Error(j.error ?? "Stripe send failed");
+
+      toast.success("Invoice sent via Stripe — your client will receive an email shortly.");
+      router.refresh();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to send via Stripe");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  // ── Send Via Gmail ──
 
   async function sendGmail() {
     if (!gmailTo.trim()) {
@@ -341,6 +384,8 @@ export function DraftInvoiceCard({ projectName, invoice, items, priceBook, proje
       if (!res.ok) throw new Error(j.error ?? "Send failed");
       toast.success("Sent via Gmail");
       setGmailOpen(false);
+      // Flip status to "sent"
+      await handleSave("sent");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to send");
     } finally {
@@ -626,23 +671,20 @@ export function DraftInvoiceCard({ projectName, invoice, items, priceBook, proje
                 <span>{ti.grandTotal}</span>
                 <span className="font-mono">{fmt(total)}</span>
               </div>
+              {/* Auto-tax toggle */}
+              <label className="flex items-center gap-2 pt-1 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={automaticTaxEnabled}
+                  onChange={(e) => setAutomaticTaxEnabled(e.target.checked)}
+                  className="rounded border-slate-300 text-primary focus:ring-primary"
+                />
+                <span className="text-xs text-slate-500">Stripe auto-tax</span>
+              </label>
             </div>
           </div>
 
-          {/* Invoice Notes */}
-          <div className="flex flex-col gap-1.5">
-            <Label className="text-xs text-slate-500">
-              {t.projects.notes}
-            </Label>
-            <Textarea
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              placeholder="Notes visible on the invoice PDF…"
-              rows={2}
-            />
-          </div>
-
-          {/* Stripe payment link */}
+          {/* Stripe payment link — shown ABOVE notes */}
           {(stripeHostedUrl || paymentLinkUrl) && (
             <div className="flex flex-col gap-1.5">
               <Label className="text-xs text-slate-500">Stripe payment link</Label>
@@ -671,9 +713,23 @@ export function DraftInvoiceCard({ projectName, invoice, items, priceBook, proje
             </div>
           )}
 
+          {/* Invoice Notes */}
+          <div className="flex flex-col gap-1.5">
+            <Label className="text-xs text-slate-500">
+              {t.projects.notes}
+            </Label>
+            <Textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="Notes visible on the invoice PDF…"
+              rows={2}
+            />
+          </div>
+
           {/* Action bar */}
           <div className="flex items-center justify-between gap-3 pt-2 border-t border-slate-200 dark:border-slate-800 flex-wrap">
             <div className="flex items-center gap-2 flex-wrap">
+              {/* Export PDF — always visible */}
               <PdfExportButton
                 invoice={{
                   invoice_number: invoice.invoice_number,
@@ -697,73 +753,73 @@ export function DraftInvoiceCard({ projectName, invoice, items, priceBook, proje
                 stripePaymentLinkUrl={stripeHostedUrl || paymentLinkUrl || null}
                 alternatePaymentInstructions={null}
               />
-              {status === "sent" && (
-                <Dialog open={gmailOpen} onOpenChange={setGmailOpen}>
-                  <DialogTrigger asChild>
-                    <Button type="button" variant="outline" size="sm" className="gap-1.5">
-                      <Mail className="w-3.5 h-3.5" />
-                      Send via Gmail
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent>
-                    <DialogHeader>
-                      <DialogTitle>Send invoice PDF</DialogTitle>
-                    </DialogHeader>
-                    <div className="flex flex-col gap-3 py-2">
-                      <div className="flex flex-col gap-1.5">
-                        <Label htmlFor="gmail-to">To</Label>
-                        <Input
-                          id="gmail-to"
-                          type="email"
-                          value={gmailTo}
-                          onChange={(e) => setGmailTo(e.target.value)}
-                          placeholder="client@email.com"
-                        />
-                      </div>
-                      <div className="flex flex-col gap-1.5">
-                        <Label htmlFor="gmail-msg">Message</Label>
-                        <Textarea
-                          id="gmail-msg"
-                          value={gmailMessage}
-                          onChange={(e) => setGmailMessage(e.target.value)}
-                          rows={3}
-                        />
-                      </div>
-                    </div>
-                    <DialogFooter>
-                      <Button type="button" variant="secondary" onClick={() => setGmailOpen(false)}>
-                        Cancel
-                      </Button>
-                      <Button type="button" disabled={gmailSending} onClick={() => void sendGmail()}>
-                        {gmailSending ? "Sending…" : "Send"}
-                      </Button>
-                    </DialogFooter>
-                  </DialogContent>
-                </Dialog>
-              )}
+
+              {/* Draft-only: Send Via Stripe + Send Via Email */}
               {status === "draft" && (
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => void handleSave("sent")}
-                  disabled={saving}
-                >
-                  {ti.markAsSent}
-                </Button>
-              )}
-              {status === "sent" && (
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => void handleSave("paid")}
-                  disabled={saving}
-                >
-                  {ti.markAsPaid}
-                </Button>
+                <>
+                  {/* Send Via Stripe — only if Stripe is connected */}
+                  {profile?.stripe_connect_charges_enabled && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="gap-1.5"
+                      onClick={() => void handleSendViaStripe()}
+                      disabled={saving}
+                    >
+                      <Send className="w-3.5 h-3.5" />
+                      Send Via Stripe
+                    </Button>
+                  )}
+
+                  {/* Send Via Email (Gmail) */}
+                  <Dialog open={gmailOpen} onOpenChange={setGmailOpen}>
+                    <DialogTrigger asChild>
+                      <Button type="button" variant="outline" size="sm" className="gap-1.5">
+                        <Mail className="w-3.5 h-3.5" />
+                        Send Via Email
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent>
+                      <DialogHeader>
+                        <DialogTitle>Send invoice PDF</DialogTitle>
+                      </DialogHeader>
+                      <div className="flex flex-col gap-3 py-2">
+                        <div className="flex flex-col gap-1.5">
+                          <Label htmlFor="gmail-to">To</Label>
+                          <Input
+                            id="gmail-to"
+                            type="email"
+                            value={gmailTo}
+                            onChange={(e) => setGmailTo(e.target.value)}
+                            placeholder="client@email.com"
+                          />
+                        </div>
+                        <div className="flex flex-col gap-1.5">
+                          <Label htmlFor="gmail-msg">Message</Label>
+                          <Textarea
+                            id="gmail-msg"
+                            value={gmailMessage}
+                            onChange={(e) => setGmailMessage(e.target.value)}
+                            rows={3}
+                          />
+                        </div>
+                      </div>
+                      <DialogFooter>
+                        <Button type="button" variant="secondary" onClick={() => setGmailOpen(false)}>
+                          Cancel
+                        </Button>
+                        <Button type="button" disabled={gmailSending} onClick={() => void sendGmail()}>
+                          {gmailSending ? "Sending…" : "Send"}
+                        </Button>
+                      </DialogFooter>
+                    </DialogContent>
+                  </Dialog>
+                </>
               )}
             </div>
+
+            {/* Save Invoice — always visible */}
             <Button
               type="button"
               onClick={() => void handleSave()}
