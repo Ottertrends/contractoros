@@ -528,12 +528,8 @@ export function DraftInvoiceCard({
         params.push(`subject=${encodeURIComponent(subject)}`);
         params.push(`body=${encodeURIComponent(body)}`);
         mailtoUrl += `?${params.join("&")}`;
-        // Open mail client via hidden anchor
-        const a = document.createElement("a");
-        a.href = mailtoUrl;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
+        // window.location.href is the most reliable cross-browser way to trigger mailto:
+        window.location.href = mailtoUrl;
         // Update status to "sent"
         await supabase.from("invoices").update({ status: "sent", updated_at: new Date().toISOString() }).eq("id", invoice.id);
         setStatus("sent");
@@ -700,16 +696,22 @@ export function DraftInvoiceCard({
                   {project.client_email}
                 </div>
               </div>
-              <div>
-                <label className="text-xs font-medium text-slate-500 block mb-1">CC (optional)</label>
-                <input
-                  type="email"
-                  value={sendDialogCc}
-                  onChange={(e) => setSendDialogCc(e.target.value)}
-                  placeholder="cc@example.com"
-                  className="flex h-9 w-full rounded-md border border-slate-200 bg-white px-3 py-1 text-sm placeholder:text-slate-400 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
-                />
-              </div>
+              {sendDialogMode === "stripe" ? (
+                <p className="text-xs text-slate-400 italic">
+                  Stripe sends directly to your client&apos;s email. CC recipients are not supported for Stripe sends — use &ldquo;Send Via Email&rdquo; if you need to CC someone.
+                </p>
+              ) : (
+                <div>
+                  <label className="text-xs font-medium text-slate-500 block mb-1">CC (optional)</label>
+                  <input
+                    type="email"
+                    value={sendDialogCc}
+                    onChange={(e) => setSendDialogCc(e.target.value)}
+                    placeholder="cc@example.com"
+                    className="flex h-9 w-full rounded-md border border-slate-200 bg-white px-3 py-1 text-sm placeholder:text-slate-400 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                  />
+                </div>
+              )}
             </div>
             <div className="flex items-center justify-end gap-3">
               <Button
@@ -790,6 +792,7 @@ export function DraftInvoiceCard({
                 <SelectContent>
                   <SelectItem value="draft">Draft</SelectItem>
                   <SelectItem value="open">Open</SelectItem>
+                  <SelectItem value="sent">Sent</SelectItem>
                   <SelectItem value="paid">Paid</SelectItem>
                   <SelectItem value="void">Void</SelectItem>
                   <SelectItem value="uncollectible">Uncollectible</SelectItem>

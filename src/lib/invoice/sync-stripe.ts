@@ -64,25 +64,51 @@ export async function syncToStripe(
     throw new Error("Address required on the project when auto-tax is enabled");
   }
 
-  // 5. Resolve client email + name from project
+  // 5. Resolve client fields from project
   const clientEmail = (project as Record<string, unknown> | null)?.client_email as string | null | undefined || undefined;
   const clientName = (project as Record<string, unknown> | null)?.client_name as string | null | undefined || undefined;
+  const clientAddress = (project as Record<string, unknown> | null)?.address as string | null | undefined || undefined;
+  const clientCity   = (project as Record<string, unknown> | null)?.city   as string | null | undefined || undefined;
+  const clientState  = (project as Record<string, unknown> | null)?.state  as string | null | undefined || undefined;
+  const clientZip    = (project as Record<string, unknown> | null)?.zip    as string | null | undefined || undefined;
+
+  // Build Stripe address object — required for automatic_tax to calculate rates
+  const stripeAddress = clientAddress
+    ? {
+        line1: clientAddress,
+        city: clientCity || undefined,
+        state: clientState || undefined,
+        postal_code: clientZip || undefined,
+        country: "US",
+      }
+    : undefined;
 
   const stripe = getStripe();
   const stripeOptions = { stripeAccount: connectedAccountId };
 
   // 6. Upsert Stripe Customer — always required by Stripe's invoiceItems.create.
-  //    Look up by email when available; otherwise create by name or metadata only.
+  //    Always create fresh (since we void old Stripe invoices on re-sync anyway).
+  //    Pass address so Stripe automatic_tax can determine the correct rates.
   let stripeCustomerId: string;
   if (clientEmail) {
     const existing = await stripe.customers.list({ email: clientEmail, limit: 1 }, stripeOptions);
     if (existing.data.length > 0) {
-      stripeCustomerId = existing.data[0].id;
+      // Update existing customer with latest name + address
+      const updated = await stripe.customers.update(
+        existing.data[0].id,
+        {
+          name: clientName ?? undefined,
+          address: stripeAddress ?? null,
+        },
+        stripeOptions,
+      );
+      stripeCustomerId = updated.id;
     } else {
       const customer = await stripe.customers.create(
         {
           email: clientEmail,
           name: clientName ?? undefined,
+          address: stripeAddress,
           metadata: { worksupp_user_id: userId },
         },
         stripeOptions,
@@ -90,10 +116,11 @@ export async function syncToStripe(
       stripeCustomerId = customer.id;
     }
   } else {
-    // No email — create a customer with name/metadata only so invoice items can be attached
+    // No email — create a customer with name + address so invoice items can be attached
     const customer = await stripe.customers.create(
       {
         name: clientName ?? "Client",
+        address: stripeAddress,
         metadata: { worksupp_user_id: userId },
       },
       stripeOptions,
