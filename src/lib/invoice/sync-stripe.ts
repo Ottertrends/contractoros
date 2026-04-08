@@ -64,14 +64,16 @@ export async function syncToStripe(
     throw new Error("Address required on the project when auto-tax is enabled");
   }
 
-  // 5. Resolve client email directly from project.client_email
+  // 5. Resolve client email + name from project
   const clientEmail = (project as Record<string, unknown> | null)?.client_email as string | null | undefined || undefined;
+  const clientName = (project as Record<string, unknown> | null)?.client_name as string | null | undefined || undefined;
 
   const stripe = getStripe();
   const stripeOptions = { stripeAccount: connectedAccountId };
 
-  // 6. Upsert Stripe Customer (idempotent via email lookup)
-  let stripeCustomerId: string | undefined;
+  // 6. Upsert Stripe Customer — always required by Stripe's invoiceItems.create.
+  //    Look up by email when available; otherwise create by name or metadata only.
+  let stripeCustomerId: string;
   if (clientEmail) {
     const existing = await stripe.customers.list({ email: clientEmail, limit: 1 }, stripeOptions);
     if (existing.data.length > 0) {
@@ -80,13 +82,23 @@ export async function syncToStripe(
       const customer = await stripe.customers.create(
         {
           email: clientEmail,
-          name: (project as Record<string, unknown> | null)?.client_name as string | undefined ?? undefined,
+          name: clientName ?? undefined,
           metadata: { worksupp_user_id: userId },
         },
         stripeOptions,
       );
       stripeCustomerId = customer.id;
     }
+  } else {
+    // No email — create a customer with name/metadata only so invoice items can be attached
+    const customer = await stripe.customers.create(
+      {
+        name: clientName ?? "Client",
+        metadata: { worksupp_user_id: userId },
+      },
+      stripeOptions,
+    );
+    stripeCustomerId = customer.id;
   }
 
   // 7. If re-syncing, void the old Stripe invoice first
@@ -127,7 +139,7 @@ export async function syncToStripe(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await (stripe.invoiceItems.create as any)(
       {
-        ...(stripeCustomerId ? { customer: stripeCustomerId } : {}),
+        customer: stripeCustomerId,
         invoice: stripeInvoice.id, // attach directly — avoids orphaned pending items
         currency: "usd",
         unit_amount: cents,
@@ -183,10 +195,24 @@ export async function finalizeStripeInvoice(
   const stripe = getStripe();
   const stripeOptions = { stripeAccount: connectedAccountId };
 
-  // Finalize: draft → open (this generates the hosted_invoice_url)
-  const finalized = await stripe.invoices.finalizeInvoice(stripeInvoiceId, undefined, stripeOptions);
+  // Finalize: draft → open (this generates the hosted_invoice_url).
+  // If the Stripe invoice is already open (e.g. user retried after a partial failure),
+  // retrieve it directly to recover the hosted_invoice_url instead of throwing.
+  let hostedUrl: string | null = null;
+  try {
+    const finalized = await stripe.invoices.finalizeInvoice(stripeInvoiceId, undefined, stripeOptions);
+    hostedUrl = finalized.hosted_invoice_url ?? null;
+  } catch (err) {
+    const stripeMsg = (err as { message?: string })?.message ?? "";
+    if (stripeMsg.toLowerCase().includes("not a draft") || stripeMsg.toLowerCase().includes("already")) {
+      // Invoice already finalized — retrieve to get the hosted URL
+      const existing = await stripe.invoices.retrieve(stripeInvoiceId, undefined, stripeOptions);
+      hostedUrl = existing.hosted_invoice_url ?? null;
+    } else {
+      throw err;
+    }
+  }
 
-  const hostedUrl = finalized.hosted_invoice_url;
   if (!hostedUrl) {
     throw new Error("Stripe did not return a payment URL after finalization.");
   }

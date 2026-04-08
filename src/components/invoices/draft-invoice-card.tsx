@@ -438,14 +438,19 @@ export function DraftInvoiceCard({
       });
       const j = (await res.json().catch(() => ({}))) as {
         success?: boolean;
+        new_invoice_id?: string | null;
         error?: string;
       };
       if (!res.ok) throw new Error(j.error ?? "Void failed");
       toast.success("Invoice voided. A new draft has been created.");
-      router.refresh();
+      // Navigate to the new draft if we got its id, otherwise go back to the project page
+      if (j.new_invoice_id) {
+        router.push(`/dashboard/projects/${project.id}`);
+      } else {
+        router.push(`/dashboard/projects/${project.id}`);
+      }
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to void invoice");
-    } finally {
       setSaving(false);
     }
   }
