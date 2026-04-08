@@ -443,14 +443,10 @@ export function DraftInvoiceCard({
       };
       if (!res.ok) throw new Error(j.error ?? "Void failed");
       toast.success("Invoice voided. A new draft has been created.");
-      // Navigate to the new draft if we got its id, otherwise go back to the project page
-      if (j.new_invoice_id) {
-        router.push(`/dashboard/projects/${project.id}`);
-      } else {
-        router.push(`/dashboard/projects/${project.id}`);
-      }
+      router.push(`/dashboard/projects/${project.id}`);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to void invoice");
+    } finally {
       setSaving(false);
     }
   }
@@ -1133,8 +1129,8 @@ export function DraftInvoiceCard({
                 </Button>
               )}
 
-              {/* OPEN: Void */}
-              {(status === "open" || status === "sent") && (
+              {/* Void — available on open, sent, paid, and uncollectible */}
+              {(status === "open" || status === "sent" || status === "paid" || status === "uncollectible") && (
                 <Button
                   type="button"
                   variant="outline"
@@ -1147,7 +1143,7 @@ export function DraftInvoiceCard({
                 </Button>
               )}
 
-              {/* OPEN: Mark as Uncollectible */}
+              {/* Mark as Uncollectible — only for open/sent */}
               {(status === "open" || status === "sent") && (
                 <Button
                   type="button"
