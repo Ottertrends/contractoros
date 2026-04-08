@@ -8,7 +8,14 @@ import { Trash2, Plus, BookOpen, X, Mail, Send } from "lucide-react";
 
 import { supabase } from "@/lib/supabase/client";
 import { useLanguage } from "@/lib/i18n/client";
-import type { Invoice, InvoiceDesign, InvoiceItem, InvoiceStatus, PriceBookItem, Project } from "@/lib/types/database";
+import type {
+  Invoice,
+  InvoiceDesign,
+  InvoiceItem,
+  InvoiceStatus,
+  PriceBookItem,
+  Project,
+} from "@/lib/types/database";
 import { PriceBookLineInput } from "./price-book-line-input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -22,19 +29,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 
 // jsPDF must never be SSR'd
 const PdfExportButton = dynamic(
-  () => import("./pdf-export-button").then((m) => ({ default: m.PdfExportButton })),
+  () =>
+    import("./pdf-export-button").then((m) => ({ default: m.PdfExportButton })),
   { ssr: false, loading: () => <span className="text-xs text-slate-400">Loading PDF…</span> },
 );
 
@@ -42,7 +42,7 @@ const PdfExportButton = dynamic(
 
 interface LineItemRow {
   _id: string;
-  description: string; // single "Product / Service" field — what appears in PDF
+  description: string;
   quantity: string;
   unit_price: string;
   total: string;
@@ -68,7 +68,10 @@ type ProfileRow = {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function fmt(n: number) {
-  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(n);
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+  }).format(n);
 }
 
 function calcRowTotal(qty: string, price: string): string {
@@ -85,11 +88,16 @@ function newRow(description = "", qty = "1", price = "0"): LineItemRow {
   };
 }
 
-function statusVariant(s: InvoiceStatus) {
+function statusVariant(
+  s: InvoiceStatus,
+): "neutral" | "warning" | "success" | "danger" {
   const map: Record<InvoiceStatus, "neutral" | "warning" | "success" | "danger"> = {
     draft: "neutral",
+    open: "warning",
     sent: "warning",
     paid: "success",
+    void: "danger",
+    uncollectible: "danger",
     cancelled: "danger",
   };
   return map[s] ?? "neutral";
@@ -97,7 +105,14 @@ function statusVariant(s: InvoiceStatus) {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export function DraftInvoiceCard({ projectName, invoice, items, priceBook, project, userId }: Props) {
+export function DraftInvoiceCard({
+  projectName,
+  invoice,
+  items,
+  priceBook,
+  project,
+  userId,
+}: Props) {
   const router = useRouter();
   const { t } = useLanguage();
   const ti = t.invoices;
@@ -114,21 +129,18 @@ export function DraftInvoiceCard({ projectName, invoice, items, priceBook, proje
   const [automaticTaxEnabled, setAutomaticTaxEnabled] = React.useState(
     !!(invoice.automatic_tax_enabled),
   );
-  const [paymentLinkUrl, setPaymentLinkUrl] = React.useState(invoice.stripe_payment_link_url ?? "");
-  const [stripeHostedUrl, setStripeHostedUrl] = React.useState(invoice.stripe_hosted_url ?? "");
-
-  // Gmail dialog state — pre-fill with client email from project
-  const [gmailOpen, setGmailOpen] = React.useState(false);
-  const [gmailTo, setGmailTo] = React.useState(project.client_email ?? "");
-  const [gmailMessage, setGmailMessage] = React.useState("Please find your invoice attached.");
-  const [gmailSending, setGmailSending] = React.useState(false);
+  const [paymentLinkUrl, setPaymentLinkUrl] = React.useState(
+    invoice.stripe_payment_link_url ?? "",
+  );
+  const [stripeHostedUrl, setStripeHostedUrl] = React.useState(
+    invoice.stripe_hosted_url ?? "",
+  );
 
   // ── Line items ──
   const [rows, setRows] = React.useState<LineItemRow[]>(() =>
     items.length > 0
       ? items.map((it) => ({
           _id: it.id || crypto.randomUUID(),
-          // backwards-compat: use description, fall back to name
           description: it.description || it.name || "",
           quantity: it.quantity,
           unit_price: it.unit_price,
@@ -155,7 +167,6 @@ export function DraftInvoiceCard({ projectName, invoice, items, priceBook, proje
   });
 
   React.useEffect(() => {
-    // Fetch basic profile info first — this query always works
     supabase
       .from("profiles")
       .select(
@@ -167,29 +178,40 @@ export function DraftInvoiceCard({ projectName, invoice, items, priceBook, proje
         if (data) setProfile(data);
       });
 
-    // Fetch design settings separately — if design columns don't exist yet it won't break the profile
     supabase
       .from("profiles")
-      .select("invoice_logo_url, invoice_primary_color, invoice_title_font, invoice_body_font, invoice_footer")
+      .select(
+        "invoice_logo_url, invoice_primary_color, invoice_title_font, invoice_body_font, invoice_footer",
+      )
       .eq("id", userId)
       .single()
-      .then(({ data }: { data: {
-        invoice_logo_url: string | null;
-        invoice_primary_color: string | null;
-        invoice_title_font: string | null;
-        invoice_body_font: string | null;
-        invoice_footer: string | null;
-      } | null }) => {
-        if (data) {
-          setDesign({
-            logoUrl: data.invoice_logo_url,
-            primaryColor: data.invoice_primary_color ?? "#111827",
-            titleFont: (data.invoice_title_font as InvoiceDesign["titleFont"]) ?? "helvetica",
-            bodyFont: (data.invoice_body_font as InvoiceDesign["bodyFont"]) ?? "helvetica",
-            footer: data.invoice_footer,
-          });
-        }
-      });
+      .then(
+        ({
+          data,
+        }: {
+          data: {
+            invoice_logo_url: string | null;
+            invoice_primary_color: string | null;
+            invoice_title_font: string | null;
+            invoice_body_font: string | null;
+            invoice_footer: string | null;
+          } | null;
+        }) => {
+          if (data) {
+            setDesign({
+              logoUrl: data.invoice_logo_url,
+              primaryColor: data.invoice_primary_color ?? "#111827",
+              titleFont:
+                (data.invoice_title_font as InvoiceDesign["titleFont"]) ??
+                "helvetica",
+              bodyFont:
+                (data.invoice_body_font as InvoiceDesign["bodyFont"]) ??
+                "helvetica",
+              footer: data.invoice_footer,
+            });
+          }
+        },
+      );
   }, [userId]);
 
   React.useEffect(() => {
@@ -199,15 +221,22 @@ export function DraftInvoiceCard({ projectName, invoice, items, priceBook, proje
 
   // ── Computed totals ──
   const subtotal = rows.reduce(
-    (sum, r) => sum + (parseFloat(r.quantity) || 0) * (parseFloat(r.unit_price) || 0),
+    (sum, r) =>
+      sum + (parseFloat(r.quantity) || 0) * (parseFloat(r.unit_price) || 0),
     0,
   );
   const taxAmount = (subtotal * (parseFloat(taxRate) || 0)) / 100;
   const total = subtotal + taxAmount;
 
+  const stripeConnected = !!(profile?.stripe_connect_charges_enabled);
+
   // ── Line item helpers ──
 
-  function updateRow(id: string, field: keyof Omit<LineItemRow, "_id">, value: string) {
+  function updateRow(
+    id: string,
+    field: keyof Omit<LineItemRow, "_id">,
+    value: string,
+  ) {
     setRows((prev) =>
       prev.map((r) => {
         if (r._id !== id) return r;
@@ -226,12 +255,15 @@ export function DraftInvoiceCard({ projectName, invoice, items, priceBook, proje
   }
 
   function removeRow(id: string) {
-    setRows((prev) => (prev.length > 1 ? prev.filter((r) => r._id !== id) : prev));
+    setRows((prev) =>
+      prev.length > 1 ? prev.filter((r) => r._id !== id) : prev,
+    );
   }
 
-  // Select a price book item → fill description + unit price in one shot
   function selectPriceBookItem(rowId: string, item: PriceBookItem) {
-    const label = item.unit ? `${item.item_name} (${item.unit})` : item.item_name;
+    const label = item.unit
+      ? `${item.item_name} (${item.unit})`
+      : item.item_name;
     const price = String(parseFloat(item.unit_price) || 0);
     setRows((prev) =>
       prev.map((r) => {
@@ -246,10 +278,11 @@ export function DraftInvoiceCard({ projectName, invoice, items, priceBook, proje
     );
   }
 
-  // Add item from price book modal
   function addFromPriceBook(item: PriceBookItem) {
     const price = String(parseFloat(item.unit_price) || 0);
-    const label = item.unit ? `${item.item_name} (${item.unit})` : item.item_name;
+    const label = item.unit
+      ? `${item.item_name} (${item.unit})`
+      : item.item_name;
     setRows((prev) => [
       ...prev,
       {
@@ -264,57 +297,72 @@ export function DraftInvoiceCard({ projectName, invoice, items, priceBook, proje
     setPbSearch("");
   }
 
+  // ── Shared: persist invoice data to DB (header + line items) ──
+
+  async function persistInvoiceData(overrideStatus?: InvoiceStatus) {
+    const finalStatus = overrideStatus ?? status;
+
+    const { error: invErr } = await supabase
+      .from("invoices")
+      .update({
+        date,
+        status: finalStatus,
+        notes: notes.trim() || null,
+        subtotal: String(subtotal),
+        tax_rate: String(parseFloat(taxRate) || 0),
+        tax_amount: String(taxAmount),
+        total: String(total),
+        automatic_tax_enabled: automaticTaxEnabled,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", invoice.id);
+
+    if (invErr) throw new Error(invErr.message);
+
+    await supabase.from("invoice_items").delete().eq("invoice_id", invoice.id);
+
+    const { error: itemErr } = await supabase.from("invoice_items").insert(
+      rows.map((r, idx) => ({
+        invoice_id: invoice.id,
+        name: r.description || null,
+        description: r.description,
+        quantity: r.quantity,
+        unit_price: r.unit_price,
+        total: r.total,
+        sort_order: idx,
+      })),
+    );
+
+    if (itemErr) throw new Error(itemErr.message);
+
+    return finalStatus;
+  }
+
   // ── Save ──
 
   async function handleSave(overrideStatus?: InvoiceStatus) {
     setSaving(true);
     try {
-      const finalStatus = overrideStatus ?? status;
-
-      const { error: invErr } = await supabase
-        .from("invoices")
-        .update({
-          date,
-          status: finalStatus,
-          notes: notes.trim() || null,
-          subtotal: String(subtotal),
-          tax_rate: String(parseFloat(taxRate) || 0),
-          tax_amount: String(taxAmount),
-          total: String(total),
-          automatic_tax_enabled: automaticTaxEnabled,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", invoice.id);
-
-      if (invErr) throw new Error(invErr.message);
-
-      // Replace all line items
-      await supabase.from("invoice_items").delete().eq("invoice_id", invoice.id);
-
-      const { error: itemErr } = await supabase.from("invoice_items").insert(
-        rows.map((r, idx) => ({
-          invoice_id: invoice.id,
-          name: r.description || null,
-          description: r.description,
-          quantity: r.quantity,
-          unit_price: r.unit_price,
-          total: r.total,
-          sort_order: idx,
-        })),
-      );
-      if (itemErr) throw new Error(itemErr.message);
+      const finalStatus = await persistInvoiceData(overrideStatus);
 
       if (overrideStatus) setStatus(overrideStatus);
 
-      // Auto-sync to Stripe as DRAFT when total > 0 and Stripe is connected
-      if (total > 0 && profile?.stripe_connect_charges_enabled && finalStatus !== "cancelled") {
-        // Guard: auto-tax requires project address
+      // Auto-sync to Stripe as DRAFT when Stripe is connected and status is draft
+      if (stripeConnected && finalStatus === "draft") {
         if (automaticTaxEnabled && !project.address) {
-          toast.warning("Add an address to the project to enable auto-tax on Stripe.");
+          toast.warning(
+            "Add an address to the project to enable auto-tax on Stripe.",
+          );
         } else {
           try {
-            const syncRes = await fetch(`/api/invoices/${invoice.id}/sync-stripe`, { method: "POST" });
-            const syncJson = (await syncRes.json()) as { hosted_url?: string; error?: string };
+            const syncRes = await fetch(
+              `/api/invoices/${invoice.id}/sync-stripe`,
+              { method: "POST" },
+            );
+            const syncJson = (await syncRes.json()) as {
+              hosted_url?: string;
+              error?: string;
+            };
             if (syncRes.ok && syncJson.hosted_url) {
               setStripeHostedUrl(syncJson.hosted_url);
             } else if (syncJson.error) {
@@ -326,11 +374,6 @@ export function DraftInvoiceCard({ projectName, invoice, items, priceBook, proje
         }
       }
 
-      // Void Stripe invoice if cancelling
-      if (finalStatus === "cancelled" && invoice.stripe_invoice_id) {
-        fetch(`/api/invoices/${invoice.id}/cancel-stripe`, { method: "POST" }).catch(() => {});
-      }
-
       toast.success("Invoice saved");
       router.refresh();
     } catch (e) {
@@ -340,31 +383,114 @@ export function DraftInvoiceCard({ projectName, invoice, items, priceBook, proje
     }
   }
 
-  // ── Send Via Stripe ──
+  // ── Finalize (Draft → Open) ──
+
+  async function handleFinalize() {
+    setSaving(true);
+    try {
+      // Persist current invoice data first
+      await persistInvoiceData();
+
+      // Call finalize route — handles Stripe + sets status to "open" in DB
+      const res = await fetch(`/api/invoices/${invoice.id}/finalize`, {
+        method: "POST",
+      });
+      const j = (await res.json().catch(() => ({}))) as {
+        success?: boolean;
+        hosted_url?: string | null;
+        error?: string;
+      };
+      if (!res.ok) throw new Error(j.error ?? "Finalize failed");
+
+      if (j.hosted_url) setStripeHostedUrl(j.hosted_url);
+      setStatus("open");
+      toast.success(
+        stripeConnected
+          ? "Invoice finalized — payment link generated."
+          : "Invoice finalized.",
+      );
+      router.refresh();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to finalize invoice");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  // ── Void ──
+
+  async function handleVoid() {
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/invoices/${invoice.id}/void`, {
+        method: "POST",
+      });
+      const j = (await res.json().catch(() => ({}))) as {
+        success?: boolean;
+        error?: string;
+      };
+      if (!res.ok) throw new Error(j.error ?? "Void failed");
+      toast.success("Invoice voided. A new draft has been created.");
+      router.refresh();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to void invoice");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  // ── Uncollectible ──
+
+  async function handleUncollectible() {
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/invoices/${invoice.id}/uncollectible`, {
+        method: "POST",
+      });
+      const j = (await res.json().catch(() => ({}))) as {
+        success?: boolean;
+        error?: string;
+      };
+      if (!res.ok) throw new Error(j.error ?? "Failed");
+      setStatus("uncollectible");
+      toast.success("Invoice marked as uncollectible.");
+      router.refresh();
+    } catch (e) {
+      toast.error(
+        e instanceof Error ? e.message : "Failed to mark uncollectible",
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  // ── Send Via Stripe (Open status only) ──
 
   async function handleSendViaStripe() {
     if (!project.client_email) {
-      toast.error("Add a client email to the project before sending via Stripe.");
+      toast.error(
+        "Add a client email to the project before sending via Stripe.",
+      );
       return;
     }
     setSaving(true);
     try {
-      // Save the invoice first (line items + totals persisted before sending)
-      await handleSave("sent");
-
-      // Finalize + send via Stripe — returns the hosted invoice URL
-      const res = await fetch(`/api/invoices/${invoice.id}/send-stripe`, { method: "POST" });
-      const j = (await res.json().catch(() => ({}))) as { error?: string; hosted_url?: string };
+      const res = await fetch(`/api/invoices/${invoice.id}/send-stripe`, {
+        method: "POST",
+      });
+      const j = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        hosted_url?: string;
+      };
       if (!res.ok) throw new Error(j.error ?? "Stripe send failed");
 
-      toast.success("Invoice sent via Stripe — your client will receive an email.");
-
-      // Update local state with the hosted URL and open it in a new tab
+      toast.success(
+        "Invoice sent via Stripe — your client will receive an email.",
+      );
       if (j.hosted_url) {
         setStripeHostedUrl(j.hosted_url);
         window.open(j.hosted_url, "_blank", "noopener,noreferrer");
       }
-
       router.refresh();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to send via Stripe");
@@ -373,31 +499,28 @@ export function DraftInvoiceCard({ projectName, invoice, items, priceBook, proje
     }
   }
 
-  // ── Send Via Gmail ──
+  // ── Send Via Email (mailto:) ──
 
-  async function sendGmail() {
-    if (!gmailTo.trim()) {
-      toast.error("Recipient email required");
+  function handleSendViaEmail() {
+    if (!project.client_email) {
+      toast.error("Please add client email in the Edit Project form.");
       return;
     }
-    setGmailSending(true);
-    try {
-      const res = await fetch(`/api/invoices/${invoice.id}/send-gmail`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ to: gmailTo.trim(), message: gmailMessage }),
-      });
-      const j = (await res.json().catch(() => ({}))) as { error?: string };
-      if (!res.ok) throw new Error(j.error ?? "Send failed");
-      toast.success("Sent via Gmail");
-      setGmailOpen(false);
-      // Flip status to "sent"
-      await handleSave("sent");
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to send");
-    } finally {
-      setGmailSending(false);
-    }
+    const subject = `Invoice ${invoice.invoice_number ?? ""} — ${profile?.company_name ?? ""}`;
+    const payLink = stripeHostedUrl || paymentLinkUrl;
+    const body = [
+      "Hi,",
+      "",
+      "Please find your invoice details below.",
+      "",
+      ...(payLink ? [`Pay online: ${payLink}`, ""] : []),
+      "Best regards,",
+      profile?.company_name ?? "",
+    ].join("\n");
+    window.open(
+      `mailto:${project.client_email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`,
+      "_blank",
+    );
   }
 
   // Filtered price book items for modal
@@ -420,7 +543,6 @@ export function DraftInvoiceCard({ projectName, invoice, items, priceBook, proje
       {pbOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="bg-white dark:bg-slate-950 rounded-xl shadow-xl w-full max-w-lg flex flex-col gap-0 overflow-hidden border border-slate-200 dark:border-slate-800">
-            {/* Modal header */}
             <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 dark:border-slate-800">
               <div>
                 <div className="font-semibold text-slate-900 dark:text-slate-50">
@@ -431,14 +553,16 @@ export function DraftInvoiceCard({ projectName, invoice, items, priceBook, proje
                 </div>
               </div>
               <button
-                onClick={() => { setPbOpen(false); setPbSearch(""); }}
+                onClick={() => {
+                  setPbOpen(false);
+                  setPbSearch("");
+                }}
                 className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 p-1"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            {/* Search */}
             <div className="px-5 py-3 border-b border-slate-100 dark:border-slate-800">
               <input
                 autoFocus
@@ -449,7 +573,6 @@ export function DraftInvoiceCard({ projectName, invoice, items, priceBook, proje
               />
             </div>
 
-            {/* Item list */}
             <div className="overflow-y-auto max-h-72">
               {filteredPb.length === 0 ? (
                 <div className="px-5 py-8 text-center text-sm text-slate-500">
@@ -468,11 +591,15 @@ export function DraftInvoiceCard({ projectName, invoice, items, priceBook, proje
                       <div className="text-sm font-medium text-slate-900 dark:text-slate-50 truncate">
                         {item.item_name}
                         {item.unit && (
-                          <span className="ml-1.5 text-xs text-slate-400">/ {item.unit}</span>
+                          <span className="ml-1.5 text-xs text-slate-400">
+                            / {item.unit}
+                          </span>
                         )}
                       </div>
                       {item.category && (
-                        <div className="text-xs text-slate-400 mt-0.5">{item.category}</div>
+                        <div className="text-xs text-slate-400 mt-0.5">
+                          {item.category}
+                        </div>
                       )}
                     </div>
                     <div className="ml-4 shrink-0 font-mono text-sm font-semibold text-slate-800 dark:text-slate-200">
@@ -496,12 +623,15 @@ export function DraftInvoiceCard({ projectName, invoice, items, priceBook, proje
                 {status.charAt(0).toUpperCase() + status.slice(1)}
               </Badge>
               {invoice.invoice_number && (
-                <span className="text-xs font-mono text-slate-500">{invoice.invoice_number}</span>
+                <span className="text-xs font-mono text-slate-500">
+                  {invoice.invoice_number}
+                </span>
               )}
             </div>
+
             {/* Status selector + Stripe indicator */}
             <div className="flex items-center gap-2">
-              {profile?.stripe_connect_charges_enabled ? (
+              {stripeConnected ? (
                 <span className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-800 shrink-0">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
                   Stripe
@@ -514,15 +644,19 @@ export function DraftInvoiceCard({ projectName, invoice, items, priceBook, proje
                   Stripe
                 </a>
               )}
-              <Select value={status} onValueChange={(v) => setStatus(v as InvoiceStatus)}>
+              <Select
+                value={status}
+                onValueChange={(v) => setStatus(v as InvoiceStatus)}
+              >
                 <SelectTrigger className="h-8 text-xs w-36">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="draft">{ti.draft}</SelectItem>
-                  <SelectItem value="sent">{ti.sent}</SelectItem>
-                  <SelectItem value="paid">{ti.paid}</SelectItem>
-                  <SelectItem value="cancelled">{ti.cancelled}</SelectItem>
+                  <SelectItem value="draft">Draft</SelectItem>
+                  <SelectItem value="open">Open</SelectItem>
+                  <SelectItem value="paid">Paid</SelectItem>
+                  <SelectItem value="void">Void</SelectItem>
+                  <SelectItem value="uncollectible">Uncollectible</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -530,7 +664,7 @@ export function DraftInvoiceCard({ projectName, invoice, items, priceBook, proje
         </CardHeader>
 
         <CardContent className="flex flex-col gap-5">
-          {/* Date row */}
+          {/* Date + Project Name */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="inv-date" className="text-xs text-slate-500">
@@ -544,7 +678,9 @@ export function DraftInvoiceCard({ projectName, invoice, items, priceBook, proje
               />
             </div>
             <div className="flex flex-col gap-1.5">
-              <Label className="text-xs text-slate-500">{t.projects.projectName.replace(" *", "")}</Label>
+              <Label className="text-xs text-slate-500">
+                {t.projects.projectName.replace(" *", "")}
+              </Label>
               <div className="px-3 py-2 rounded-md bg-slate-50 dark:bg-slate-900 text-sm border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300">
                 {projectName}
               </div>
@@ -557,7 +693,6 @@ export function DraftInvoiceCard({ projectName, invoice, items, priceBook, proje
               {t.projects.lineItems}
             </div>
 
-            {/* Column headers */}
             <div className="hidden sm:grid sm:grid-cols-[3fr_1fr_1.2fr_1fr_auto] gap-2 text-xs text-slate-400 px-1">
               <span className="flex items-center gap-2">
                 Product / Service
@@ -584,7 +719,9 @@ export function DraftInvoiceCard({ projectName, invoice, items, priceBook, proje
                 className="grid grid-cols-1 sm:grid-cols-[3fr_1fr_1.2fr_1fr_auto] gap-2 items-center"
               >
                 <div>
-                  <Label className="sm:hidden text-xs text-slate-400">Product / Service</Label>
+                  <Label className="sm:hidden text-xs text-slate-400">
+                    Product / Service
+                  </Label>
                   <PriceBookLineInput
                     value={row.description}
                     onChange={(v) => updateRow(row._id, "description", v)}
@@ -593,36 +730,51 @@ export function DraftInvoiceCard({ projectName, invoice, items, priceBook, proje
                   />
                 </div>
                 <div>
-                  <Label className="sm:hidden text-xs text-slate-400">{t.projects.qty}</Label>
+                  <Label className="sm:hidden text-xs text-slate-400">
+                    {t.projects.qty}
+                  </Label>
                   <Input
                     type="number"
                     min="0"
                     step="any"
                     placeholder="1"
                     value={row.quantity}
-                    onChange={(e) => updateRow(row._id, "quantity", e.target.value)}
+                    onChange={(e) =>
+                      updateRow(row._id, "quantity", e.target.value)
+                    }
                     className="text-sm"
                   />
                 </div>
                 <div>
-                  <Label className="sm:hidden text-xs text-slate-400">{t.projects.unitPrice}</Label>
+                  <Label className="sm:hidden text-xs text-slate-400">
+                    {t.projects.unitPrice}
+                  </Label>
                   <div className="relative">
-                    <span className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400 text-sm">$</span>
+                    <span className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400 text-sm">
+                      $
+                    </span>
                     <Input
                       type="number"
                       min="0"
                       step="0.01"
                       placeholder="0.00"
                       value={row.unit_price}
-                      onChange={(e) => updateRow(row._id, "unit_price", e.target.value)}
+                      onChange={(e) =>
+                        updateRow(row._id, "unit_price", e.target.value)
+                      }
                       className="text-sm pl-5"
                     />
                   </div>
                 </div>
                 <div className="flex items-center justify-end sm:justify-start gap-2">
-                  <Label className="sm:hidden text-xs text-slate-400 mr-1">{ti.lineTotal}</Label>
+                  <Label className="sm:hidden text-xs text-slate-400 mr-1">
+                    {ti.lineTotal}
+                  </Label>
                   <span className="text-sm font-mono text-slate-700 dark:text-slate-300 tabular-nums">
-                    {fmt((parseFloat(row.quantity) || 0) * (parseFloat(row.unit_price) || 0))}
+                    {fmt(
+                      (parseFloat(row.quantity) || 0) *
+                        (parseFloat(row.unit_price) || 0),
+                    )}
                   </span>
                 </div>
                 <div className="flex items-center justify-end">
@@ -678,68 +830,79 @@ export function DraftInvoiceCard({ projectName, invoice, items, priceBook, proje
                 <span>{ti.grandTotal}</span>
                 <span className="font-mono">{fmt(total)}</span>
               </div>
-              {/* Auto-tax toggle — requires complete project address */}
-              <label className="flex items-center gap-2 pt-1 cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  checked={automaticTaxEnabled}
-                  onChange={(e) => {
-                    if (e.target.checked) {
-                      const hasAddress = project.address && project.city && project.state && project.zip;
-                      if (!hasAddress) {
-                        toast.warning("Fill in the client's complete address (address, city, state, zip) in the Edit Project form before enabling auto-tax.");
-                        return; // prevent checking
+
+              {/* Stripe auto-tax — only visible when Stripe is connected */}
+              {stripeConnected && (
+                <label className="flex items-center gap-2 pt-1 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={automaticTaxEnabled}
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        const hasAddress =
+                          project.address &&
+                          project.city &&
+                          project.state &&
+                          project.zip;
+                        if (!hasAddress) {
+                          toast.warning(
+                            "Fill in the client's complete address (address, city, state, zip) in the Edit Project form before enabling auto-tax.",
+                          );
+                          return;
+                        }
                       }
-                    }
-                    setAutomaticTaxEnabled(e.target.checked);
-                  }}
-                  className="rounded border-slate-300 text-primary focus:ring-primary"
-                />
-                <span className="text-xs text-slate-500">Stripe auto-tax</span>
-              </label>
+                      setAutomaticTaxEnabled(e.target.checked);
+                    }}
+                    className="rounded border-slate-300 text-primary focus:ring-primary"
+                  />
+                  <span className="text-xs text-slate-500">Stripe auto-tax</span>
+                </label>
+              )}
             </div>
           </div>
 
-          {/* Stripe payment link — ALWAYS visible above notes */}
-          <div className="flex flex-col gap-1.5">
-            <Label className="text-xs text-slate-500">Stripe payment link</Label>
-            {(stripeHostedUrl || paymentLinkUrl) ? (
-              <div className="flex flex-wrap items-center gap-2">
-                <a
-                  href={stripeHostedUrl || paymentLinkUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-sm text-primary break-all underline"
-                >
-                  {stripeHostedUrl || paymentLinkUrl}
-                </a>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="shrink-0"
-                  onClick={() => {
-                    void navigator.clipboard.writeText(stripeHostedUrl || paymentLinkUrl);
-                    toast.success("Link copied");
-                  }}
-                >
-                  Copy
-                </Button>
-              </div>
-            ) : (
-              <p className="text-xs text-slate-400 italic">
-                {profile?.stripe_connect_charges_enabled
-                  ? "Generated after sending via Stripe."
-                  : "Connect Stripe in Settings to generate a payment link."}
-              </p>
-            )}
-          </div>
+          {/* Stripe payment link — visible only when Stripe connected */}
+          {stripeConnected && (
+            <div className="flex flex-col gap-1.5">
+              <Label className="text-xs text-slate-500">
+                Stripe payment link
+              </Label>
+              {stripeHostedUrl || paymentLinkUrl ? (
+                <div className="flex flex-wrap items-center gap-2">
+                  <a
+                    href={stripeHostedUrl || paymentLinkUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-sm text-primary break-all underline"
+                  >
+                    {stripeHostedUrl || paymentLinkUrl}
+                  </a>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="shrink-0"
+                    onClick={() => {
+                      void navigator.clipboard.writeText(
+                        stripeHostedUrl || paymentLinkUrl,
+                      );
+                      toast.success("Link copied");
+                    }}
+                  >
+                    Copy
+                  </Button>
+                </div>
+              ) : (
+                <p className="text-xs text-slate-400 italic">
+                  Generated after finalizing the invoice.
+                </p>
+              )}
+            </div>
+          )}
 
           {/* Invoice Notes */}
           <div className="flex flex-col gap-1.5">
-            <Label className="text-xs text-slate-500">
-              {t.projects.notes}
-            </Label>
+            <Label className="text-xs text-slate-500">{t.projects.notes}</Label>
             <Textarea
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
@@ -748,7 +911,7 @@ export function DraftInvoiceCard({ projectName, invoice, items, priceBook, proje
             />
           </div>
 
-          {/* Action bar */}
+          {/* ── Action bar ── */}
           <div className="flex items-center justify-between gap-3 pt-2 border-t border-slate-200 dark:border-slate-800 flex-wrap">
             <div className="flex items-center gap-2 flex-wrap">
               {/* Export PDF — always visible */}
@@ -776,68 +939,86 @@ export function DraftInvoiceCard({ projectName, invoice, items, priceBook, proje
                 alternatePaymentInstructions={null}
               />
 
-              {/* Draft-only: Send Via Stripe + Send Via Email */}
+              {/* DRAFT: Finalize Invoice */}
               {status === "draft" && (
-                <>
-                  {/* Send Via Stripe — only if Stripe is connected */}
-                  {profile?.stripe_connect_charges_enabled && (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="gap-1.5"
-                      onClick={() => void handleSendViaStripe()}
-                      disabled={saving}
-                    >
-                      <Send className="w-3.5 h-3.5" />
-                      Send Via Stripe
-                    </Button>
-                  )}
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => void handleFinalize()}
+                  disabled={saving}
+                  title="Finalizing locks the invoice. If Stripe is connected, it will also be finalized in Stripe and a payment link will be generated."
+                >
+                  Finalize Invoice
+                </Button>
+              )}
 
-                  {/* Send Via Email (Gmail) */}
-                  <Dialog open={gmailOpen} onOpenChange={setGmailOpen}>
-                    <DialogTrigger asChild>
-                      <Button type="button" variant="outline" size="sm" className="gap-1.5">
-                        <Mail className="w-3.5 h-3.5" />
-                        Send Via Email
-                      </Button>
-                    </DialogTrigger>
-                    <DialogContent>
-                      <DialogHeader>
-                        <DialogTitle>Send invoice PDF</DialogTitle>
-                      </DialogHeader>
-                      <div className="flex flex-col gap-3 py-2">
-                        <div className="flex flex-col gap-1.5">
-                          <Label htmlFor="gmail-to">To</Label>
-                          <Input
-                            id="gmail-to"
-                            type="email"
-                            value={gmailTo}
-                            onChange={(e) => setGmailTo(e.target.value)}
-                            placeholder="client@email.com"
-                          />
-                        </div>
-                        <div className="flex flex-col gap-1.5">
-                          <Label htmlFor="gmail-msg">Message</Label>
-                          <Textarea
-                            id="gmail-msg"
-                            value={gmailMessage}
-                            onChange={(e) => setGmailMessage(e.target.value)}
-                            rows={3}
-                          />
-                        </div>
-                      </div>
-                      <DialogFooter>
-                        <Button type="button" variant="secondary" onClick={() => setGmailOpen(false)}>
-                          Cancel
-                        </Button>
-                        <Button type="button" disabled={gmailSending} onClick={() => void sendGmail()}>
-                          {gmailSending ? "Sending…" : "Send"}
-                        </Button>
-                      </DialogFooter>
-                    </DialogContent>
-                  </Dialog>
-                </>
+              {/* OPEN: Send Via Stripe (Stripe connected only) */}
+              {status === "open" && stripeConnected && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="gap-1.5"
+                  onClick={() => void handleSendViaStripe()}
+                  disabled={saving || !project.client_email}
+                  title={
+                    !project.client_email
+                      ? "Please add client email to the project first"
+                      : "Send the Stripe invoice to your client via email"
+                  }
+                >
+                  <Send className="w-3.5 h-3.5" />
+                  Send Via Stripe
+                </Button>
+              )}
+
+              {/* OPEN: Send Via Email (mailto) */}
+              {status === "open" && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="gap-1.5"
+                  onClick={handleSendViaEmail}
+                  disabled={!project.client_email}
+                  title={
+                    !project.client_email
+                      ? "Please add client email to the project first"
+                      : "Open your email client with a pre-filled invoice email"
+                  }
+                >
+                  <Mail className="w-3.5 h-3.5" />
+                  Send Via Email
+                </Button>
+              )}
+
+              {/* OPEN: Void */}
+              {status === "open" && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => void handleVoid()}
+                  disabled={saving}
+                  title="Void this invoice and create a new draft"
+                >
+                  Void
+                </Button>
+              )}
+
+              {/* OPEN: Mark as Uncollectible */}
+              {status === "open" && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => void handleUncollectible()}
+                  disabled={saving}
+                  title="Mark this invoice as uncollectible"
+                >
+                  Uncollectible
+                </Button>
               )}
             </div>
 

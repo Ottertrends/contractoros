@@ -151,11 +151,11 @@ export async function syncToStripe(
 }
 
 /**
- * Finalizes and sends a Stripe Invoice.
- * Moves it from draft → open, sends email to customer via Stripe,
- * saves the hosted_invoice_url to the DB, and returns it.
+ * Finalizes a Stripe Invoice (draft → open).
+ * Generates hosted_invoice_url, saves it to DB, and returns it.
+ * Does NOT send — sending is a separate step via sendOpenStripeInvoice().
  */
-export async function finalizeAndSendStripeInvoice(
+export async function finalizeStripeInvoice(
   invoiceId: string,
   userId: string,
 ): Promise<string> {
@@ -187,15 +187,87 @@ export async function finalizeAndSendStripeInvoice(
     throw new Error("Stripe did not return a payment URL after finalization.");
   }
 
-  // Send the invoice email to the customer via Stripe
-  await stripe.invoices.sendInvoice(stripeInvoiceId, undefined, stripeOptions);
-
   // Save hosted URL to DB
   await supabase
     .from("invoices")
     .update({ stripe_hosted_url: hostedUrl, updated_at: new Date().toISOString() })
     .eq("id", invoiceId);
 
+  return hostedUrl;
+}
+
+/**
+ * Sends an already-finalized (open) Stripe Invoice to the customer via email.
+ * Returns the hosted_invoice_url (already saved in DB from finalization).
+ */
+export async function sendOpenStripeInvoice(
+  invoiceId: string,
+  userId: string,
+): Promise<string> {
+  const supabase = await createSupabaseServerClient();
+
+  const [{ data: invoice }, { data: profile }] = await Promise.all([
+    supabase.from("invoices").select("stripe_invoice_id, stripe_hosted_url").eq("id", invoiceId).eq("user_id", userId).single(),
+    supabase.from("profiles").select("stripe_connect_account_id").eq("id", userId).single(),
+  ]);
+
+  const stripeInvoiceId = (invoice as Record<string, unknown> | null)?.stripe_invoice_id as string | null;
+  if (!stripeInvoiceId) {
+    throw new Error("No Stripe invoice found. Finalize the invoice first.");
+  }
+
+  const connectedAccountId = (profile as Record<string, unknown> | null)?.stripe_connect_account_id as string | null;
+  if (!connectedAccountId) {
+    throw new Error("Stripe account not connected.");
+  }
+
+  const stripe = getStripe();
+  const stripeOptions = { stripeAccount: connectedAccountId };
+
+  // Send the invoice email to the customer via Stripe
+  await stripe.invoices.sendInvoice(stripeInvoiceId, undefined, stripeOptions);
+
+  const hostedUrl = (invoice as Record<string, unknown> | null)?.stripe_hosted_url as string | null;
+  return hostedUrl ?? "";
+}
+
+/**
+ * Marks a Stripe Invoice as uncollectible.
+ * Silently ignores errors (no Stripe invoice, already in terminal state, etc.).
+ */
+export async function markUncollectibleStripeInvoice(invoiceId: string, userId: string): Promise<void> {
+  const supabase = await createSupabaseServerClient();
+
+  const [{ data: invoice }, { data: profile }] = await Promise.all([
+    supabase.from("invoices").select("stripe_invoice_id").eq("id", invoiceId).eq("user_id", userId).single(),
+    supabase.from("profiles").select("stripe_connect_account_id").eq("id", userId).single(),
+  ]);
+
+  const stripeInvoiceId = (invoice as Record<string, unknown> | null)?.stripe_invoice_id as string | null;
+  if (!stripeInvoiceId) return;
+
+  const connectedAccountId = (profile as Record<string, unknown> | null)?.stripe_connect_account_id as string | null;
+  if (!connectedAccountId) return;
+
+  const stripe = getStripe();
+  try {
+    await stripe.invoices.markUncollectible(stripeInvoiceId, undefined, { stripeAccount: connectedAccountId });
+  } catch {
+    // Silently ignore
+  }
+}
+
+/**
+ * @deprecated Use finalizeStripeInvoice() + sendOpenStripeInvoice() separately.
+ * Kept for internal compatibility during transition.
+ * Finalizes and sends a Stripe Invoice in one call.
+ */
+export async function finalizeAndSendStripeInvoice(
+  invoiceId: string,
+  userId: string,
+): Promise<string> {
+  const hostedUrl = await finalizeStripeInvoice(invoiceId, userId);
+  await sendOpenStripeInvoice(invoiceId, userId);
   return hostedUrl;
 }
 

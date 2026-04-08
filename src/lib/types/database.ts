@@ -2,7 +2,7 @@ export type QuotesPerMonth = "1-5" | "6-15" | "16-30" | "30+";
 export type MediaType = "image" | "video";
 
 export type ProjectStatus = "active" | "completed" | "on_hold" | "cancelled";
-export type InvoiceStatus = "draft" | "sent" | "paid" | "cancelled";
+export type InvoiceStatus = "draft" | "open" | "sent" | "paid" | "void" | "uncollectible" | "cancelled";
 export type MessageDirection = "inbound" | "outbound";
 export type MessageType = "text" | "image" | "document";
 
