@@ -57,11 +57,10 @@ export async function POST(
     let hostedUrl: string | null = null;
 
     if (stripeConnected) {
-      // Sync to Stripe if no Stripe invoice exists yet
-      const hasStripeInvoice = !!(invoice as Record<string, unknown>).stripe_invoice_id;
-      if (!hasStripeInvoice) {
-        await syncToStripe(id, user.id);
-      }
+      // Always re-sync before finalizing so the latest project data (customer
+      // email, line items, etc.) is reflected in Stripe. syncToStripe voids
+      // any existing Stripe draft and creates a fresh one with current data.
+      await syncToStripe(id, user.id);
 
       // Finalize: draft → open in Stripe, generates hosted_invoice_url
       hostedUrl = await finalizeStripeInvoice(id, user.id);
