@@ -12,8 +12,11 @@ import type { Invoice, InvoiceStatus, Project } from "@/lib/types/database";
 function statusVariant(s: InvoiceStatus) {
   const map: Record<InvoiceStatus, "neutral" | "warning" | "success" | "danger"> = {
     draft: "neutral",
+    open: "warning",
     sent: "warning",
     paid: "success",
+    void: "danger",
+    uncollectible: "danger",
     cancelled: "danger",
   };
   return map[s] ?? "neutral";

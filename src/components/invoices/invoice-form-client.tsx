@@ -104,8 +104,11 @@ function newLineItem(): LineItem {
 function statusVariant(s: InvoiceStatus) {
   const map: Record<InvoiceStatus, "secondary" | "warning" | "success" | "danger" | "neutral"> = {
     draft: "neutral",
+    open: "warning",
     sent: "warning",
     paid: "success",
+    void: "danger",
+    uncollectible: "danger",
     cancelled: "danger",
   };
   return map[s] ?? "secondary";
