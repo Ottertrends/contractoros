@@ -32,7 +32,7 @@ export async function ensureDraftInvoice(
     .from("invoices")
     .select("id")
     .eq("project_id", project.id)
-    .neq("status", "cancelled")
+    .neq("status", "void")
     .maybeSingle();
 
   if (anyInvoice?.id) return null; // project already has an active invoice, don't create draft

@@ -384,8 +384,8 @@ export async function executeTool(
 
     case "update_invoice_status": {
       const status = String(input.status ?? "").trim();
-      if (!["draft", "sent", "paid", "cancelled"].includes(status)) {
-        return jsonResult({ error: "status must be: draft | sent | paid | cancelled" });
+      if (!["draft", "open", "sent", "paid", "void", "uncollectible"].includes(status)) {
+        return jsonResult({ error: "status must be: draft | open | sent | paid | void | uncollectible" });
       }
 
       const invoiceId = input.invoice_id != null ? String(input.invoice_id).trim() : null;

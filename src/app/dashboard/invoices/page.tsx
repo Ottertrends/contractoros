@@ -110,12 +110,14 @@ export default async function InvoicesPage({
   const statusLabels: Record<string, string> = {
     all: ti.all,
     draft: ti.draft,
+    open: "Open",
     sent: ti.sent,
     paid: ti.paid,
-    cancelled: ti.cancelled,
+    void: "Void",
+    uncollectible: "Uncollectible",
   };
 
-  const statuses = ["all", "draft", "sent", "paid", "cancelled"] as const;
+  const statuses = ["all", "draft", "open", "sent", "paid", "void", "uncollectible"] as const;
 
   // Build href for sortable headers (preserves status and q)
   function buildSortHref(field: string, dir: "asc" | "desc") {

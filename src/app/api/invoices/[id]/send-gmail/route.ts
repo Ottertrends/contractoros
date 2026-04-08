@@ -49,7 +49,7 @@ export async function POST(
   const pdf = await buildInvoicePdfBuffer({
     invoice: {
       invoice_number: inv.invoice_number as string | null,
-      status: inv.status as "draft" | "sent" | "paid" | "cancelled",
+      status: inv.status as "draft" | "open" | "sent" | "paid" | "void" | "uncollectible",
       notes: inv.notes as string | null,
       subtotal: String(inv.subtotal),
       tax_rate: String(inv.tax_rate),

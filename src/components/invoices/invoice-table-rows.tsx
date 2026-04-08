@@ -13,7 +13,6 @@ function statusVariant(s: InvoiceStatus) {
     paid: "success",
     void: "danger",
     uncollectible: "danger",
-    cancelled: "danger",
   };
   return map[s] ?? "neutral";
 }

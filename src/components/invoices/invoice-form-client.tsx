@@ -109,7 +109,6 @@ function statusVariant(s: InvoiceStatus) {
     paid: "success",
     void: "danger",
     uncollectible: "danger",
-    cancelled: "danger",
   };
   return map[s] ?? "secondary";
 }
@@ -452,7 +451,9 @@ export function InvoiceFormClient({
                   <SelectItem value="draft">{ti.draft}</SelectItem>
                   <SelectItem value="sent">{ti.sent}</SelectItem>
                   <SelectItem value="paid">{ti.paid}</SelectItem>
-                  <SelectItem value="cancelled">{ti.cancelled}</SelectItem>
+                  <SelectItem value="open">Open</SelectItem>
+                  <SelectItem value="void">Void</SelectItem>
+                  <SelectItem value="uncollectible">Uncollectible</SelectItem>
                 </SelectContent>
               </Select>
             </div>

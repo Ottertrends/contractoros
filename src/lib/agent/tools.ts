@@ -128,7 +128,7 @@ export const CONTRACTOR_TOOLS: Tool[] = [
       properties: {
         status: {
           type: "string",
-          enum: ["draft", "sent", "paid", "cancelled"],
+          enum: ["draft", "open", "sent", "paid", "void", "uncollectible"],
           description: "New invoice status",
         },
         invoice_id: { type: "string", description: "UUID of the specific invoice (preferred)" },

@@ -17,7 +17,6 @@ function statusVariant(s: InvoiceStatus) {
     paid: "success",
     void: "danger",
     uncollectible: "danger",
-    cancelled: "danger",
   };
   return map[s] ?? "neutral";
 }
@@ -95,9 +94,11 @@ export default async function DashboardHome() {
 
   const statusLabel: Record<InvoiceStatus, string> = {
     draft: t.invoices.draft,
+    open: "Open",
     sent: t.invoices.sent,
     paid: t.invoices.paid,
-    cancelled: t.invoices.cancelled,
+    void: "Void",
+    uncollectible: "Uncollectible",
   };
 
   return (
