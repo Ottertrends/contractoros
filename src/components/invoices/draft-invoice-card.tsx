@@ -771,6 +771,10 @@ export function DraftInvoiceCard({
                     toast.info("Use 'Finalize Invoice' to change from Draft status.");
                     return;
                   }
+                  if (v === "draft" && status !== "draft") {
+                    toast.error("Invoice already finalized. Use the Void button to return to Draft.");
+                    return;
+                  }
                   if (v === "void" && status !== "void") {
                     setVoidConfirmOpen(true);
                     return;
