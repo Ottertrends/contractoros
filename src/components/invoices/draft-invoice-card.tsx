@@ -150,6 +150,7 @@ export function DraftInvoiceCard({
 
   // ── UI state ──
   const [saving, setSaving] = React.useState(false);
+  const [voidConfirmOpen, setVoidConfirmOpen] = React.useState(false);
 
   // Price book picker modal
   const [pbOpen, setPbOpen] = React.useState(false);
@@ -516,10 +517,7 @@ export function DraftInvoiceCard({
       "Best regards,",
       profile?.company_name ?? "",
     ].join("\n");
-    window.open(
-      `mailto:${project.client_email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`,
-      "_blank",
-    );
+    window.location.href = `mailto:${project.client_email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
   }
 
   // Filtered price book items for modal
@@ -607,6 +605,48 @@ export function DraftInvoiceCard({
                   </button>
                 ))
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Void Confirmation Dialog */}
+      {voidConfirmOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white dark:bg-slate-950 rounded-xl shadow-xl w-full max-w-md border border-slate-200 dark:border-slate-800 p-6 flex flex-col gap-4">
+            <div>
+              <div className="font-semibold text-slate-900 dark:text-slate-50 text-base mb-1">
+                Void this invoice?
+              </div>
+              <p className="text-sm text-slate-600 dark:text-slate-400">
+                Voiding permanently destroys this finalized invoice
+                {stripeConnected ? " in both WorkSupp and Stripe" : ""}. This action{" "}
+                <strong>cannot be undone</strong>. A new blank draft will be
+                created for this project so you can start fresh.
+              </p>
+            </div>
+            <div className="flex items-center justify-end gap-3">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setVoidConfirmOpen(false)}
+                disabled={saving}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                className="bg-red-600 hover:bg-red-700 text-white border-0"
+                onClick={() => {
+                  setVoidConfirmOpen(false);
+                  void handleVoid();
+                }}
+                disabled={saving}
+              >
+                Yes, void invoice
+              </Button>
             </div>
           </div>
         </div>
@@ -998,7 +1038,7 @@ export function DraftInvoiceCard({
                   type="button"
                   variant="outline"
                   size="sm"
-                  onClick={() => void handleVoid()}
+                  onClick={() => setVoidConfirmOpen(true)}
                   disabled={saving}
                   title="Void this invoice and create a new draft"
                 >

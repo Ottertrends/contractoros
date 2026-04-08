@@ -100,7 +100,27 @@ export async function syncToStripe(
     }
   }
 
-  // 8. Create Stripe InvoiceItems
+  // 8. Create Stripe Invoice as DRAFT first (so we can attach items directly to it)
+  // Versioned idempotency key on re-sync to avoid returning the voided invoice
+  const idempotencyKey = isResync
+    ? `worksupp_sync_${invoiceId}_v${Date.now()}`
+    : `worksupp_sync_${invoiceId}`;
+
+  const stripeInvoice = await stripe.invoices.create(
+    {
+      customer: stripeCustomerId ?? undefined,
+      auto_advance: false, // stay as draft — we finalize explicitly
+      collection_method: "send_invoice", // required for sendInvoice() API + no auto-charge
+      days_until_due: 30, // required when collection_method is send_invoice
+      automatic_tax: { enabled: automaticTaxEnabled },
+      metadata: { worksupp_invoice_id: invoiceId, worksupp_user_id: userId },
+      description: `Invoice ${(invoice as Record<string, unknown>).invoice_number ?? invoiceId}`,
+    },
+    { ...stripeOptions, idempotencyKey },
+  );
+
+  // 9. Create Stripe InvoiceItems attached directly to the invoice
+  // Attaching via invoice: id guarantees they appear regardless of whether there's a customer
   for (const item of items ?? []) {
     const cents = Math.round((parseFloat(item.unit_price) || 0) * 100);
     if (cents < 1) continue;
@@ -108,6 +128,7 @@ export async function syncToStripe(
     await (stripe.invoiceItems.create as any)(
       {
         ...(stripeCustomerId ? { customer: stripeCustomerId } : {}),
+        invoice: stripeInvoice.id, // attach directly — avoids orphaned pending items
         currency: "usd",
         unit_amount: cents,
         quantity: Math.max(1, Math.round(parseFloat(item.quantity) || 1)),
@@ -117,23 +138,6 @@ export async function syncToStripe(
       stripeOptions,
     );
   }
-
-  // 9. Create Stripe Invoice as DRAFT
-  // Versioned idempotency key on re-sync to avoid returning the voided invoice
-  const idempotencyKey = isResync
-    ? `worksupp_sync_${invoiceId}_v${Date.now()}`
-    : `worksupp_sync_${invoiceId}`;
-
-  const stripeInvoice = await stripe.invoices.create(
-    {
-      customer: stripeCustomerId ?? undefined,
-      auto_advance: false, // stay as draft — we finalize explicitly on send
-      automatic_tax: { enabled: automaticTaxEnabled },
-      metadata: { worksupp_invoice_id: invoiceId, worksupp_user_id: userId },
-      description: `Invoice ${(invoice as Record<string, unknown>).invoice_number ?? invoiceId}`,
-    },
-    { ...stripeOptions, idempotencyKey },
-  );
 
   // NOTE: hosted_invoice_url is null on Stripe draft invoices by design.
   // It becomes available only after finalizeInvoice() is called (see finalizeAndSendStripeInvoice).
