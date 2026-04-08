@@ -103,7 +103,6 @@ export async function syncToStripe(
 
   // 7. If re-syncing, void the old Stripe invoice first
   const existingStripeInvoiceId = (invoice as Record<string, unknown>).stripe_invoice_id as string | null;
-  const isResync = !!existingStripeInvoiceId;
   if (existingStripeInvoiceId) {
     try {
       await stripe.invoices.voidInvoice(existingStripeInvoiceId, undefined, stripeOptions);
@@ -113,10 +112,9 @@ export async function syncToStripe(
   }
 
   // 8. Create Stripe Invoice as DRAFT first (so we can attach items directly to it)
-  // Versioned idempotency key on re-sync to avoid returning the voided invoice
-  const idempotencyKey = isResync
-    ? `worksupp_sync_${invoiceId}_v${Date.now()}`
-    : `worksupp_sync_${invoiceId}`;
+  // Always use a timestamped idempotency key — avoids Stripe rejecting the same key
+  // when parameters change between saves (e.g. customer added after first sync).
+  const idempotencyKey = `worksupp_sync_${invoiceId}_v${Date.now()}`;
 
   const stripeInvoice = await stripe.invoices.create(
     {
