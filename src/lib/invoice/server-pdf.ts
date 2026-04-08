@@ -236,11 +236,13 @@ export async function buildInvoicePdfBuffer(opts: {
       /* skip QR on error */
     }
 
-    doc.setFontSize(8);
-    doc.setTextColor(100);
-    const linkLines = doc.splitTextToSize(payOnlineUrl, pageWidth - margin * 2 - 80);
-    doc.text(linkLines, margin, ty);
-    ty += linkLines.length * 10 + 8;
+    doc.setFontSize(9);
+    doc.setFont(bodyFont, "normal");
+    doc.setTextColor(0, 102, 204);
+    doc.text("Stripe Payment Link", margin, ty);
+    doc.link(margin, ty - 10, doc.getTextWidth("Stripe Payment Link"), 13, { url: payOnlineUrl });
+    doc.setTextColor(60);
+    ty += 14;
   }
   if (alternatePaymentInstructions) {
     doc.setFont(titleFont, "bold");

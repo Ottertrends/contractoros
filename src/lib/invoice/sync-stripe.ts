@@ -300,3 +300,25 @@ export async function voidStripeInvoice(invoiceId: string, userId: string): Prom
     // Silently ignore
   }
 }
+
+/**
+ * Marks a Stripe Invoice as paid out-of-band (payment received outside Stripe).
+ * Silently ignores errors.
+ */
+export async function markPaidStripeInvoice(invoiceId: string, userId: string): Promise<void> {
+  const supabase = await createSupabaseServerClient();
+  const [{ data: invoice }, { data: profile }] = await Promise.all([
+    supabase.from("invoices").select("stripe_invoice_id").eq("id", invoiceId).eq("user_id", userId).single(),
+    supabase.from("profiles").select("stripe_connect_account_id").eq("id", userId).single(),
+  ]);
+  const stripeInvoiceId = (invoice as Record<string, unknown> | null)?.stripe_invoice_id as string | null;
+  if (!stripeInvoiceId) return;
+  const connectedAccountId = (profile as Record<string, unknown> | null)?.stripe_connect_account_id as string | null;
+  if (!connectedAccountId) return;
+  const stripe = getStripe();
+  try {
+    await stripe.invoices.pay(stripeInvoiceId, { paid_out_of_band: true }, { stripeAccount: connectedAccountId });
+  } catch {
+    // Silently ignore — may already be paid or in invalid state
+  }
+}

@@ -297,13 +297,16 @@ async function generatePDF({
   doc.setFont(titleFont, "bold");
   doc.setTextColor(60);
   if (stripePaymentLinkUrl) {
-    doc.text("Pay online (card)", margin, ty);
-    ty += 12;
+    doc.setFont(titleFont, "bold");
+    doc.setTextColor(60);
+    doc.text("Pay online via credit card, ACH and other payment options:", margin, ty);
+    ty += 14;
     doc.setFont(bodyFont, "normal");
-    doc.setTextColor(40);
-    const linkLines = doc.splitTextToSize(stripePaymentLinkUrl, pageWidth - margin * 2);
-    doc.text(linkLines, margin, ty);
-    ty += linkLines.length * 12 + 8;
+    doc.setTextColor(0, 102, 204);
+    doc.text("Stripe Payment Link", margin, ty);
+    doc.link(margin, ty - 10, doc.getTextWidth("Stripe Payment Link"), 13, { url: stripePaymentLinkUrl });
+    doc.setTextColor(60);
+    ty += 16;
   }
   if (alternatePaymentInstructions) {
     doc.setFont(titleFont, "bold");

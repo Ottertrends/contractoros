@@ -151,6 +151,8 @@ export function DraftInvoiceCard({
   // ── UI state ──
   const [saving, setSaving] = React.useState(false);
   const [voidConfirmOpen, setVoidConfirmOpen] = React.useState(false);
+  const [sendDialogMode, setSendDialogMode] = React.useState<"stripe" | "email" | null>(null);
+  const [sendDialogCc, setSendDialogCc] = React.useState("");
 
   // Price book picker modal
   const [pbOpen, setPbOpen] = React.useState(false);
@@ -374,6 +376,15 @@ export function DraftInvoiceCard({
         }
       }
 
+      // If status changed from open/sent → paid or uncollectible, update Stripe too
+      if (stripeConnected && (invoice.status === "open" || invoice.status === "sent")) {
+        if (finalStatus === "paid") {
+          try { await fetch(`/api/invoices/${invoice.id}/mark-paid`, { method: "POST" }); } catch { /* non-blocking */ }
+        } else if (finalStatus === "uncollectible") {
+          try { await fetch(`/api/invoices/${invoice.id}/uncollectible`, { method: "POST" }); } catch { /* non-blocking */ }
+        }
+      }
+
       toast.success("Invoice saved");
       router.refresh();
     } catch (e) {
@@ -464,60 +475,75 @@ export function DraftInvoiceCard({
     }
   }
 
-  // ── Send Via Stripe (Open status only) ──
-
-  async function handleSendViaStripe() {
+  // ── Open Send Stripe dialog ──
+  function openSendStripeDialog() {
     if (!project.client_email) {
-      toast.error(
-        "Add a client email to the project before sending via Stripe.",
-      );
+      toast.error("Add a client email to the project before sending via Stripe.");
       return;
     }
-    setSaving(true);
-    try {
-      const res = await fetch(`/api/invoices/${invoice.id}/send-stripe`, {
-        method: "POST",
-      });
-      const j = (await res.json().catch(() => ({}))) as {
-        error?: string;
-        hosted_url?: string;
-      };
-      if (!res.ok) throw new Error(j.error ?? "Stripe send failed");
-
-      toast.success(
-        "Invoice sent via Stripe — your client will receive an email.",
-      );
-      if (j.hosted_url) {
-        setStripeHostedUrl(j.hosted_url);
-        window.open(j.hosted_url, "_blank", "noopener,noreferrer");
-      }
-      router.refresh();
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to send via Stripe");
-    } finally {
-      setSaving(false);
-    }
+    setSendDialogCc("");
+    setSendDialogMode("stripe");
   }
 
-  // ── Send Via Email (mailto:) ──
-
-  function handleSendViaEmail() {
+  // ── Open Send Email dialog ──
+  function openSendEmailDialog() {
     if (!project.client_email) {
       toast.error("Please add client email in the Edit Project form.");
       return;
     }
-    const subject = `Invoice ${invoice.invoice_number ?? ""} — ${profile?.company_name ?? ""}`;
-    const payLink = stripeHostedUrl || paymentLinkUrl;
-    const body = [
-      "Hi,",
-      "",
-      "Please find your invoice details below.",
-      "",
-      ...(payLink ? [`Pay online: ${payLink}`, ""] : []),
-      "Best regards,",
-      profile?.company_name ?? "",
-    ].join("\n");
-    window.location.href = `mailto:${project.client_email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    setSendDialogCc("");
+    setSendDialogMode("email");
+  }
+
+  // ── Confirm Send (from dialog) ──
+  async function handleConfirmSend() {
+    const mode = sendDialogMode;
+    setSendDialogMode(null);
+    setSaving(true);
+    try {
+      if (mode === "stripe") {
+        const res = await fetch(`/api/invoices/${invoice.id}/send-stripe`, { method: "POST" });
+        const j = (await res.json().catch(() => ({}))) as { error?: string; hosted_url?: string };
+        if (!res.ok) throw new Error(j.error ?? "Stripe send failed");
+        setStatus("sent");
+        if (j.hosted_url) setStripeHostedUrl(j.hosted_url);
+        toast.success("Invoice sent via Stripe — your client will receive an email.");
+        router.refresh();
+      } else if (mode === "email") {
+        const subject = `Invoice ${invoice.invoice_number ?? ""} — ${profile?.company_name ?? ""}`;
+        const payLink = stripeHostedUrl || paymentLinkUrl;
+        const body = [
+          "Hi,",
+          "",
+          "Please find your invoice attached.",
+          "",
+          ...(payLink ? [`Pay online: ${payLink}`, ""] : []),
+          "Best regards,",
+          profile?.company_name ?? "",
+        ].join("\n");
+        let mailtoUrl = `mailto:${project.client_email ?? ""}`;
+        const params: string[] = [];
+        if (sendDialogCc.trim()) params.push(`cc=${encodeURIComponent(sendDialogCc.trim())}`);
+        params.push(`subject=${encodeURIComponent(subject)}`);
+        params.push(`body=${encodeURIComponent(body)}`);
+        mailtoUrl += `?${params.join("&")}`;
+        // Open mail client via hidden anchor
+        const a = document.createElement("a");
+        a.href = mailtoUrl;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        // Update status to "sent"
+        await supabase.from("invoices").update({ status: "sent", updated_at: new Date().toISOString() }).eq("id", invoice.id);
+        setStatus("sent");
+        toast.success("Email client opened. Invoice marked as Sent.");
+        router.refresh();
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to send invoice");
+    } finally {
+      setSaving(false);
+    }
   }
 
   // Filtered price book items for modal
@@ -652,6 +678,61 @@ export function DraftInvoiceCard({
         </div>
       )}
 
+      {/* Send Confirmation Dialog */}
+      {sendDialogMode && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white dark:bg-slate-950 rounded-xl shadow-xl w-full max-w-sm border border-slate-200 dark:border-slate-800 p-6 flex flex-col gap-4">
+            <div>
+              <div className="font-semibold text-slate-900 dark:text-slate-50 text-base mb-1">
+                {sendDialogMode === "stripe" ? "Send Invoice via Stripe" : "Send Invoice via Email"}
+              </div>
+              <p className="text-sm text-slate-500">
+                {sendDialogMode === "stripe"
+                  ? "Stripe will email the invoice and payment link to your client."
+                  : "Your email client will open pre-filled with the invoice details."}
+              </p>
+            </div>
+            <div className="flex flex-col gap-3">
+              <div>
+                <label className="text-xs font-medium text-slate-500 block mb-1">To</label>
+                <div className="px-3 py-2 rounded-md bg-slate-50 dark:bg-slate-900 text-sm border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300">
+                  {project.client_email}
+                </div>
+              </div>
+              <div>
+                <label className="text-xs font-medium text-slate-500 block mb-1">CC (optional)</label>
+                <input
+                  type="email"
+                  value={sendDialogCc}
+                  onChange={(e) => setSendDialogCc(e.target.value)}
+                  placeholder="cc@example.com"
+                  className="flex h-9 w-full rounded-md border border-slate-200 bg-white px-3 py-1 text-sm placeholder:text-slate-400 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                />
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-3">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setSendDialogMode(null)}
+                disabled={saving}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => void handleConfirmSend()}
+                disabled={saving}
+              >
+                {sendDialogMode === "stripe" ? "Send via Stripe" : "Open Email Client"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Invoice Card */}
       <Card>
         <CardHeader>
@@ -685,7 +766,18 @@ export function DraftInvoiceCard({
               )}
               <Select
                 value={status}
-                onValueChange={(v) => setStatus(v as InvoiceStatus)}
+                onValueChange={(v) => {
+                  if (status === "draft") {
+                    toast.info("Use 'Finalize Invoice' to change from Draft status.");
+                    return;
+                  }
+                  if (v === "void" && status !== "void") {
+                    setVoidConfirmOpen(true);
+                    return;
+                  }
+                  setStatus(v as InvoiceStatus);
+                }}
+                disabled={status === "draft"}
               >
                 <SelectTrigger className="h-8 text-xs w-36">
                   <SelectValue />
@@ -993,13 +1085,13 @@ export function DraftInvoiceCard({
               )}
 
               {/* OPEN: Send Via Stripe (Stripe connected only) */}
-              {status === "open" && stripeConnected && (
+              {(status === "open" || status === "sent") && stripeConnected && (
                 <Button
                   type="button"
                   variant="outline"
                   size="sm"
                   className="gap-1.5"
-                  onClick={() => void handleSendViaStripe()}
+                  onClick={openSendStripeDialog}
                   disabled={saving || !project.client_email}
                   title={
                     !project.client_email
@@ -1013,13 +1105,13 @@ export function DraftInvoiceCard({
               )}
 
               {/* OPEN: Send Via Email (mailto) */}
-              {status === "open" && (
+              {(status === "open" || status === "sent") && (
                 <Button
                   type="button"
                   variant="outline"
                   size="sm"
                   className="gap-1.5"
-                  onClick={handleSendViaEmail}
+                  onClick={openSendEmailDialog}
                   disabled={!project.client_email}
                   title={
                     !project.client_email
@@ -1033,7 +1125,7 @@ export function DraftInvoiceCard({
               )}
 
               {/* OPEN: Void */}
-              {status === "open" && (
+              {(status === "open" || status === "sent") && (
                 <Button
                   type="button"
                   variant="outline"
@@ -1047,7 +1139,7 @@ export function DraftInvoiceCard({
               )}
 
               {/* OPEN: Mark as Uncollectible */}
-              {status === "open" && (
+              {(status === "open" || status === "sent") && (
                 <Button
                   type="button"
                   variant="outline"

@@ -38,6 +38,13 @@ export async function POST(
     // Send invoice via Stripe — returns the hosted_invoice_url
     const hostedUrl = await sendOpenStripeInvoice(id, user.id);
 
+    // Update invoice status to "sent" in WorkSupp
+    await supabase
+      .from("invoices")
+      .update({ status: "sent", updated_at: new Date().toISOString() })
+      .eq("id", id)
+      .eq("user_id", user.id);
+
     return NextResponse.json({ success: true, hosted_url: hostedUrl });
   } catch (err) {
     console.error("[send-stripe]", err);
