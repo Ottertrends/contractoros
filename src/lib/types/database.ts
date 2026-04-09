@@ -160,6 +160,44 @@ export interface ProjectMedia {
   updated_at: string;
 }
 
+// ── Subscriptions ─────────────────────────────────────────────────────────────
+
+export type SubscriptionInterval = "week" | "month";
+export type SubscriptionStatus = "incomplete" | "trialing" | "active" | "past_due" | "canceled";
+export type TaxCategory = "repair" | "landscaping" | "construction" | "materials";
+
+export interface ServicePlan {
+  id: string;
+  user_id: string;
+  project_id: string;
+  name: string;
+  description: string | null;
+  amount: string; // NUMERIC → string via PostgREST
+  interval: SubscriptionInterval;
+  setup_fee: string;
+  trial_period_days: number;
+  tax_category: TaxCategory | null;
+  stripe_product_id: string | null;
+  stripe_price_id: string | null;
+  stripe_checkout_url: string | null;
+  created_at: string;
+}
+
+export interface ClientSubscription {
+  id: string;
+  user_id: string;
+  project_id: string;
+  service_plan_id: string | null;
+  stripe_subscription_id: string | null;
+  stripe_customer_id: string | null;
+  stripe_checkout_session_id: string | null;
+  status: SubscriptionStatus;
+  current_period_end: string | null;
+  trial_end: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface Database {
   public: {
     profiles: Profile;

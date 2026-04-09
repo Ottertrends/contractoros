@@ -19,6 +19,7 @@ import {
   ClipboardList,
   ChevronLeft,
   ChevronRight,
+  RefreshCcw,
 } from "lucide-react";
 
 import { useLanguage } from "@/lib/i18n/client";
@@ -43,6 +44,7 @@ export function Sidebar({ userName, userEmail }: Props) {
     { href: "/dashboard/calendar", label: t.nav.calendar, icon: CalendarDays },
     { href: "/dashboard/price-book", label: t.nav.priceBook, icon: Boxes },
     { href: "/dashboard/clients", label: t.nav.clients, icon: Users },
+    { href: "/dashboard/subscriptions", label: "Subscriptions", icon: RefreshCcw },
   ];
 
   const secondaryNav = [
