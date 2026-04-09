@@ -594,12 +594,14 @@ export function DraftInvoiceCard({
     }
   }
 
-  // ── Build mailto URL for email dialog ──
-  const mailtoUrl = React.useMemo(() => {
-    if (sendDialogMode !== "email") return "";
-    const subject = `Invoice ${invoice.invoice_number ?? ""} — ${profile?.company_name ?? ""}`;
+  // ── Shared email subject + body (used by all three compose URL memos) ──
+  const emailSubject = React.useMemo(
+    () => `Invoice ${invoice.invoice_number ?? ""} — ${profile?.company_name ?? ""}`,
+    [invoice.invoice_number, profile?.company_name],
+  );
+  const emailBody = React.useMemo(() => {
     const payLink = stripeHostedUrl || paymentLinkUrl;
-    const body = [
+    return [
       "Hi,",
       "",
       "Please find your invoice attached.",
@@ -608,12 +610,39 @@ export function DraftInvoiceCard({
       "Best regards,",
       profile?.company_name ?? "",
     ].join("\n");
+  }, [stripeHostedUrl, paymentLinkUrl, profile?.company_name]);
+
+  // ── Build compose URLs for email dialog ──
+  const mailtoUrl = React.useMemo(() => {
+    if (sendDialogMode !== "email") return "";
     const params: string[] = [];
     if (sendDialogCc.trim()) params.push(`cc=${encodeURIComponent(sendDialogCc.trim())}`);
-    params.push(`subject=${encodeURIComponent(subject)}`);
-    params.push(`body=${encodeURIComponent(body)}`);
+    params.push(`subject=${encodeURIComponent(emailSubject)}`);
+    params.push(`body=${encodeURIComponent(emailBody)}`);
     return `mailto:${project.client_email ?? ""}?${params.join("&")}`;
-  }, [sendDialogMode, sendDialogCc, invoice.invoice_number, profile?.company_name, stripeHostedUrl, paymentLinkUrl, project.client_email]);
+  }, [sendDialogMode, sendDialogCc, emailSubject, emailBody, project.client_email]);
+
+  const gmailUrl = React.useMemo(() => {
+    if (sendDialogMode !== "email") return "";
+    const p = new URLSearchParams();
+    p.set("view", "cm");
+    p.set("fs", "1");
+    p.set("to", project.client_email ?? "");
+    p.set("su", emailSubject);
+    p.set("body", emailBody);
+    if (sendDialogCc.trim()) p.set("cc", sendDialogCc.trim());
+    return `https://mail.google.com/mail/?${p.toString()}`;
+  }, [sendDialogMode, sendDialogCc, emailSubject, emailBody, project.client_email]);
+
+  const outlookUrl = React.useMemo(() => {
+    if (sendDialogMode !== "email") return "";
+    const p = new URLSearchParams();
+    p.set("to", project.client_email ?? "");
+    p.set("subject", emailSubject);
+    p.set("body", emailBody);
+    if (sendDialogCc.trim()) p.set("cc", sendDialogCc.trim());
+    return `https://outlook.live.com/mail/0/deeplink/compose?${p.toString()}`;
+  }, [sendDialogMode, sendDialogCc, emailSubject, emailBody, project.client_email]);
 
   async function handleMarkEmailSent() {
     try {
@@ -762,7 +791,7 @@ export function DraftInvoiceCard({
       {/* Send Confirmation Dialog */}
       {sendDialogMode && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="bg-white dark:bg-slate-950 rounded-xl shadow-xl w-full max-w-sm border border-slate-200 dark:border-slate-800 p-6 flex flex-col gap-4">
+          <div className={`bg-white dark:bg-slate-950 rounded-xl shadow-xl w-full ${sendDialogMode === "email" ? "max-w-md" : "max-w-sm"} border border-slate-200 dark:border-slate-800 p-6 flex flex-col gap-4`}>
             <div>
               <div className="font-semibold text-slate-900 dark:text-slate-50 text-base mb-1">
                 {sendDialogMode === "stripe" ? "Send Invoice via Stripe" : "Send Invoice via Email"}
@@ -770,21 +799,25 @@ export function DraftInvoiceCard({
               <p className="text-sm text-slate-500">
                 {sendDialogMode === "stripe"
                   ? "Stripe will email the invoice and payment link to your client."
-                  : "Your email client will open pre-filled with the invoice details."}
+                  : "Choose how to open your email and send the invoice."}
               </p>
             </div>
-            <div className="flex flex-col gap-3">
-              <div>
-                <label className="text-xs font-medium text-slate-500 block mb-1">To</label>
-                <div className="px-3 py-2 rounded-md bg-slate-50 dark:bg-slate-900 text-sm border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300">
-                  {project.client_email}
-                </div>
+
+            {/* To field */}
+            <div>
+              <label className="text-xs font-medium text-slate-500 block mb-1">To</label>
+              <div className="px-3 py-2 rounded-md bg-slate-50 dark:bg-slate-900 text-sm border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300">
+                {project.client_email}
               </div>
-              {sendDialogMode === "stripe" ? (
-                <p className="text-xs text-slate-400 italic">
-                  Stripe sends directly to your client&apos;s email. CC recipients are not supported for Stripe sends — use &ldquo;Send Via Email&rdquo; if you need to CC someone.
-                </p>
-              ) : (
+            </div>
+
+            {sendDialogMode === "stripe" ? (
+              <p className="text-xs text-slate-400 italic">
+                Stripe sends directly to your client&apos;s email. CC recipients are not supported for Stripe sends — use &ldquo;Send Via Email&rdquo; if you need to CC someone.
+              </p>
+            ) : (
+              <>
+                {/* CC field */}
                 <div>
                   <label className="text-xs font-medium text-slate-500 block mb-1">CC (optional)</label>
                   <input
@@ -795,52 +828,63 @@ export function DraftInvoiceCard({
                     className="flex h-9 w-full rounded-md border border-slate-200 bg-white px-3 py-1 text-sm placeholder:text-slate-400 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
                   />
                 </div>
-              )}
-            </div>
-            {sendDialogMode === "email" ? (
-              <div className="flex flex-col gap-3">
-                <p className="text-xs text-slate-500">
-                  1. Click <strong>Open Email Client</strong> to launch your mail app pre-filled with the invoice.
-                  <br />2. After sending, click <strong>Mark as Sent</strong> to update the invoice status.
-                </p>
-                <div className="flex items-center justify-end gap-3">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setSendDialogMode(null)}
-                  >
-                    Cancel
-                  </Button>
-                  {/* Native anchor — no onClick so the component doesn't unmount before the browser fires mailto */}
-                  <a
-                    href={mailtoUrl}
-                    className="inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-md text-sm font-medium h-9 px-3 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
-                  >
-                    <Mail className="w-3.5 h-3.5" />
-                    Open Email Client
-                  </a>
-                  <Button
-                    type="button"
-                    size="sm"
-                    onClick={() => void handleMarkEmailSent()}
-                    disabled={saving}
-                  >
-                    Mark as Sent
-                  </Button>
+
+                {/* Open-with options */}
+                <div>
+                  <label className="text-xs font-medium text-slate-500 block mb-2">Open with</label>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <a
+                      href={gmailUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1.5 h-9 px-3 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors whitespace-nowrap"
+                    >
+                      Gmail ↗
+                    </a>
+                    <a
+                      href={outlookUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1.5 h-9 px-3 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors whitespace-nowrap"
+                    >
+                      Outlook ↗
+                    </a>
+                    <a
+                      href={mailtoUrl}
+                      className="inline-flex items-center gap-1.5 h-9 px-3 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors whitespace-nowrap"
+                    >
+                      <Mail className="w-3.5 h-3.5" />
+                      Mail App
+                    </a>
+                  </div>
+                  <p className="text-xs text-slate-400 mt-2">
+                    After sending, click <strong>Mark as Sent</strong> to update the invoice status.
+                  </p>
                 </div>
-              </div>
-            ) : (
-              <div className="flex items-center justify-end gap-3">
+              </>
+            )}
+
+            {/* Footer buttons */}
+            <div className="flex items-center justify-end gap-3">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setSendDialogMode(null)}
+                disabled={saving}
+              >
+                Cancel
+              </Button>
+              {sendDialogMode === "email" ? (
                 <Button
                   type="button"
-                  variant="outline"
                   size="sm"
-                  onClick={() => setSendDialogMode(null)}
+                  onClick={() => void handleMarkEmailSent()}
                   disabled={saving}
                 >
-                  Cancel
+                  Mark as Sent
                 </Button>
+              ) : (
                 <Button
                   type="button"
                   size="sm"
@@ -849,8 +893,8 @@ export function DraftInvoiceCard({
                 >
                   Send via Stripe
                 </Button>
-              </div>
-            )}
+              )}
+            </div>
           </div>
         </div>
       )}
