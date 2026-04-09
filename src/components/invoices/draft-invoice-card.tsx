@@ -595,9 +595,10 @@ export function DraftInvoiceCard({
   }
 
   // ── Shared email subject + body (used by all three compose URL memos) ──
+  // Stripe invoice number takes priority; fall back to internal invoice number
   const emailSubject = React.useMemo(
-    () => `New invoice from ${profile?.company_name ?? ""} #${invoice.invoice_number ?? ""}`,
-    [invoice.invoice_number, profile?.company_name],
+    () => `New invoice from ${profile?.company_name ?? ""} #${stripeInvoiceNumber ?? invoice.invoice_number ?? ""}`,
+    [stripeInvoiceNumber, invoice.invoice_number, profile?.company_name],
   );
   const emailBody = React.useMemo(() => {
     const payLink = stripeHostedUrl || paymentLinkUrl;
