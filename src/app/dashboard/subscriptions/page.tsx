@@ -63,7 +63,7 @@ export default function SubscriptionsPage() {
   }
 
   React.useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => {
+    supabase.auth.getUser().then(({ data: { user } }: { data: { user: import("@supabase/supabase-js").User | null } }) => {
       if (!user) return;
       setUserId(user.id);
       loadData(user.id).finally(() => setLoading(false));
