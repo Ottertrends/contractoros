@@ -54,10 +54,12 @@ export async function POST(
 
     let hostedUrl: string | null = null;
     let stripeInvoiceNumber: string | null = null;
+    let newStripeInvoiceId: string | null = null;
 
     if (stripeConnected) {
       // Always re-sync so latest project data (email, address, line items) is in Stripe.
-      await syncToStripe(id, user.id);
+      const syncResult = await syncToStripe(id, user.id);
+      newStripeInvoiceId = syncResult.stripe_invoice_id;
       const result = await finalizeStripeInvoice(id, user.id);
       hostedUrl = result.hostedUrl;
       stripeInvoiceNumber = result.invoiceNumber;
@@ -77,6 +79,7 @@ export async function POST(
       success: true,
       hosted_url: hostedUrl,
       stripe_invoice_number: stripeInvoiceNumber,
+      stripe_invoice_id: newStripeInvoiceId,
     });
   } catch (err) {
     console.error("[finalize]", err);

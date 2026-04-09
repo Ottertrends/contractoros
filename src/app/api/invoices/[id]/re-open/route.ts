@@ -58,7 +58,7 @@ export async function POST(
     }
 
     // Re-sync: voids old Stripe invoice + creates new draft with latest data
-    await syncToStripe(id, user.id);
+    const syncResult = await syncToStripe(id, user.id);
 
     // Immediately finalize the new draft → back to open
     const { hostedUrl, invoiceNumber } = await finalizeStripeInvoice(id, user.id);
@@ -79,6 +79,7 @@ export async function POST(
       success: true,
       hosted_url: hostedUrl,
       stripe_invoice_number: invoiceNumber,
+      stripe_invoice_id: syncResult.stripe_invoice_id,
       open_edit_count: newCount,
     });
   } catch (err) {

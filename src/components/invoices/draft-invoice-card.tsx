@@ -141,12 +141,15 @@ export function DraftInvoiceCard({
       : [newRow(projectName)],
   );
 
-  // ── Stripe invoice number + edit count ──
+  // ── Stripe invoice number + edit count + invoice ID ──
   const [stripeInvoiceNumber, setStripeInvoiceNumber] = React.useState<string | null>(
     invoice.stripe_invoice_number ?? null,
   );
   const [openEditCount, setOpenEditCount] = React.useState<number>(
     invoice.open_edit_count ?? 0,
+  );
+  const [stripeInvoiceId, setStripeInvoiceId] = React.useState<string | null>(
+    invoice.stripe_invoice_id ?? null,
   );
 
   // ── UI state ──
@@ -364,12 +367,14 @@ export function DraftInvoiceCard({
           success?: boolean;
           hosted_url?: string;
           stripe_invoice_number?: string | null;
+          stripe_invoice_id?: string | null;
           open_edit_count?: number;
           error?: string;
         };
         if (!res.ok) throw new Error(j.error ?? "Re-open failed");
         if (j.hosted_url) setStripeHostedUrl(j.hosted_url);
         if (j.stripe_invoice_number) setStripeInvoiceNumber(j.stripe_invoice_number);
+        if (j.stripe_invoice_id) setStripeInvoiceId(j.stripe_invoice_id);
         if (typeof j.open_edit_count === "number") setOpenEditCount(j.open_edit_count);
         toast.success(`Invoice updated. (${j.open_edit_count ?? openEditCount + 1}/3 edits used)`);
         router.refresh();
@@ -383,8 +388,7 @@ export function DraftInvoiceCard({
         const j = (await res.json().catch(() => ({}))) as { success?: boolean; error?: string };
         if (!res.ok) throw new Error(j.error ?? "Failed to reset invoice");
         toast.success("Invoice reset to draft. You can now re-finalize it.");
-        router.push(`/dashboard/projects/${project.id}`);
-        router.refresh();
+        window.location.href = `/dashboard/projects/${project.id}`;
         return;
       }
 
@@ -438,12 +442,14 @@ export function DraftInvoiceCard({
         success?: boolean;
         hosted_url?: string | null;
         stripe_invoice_number?: string | null;
+        stripe_invoice_id?: string | null;
         error?: string;
       };
       if (!res.ok) throw new Error(j.error ?? "Finalize failed");
 
       if (j.hosted_url) setStripeHostedUrl(j.hosted_url);
       if (j.stripe_invoice_number) setStripeInvoiceNumber(j.stripe_invoice_number);
+      if (j.stripe_invoice_id) setStripeInvoiceId(j.stripe_invoice_id);
       setStatus("open");
       toast.success(
         stripeConnected
@@ -473,8 +479,7 @@ export function DraftInvoiceCard({
       };
       if (!res.ok) throw new Error(j.error ?? "Void failed");
       toast.success("Invoice voided. A new draft has been created.");
-      router.push(`/dashboard/projects/${project.id}`);
-      router.refresh();
+      window.location.href = `/dashboard/projects/${project.id}`;
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to void invoice");
     } finally {
@@ -580,37 +585,45 @@ export function DraftInvoiceCard({
         if (j.hosted_url) setStripeHostedUrl(j.hosted_url);
         toast.success("Invoice sent via Stripe — your client will receive an email.");
         router.refresh();
-      } else if (mode === "email") {
-        const subject = `Invoice ${invoice.invoice_number ?? ""} — ${profile?.company_name ?? ""}`;
-        const payLink = stripeHostedUrl || paymentLinkUrl;
-        const body = [
-          "Hi,",
-          "",
-          "Please find your invoice attached.",
-          "",
-          ...(payLink ? [`Pay online: ${payLink}`, ""] : []),
-          "Best regards,",
-          profile?.company_name ?? "",
-        ].join("\n");
-        let mailtoUrl = `mailto:${project.client_email ?? ""}`;
-        const params: string[] = [];
-        if (sendDialogCc.trim()) params.push(`cc=${encodeURIComponent(sendDialogCc.trim())}`);
-        params.push(`subject=${encodeURIComponent(subject)}`);
-        params.push(`body=${encodeURIComponent(body)}`);
-        mailtoUrl += `?${params.join("&")}`;
-        // Fire window.open BEFORE any React state changes — re-renders can swallow
-        // programmatic navigation like window.location.href in some browsers.
-        window.open(mailtoUrl);
-        // Update status to "sent"
-        await supabase.from("invoices").update({ status: "sent", updated_at: new Date().toISOString() }).eq("id", invoice.id);
-        setStatus("sent");
-        toast.success("Email client opened. Invoice marked as Sent.");
-        router.refresh();
       }
+      // Email mode is handled via the anchor tag in the dialog (see render below)
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to send invoice");
     } finally {
       setSaving(false);
+    }
+  }
+
+  // ── Build mailto URL for email dialog ──
+  const mailtoUrl = React.useMemo(() => {
+    if (sendDialogMode !== "email") return "";
+    const subject = `Invoice ${invoice.invoice_number ?? ""} — ${profile?.company_name ?? ""}`;
+    const payLink = stripeHostedUrl || paymentLinkUrl;
+    const body = [
+      "Hi,",
+      "",
+      "Please find your invoice attached.",
+      "",
+      ...(payLink ? [`Pay online: ${payLink}`, ""] : []),
+      "Best regards,",
+      profile?.company_name ?? "",
+    ].join("\n");
+    const params: string[] = [];
+    if (sendDialogCc.trim()) params.push(`cc=${encodeURIComponent(sendDialogCc.trim())}`);
+    params.push(`subject=${encodeURIComponent(subject)}`);
+    params.push(`body=${encodeURIComponent(body)}`);
+    return `mailto:${project.client_email ?? ""}?${params.join("&")}`;
+  }, [sendDialogMode, sendDialogCc, invoice.invoice_number, profile?.company_name, stripeHostedUrl, paymentLinkUrl, project.client_email]);
+
+  async function handleMarkEmailSent() {
+    try {
+      await supabase.from("invoices").update({ status: "sent", updated_at: new Date().toISOString() }).eq("id", invoice.id);
+      setStatus("sent");
+      setSendDialogMode(null);
+      toast.success("Email client opened. Invoice marked as Sent.");
+      router.refresh();
+    } catch {
+      toast.error("Failed to mark invoice as sent");
     }
   }
 
@@ -794,14 +807,24 @@ export function DraftInvoiceCard({
               >
                 Cancel
               </Button>
-              <Button
-                type="button"
-                size="sm"
-                onClick={() => void handleConfirmSend()}
-                disabled={saving}
-              >
-                {sendDialogMode === "stripe" ? "Send via Stripe" : "Open Email Client"}
-              </Button>
+              {sendDialogMode === "email" ? (
+                <a
+                  href={mailtoUrl}
+                  onClick={() => void handleMarkEmailSent()}
+                  className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium h-9 px-3 bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
+                >
+                  Open Email Client
+                </a>
+              ) : (
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={() => void handleConfirmSend()}
+                  disabled={saving}
+                >
+                  Send via Stripe
+                </Button>
+              )}
             </div>
           </div>
         </div>
@@ -977,11 +1000,11 @@ export function DraftInvoiceCard({
                 </span>
               )}
               {/* Stripe invoice number — shown after finalization */}
-              {stripeInvoiceNumber && invoice.stripe_invoice_id && (
+              {stripeInvoiceNumber && stripeInvoiceId && (
                 <span className="inline-flex items-center gap-1.5 text-xs font-mono text-slate-500">
                   <span className="text-slate-300 dark:text-slate-600">|</span>
                   <a
-                    href={`https://dashboard.stripe.com/invoices/${invoice.stripe_invoice_id}`}
+                    href={`https://dashboard.stripe.com/invoices/${stripeInvoiceId}`}
                     target="_blank"
                     rel="noreferrer"
                     className="inline-flex items-center gap-1 text-primary hover:underline"
