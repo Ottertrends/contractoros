@@ -1,17 +1,1 @@
-{
-  "version": "0.0.1",
-  "configurations": [
-    {
-      "name": "Next.js Dev (Turbopack)",
-      "runtimeExecutable": "pnpm",
-      "runtimeArgs": ["dev"],
-      "port": 3000
-    },
-    {
-      "name": "Next.js Dev (Webpack)",
-      "runtimeExecutable": "pnpm",
-      "runtimeArgs": ["dev:webpack"],
-      "port": 3000
-    }
-  ]
-}
+{"version":"0.0.1","configurations":[{"name":"worksup","runtimeExecutable":"npm","runtimeArgs":["run","dev"],"port":3000}]}

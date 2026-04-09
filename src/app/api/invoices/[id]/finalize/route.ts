@@ -5,9 +5,8 @@ import { syncToStripe, finalizeStripeInvoice } from "@/lib/invoice/sync-stripe";
 /**
  * POST /api/invoices/[id]/finalize
  * Finalizes a draft invoice → moves it to "open" status.
- * If Stripe is connected, also finalizes the Stripe invoice (creating hosted_invoice_url).
- * If Stripe is not connected, just updates the local status to "open".
- * Returns { success: true, hosted_url } where hosted_url may be null for non-Stripe users.
+ * If Stripe is connected, re-syncs + finalizes (generating hosted_invoice_url + stripe_invoice_number).
+ * Returns { success: true, hosted_url, stripe_invoice_number }.
  */
 export async function POST(
   _req: NextRequest,
@@ -25,7 +24,6 @@ export async function POST(
   }
 
   try {
-    // Fetch invoice + profile together
     const [{ data: invoice }, { data: profile }] = await Promise.all([
       supabase
         .from("invoices")
@@ -55,18 +53,16 @@ export async function POST(
       ?.stripe_connect_charges_enabled;
 
     let hostedUrl: string | null = null;
+    let stripeInvoiceNumber: string | null = null;
 
     if (stripeConnected) {
-      // Always re-sync before finalizing so the latest project data (customer
-      // email, line items, etc.) is reflected in Stripe. syncToStripe voids
-      // any existing Stripe draft and creates a fresh one with current data.
+      // Always re-sync so latest project data (email, address, line items) is in Stripe.
       await syncToStripe(id, user.id);
-
-      // Finalize: draft → open in Stripe, generates hosted_invoice_url
-      hostedUrl = await finalizeStripeInvoice(id, user.id);
+      const result = await finalizeStripeInvoice(id, user.id);
+      hostedUrl = result.hostedUrl;
+      stripeInvoiceNumber = result.invoiceNumber;
     }
 
-    // Update WorkSupp status to "open"
     await supabase
       .from("invoices")
       .update({
@@ -77,7 +73,11 @@ export async function POST(
       .eq("id", id)
       .eq("user_id", user.id);
 
-    return NextResponse.json({ success: true, hosted_url: hostedUrl });
+    return NextResponse.json({
+      success: true,
+      hosted_url: hostedUrl,
+      stripe_invoice_number: stripeInvoiceNumber,
+    });
   } catch (err) {
     console.error("[finalize]", err);
     const message =

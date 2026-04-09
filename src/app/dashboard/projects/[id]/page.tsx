@@ -184,7 +184,7 @@ export default async function ProjectDetailPage({
             <CardTitle>{tp.otherInvoices}</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto max-h-64 overflow-y-auto">
               <table className="w-full text-sm">
                 <thead className="text-left text-xs uppercase text-slate-500 border-b border-slate-200">
                   <tr>

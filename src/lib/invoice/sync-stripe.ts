@@ -191,15 +191,21 @@ export async function syncToStripe(
   return { stripe_invoice_id: stripeInvoice.id, hosted_url: null };
 }
 
+export interface FinalizeResult {
+  hostedUrl: string;
+  invoiceNumber: string | null;
+}
+
 /**
  * Finalizes a Stripe Invoice (draft → open).
- * Generates hosted_invoice_url, saves it to DB, and returns it.
+ * Generates hosted_invoice_url + captures the human-readable invoice number (e.g. "R9ILTCJP-0013").
+ * Saves both to DB and returns them.
  * Does NOT send — sending is a separate step via sendOpenStripeInvoice().
  */
 export async function finalizeStripeInvoice(
   invoiceId: string,
   userId: string,
-): Promise<string> {
+): Promise<FinalizeResult> {
   const supabase = await createSupabaseServerClient();
 
   const [{ data: invoice }, { data: profile }] = await Promise.all([
@@ -220,19 +226,21 @@ export async function finalizeStripeInvoice(
   const stripe = getStripe();
   const stripeOptions = { stripeAccount: connectedAccountId };
 
-  // Finalize: draft → open (this generates the hosted_invoice_url).
+  // Finalize: draft → open (this generates the hosted_invoice_url + invoice number).
   // If the Stripe invoice is already open (e.g. user retried after a partial failure),
-  // retrieve it directly to recover the hosted_invoice_url instead of throwing.
+  // retrieve it directly to recover those values instead of throwing.
   let hostedUrl: string | null = null;
+  let invoiceNumber: string | null = null;
   try {
     const finalized = await stripe.invoices.finalizeInvoice(stripeInvoiceId, undefined, stripeOptions);
     hostedUrl = finalized.hosted_invoice_url ?? null;
+    invoiceNumber = finalized.number ?? null;
   } catch (err) {
     const stripeMsg = (err as { message?: string })?.message ?? "";
     if (stripeMsg.toLowerCase().includes("not a draft") || stripeMsg.toLowerCase().includes("already")) {
-      // Invoice already finalized — retrieve to get the hosted URL
       const existing = await stripe.invoices.retrieve(stripeInvoiceId, undefined, stripeOptions);
       hostedUrl = existing.hosted_invoice_url ?? null;
+      invoiceNumber = existing.number ?? null;
     } else {
       throw err;
     }
@@ -242,13 +250,17 @@ export async function finalizeStripeInvoice(
     throw new Error("Stripe did not return a payment URL after finalization.");
   }
 
-  // Save hosted URL to DB
+  // Save hosted URL + invoice number to DB
   await supabase
     .from("invoices")
-    .update({ stripe_hosted_url: hostedUrl, updated_at: new Date().toISOString() })
+    .update({
+      stripe_hosted_url: hostedUrl,
+      stripe_invoice_number: invoiceNumber,
+      updated_at: new Date().toISOString(),
+    })
     .eq("id", invoiceId);
 
-  return hostedUrl;
+  return { hostedUrl, invoiceNumber };
 }
 
 /**
@@ -321,7 +333,7 @@ export async function finalizeAndSendStripeInvoice(
   invoiceId: string,
   userId: string,
 ): Promise<string> {
-  const hostedUrl = await finalizeStripeInvoice(invoiceId, userId);
+  const { hostedUrl } = await finalizeStripeInvoice(invoiceId, userId);
   await sendOpenStripeInvoice(invoiceId, userId);
   return hostedUrl;
 }

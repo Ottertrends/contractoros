@@ -4,7 +4,7 @@ import * as React from "react";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Trash2, Plus, BookOpen, X, Mail, Send } from "lucide-react";
+import { Trash2, Plus, BookOpen, X, Mail, Send, ChevronDown, Copy, ExternalLink } from "lucide-react";
 
 import { supabase } from "@/lib/supabase/client";
 import { useLanguage } from "@/lib/i18n/client";
@@ -22,13 +22,6 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 
 // jsPDF must never be SSR'd
@@ -148,11 +141,22 @@ export function DraftInvoiceCard({
       : [newRow(projectName)],
   );
 
+  // ── Stripe invoice number + edit count ──
+  const [stripeInvoiceNumber, setStripeInvoiceNumber] = React.useState<string | null>(
+    invoice.stripe_invoice_number ?? null,
+  );
+  const [openEditCount, setOpenEditCount] = React.useState<number>(
+    invoice.open_edit_count ?? 0,
+  );
+
   // ── UI state ──
   const [saving, setSaving] = React.useState(false);
   const [voidConfirmOpen, setVoidConfirmOpen] = React.useState(false);
   const [sendDialogMode, setSendDialogMode] = React.useState<"stripe" | "email" | null>(null);
   const [sendDialogCc, setSendDialogCc] = React.useState("");
+  // Status-change popup
+  const [statusDialogOpen, setStatusDialogOpen] = React.useState(false);
+  const [selectedStatusOption, setSelectedStatusOption] = React.useState<InvoiceStatus | null>(null);
 
   // Price book picker modal
   const [pbOpen, setPbOpen] = React.useState(false);
@@ -345,34 +349,58 @@ export function DraftInvoiceCard({
   async function handleSave(overrideStatus?: InvoiceStatus) {
     setSaving(true);
     try {
-      const finalStatus = await persistInvoiceData(overrideStatus);
+      // Special case: saving an OPEN invoice → void + re-sync + re-finalize (up to 3x)
+      if (status === "open" && stripeConnected && !overrideStatus) {
+        if (openEditCount >= 3) {
+          toast.error(
+            "You've reached the 3-edit limit on this open invoice. Please void it and create a new one.",
+          );
+          return;
+        }
+        // Persist data to DB first so re-open picks up latest line items
+        await persistInvoiceData();
+        const res = await fetch(`/api/invoices/${invoice.id}/re-open`, { method: "POST" });
+        const j = (await res.json().catch(() => ({}))) as {
+          success?: boolean;
+          hosted_url?: string;
+          stripe_invoice_number?: string | null;
+          open_edit_count?: number;
+          error?: string;
+        };
+        if (!res.ok) throw new Error(j.error ?? "Re-open failed");
+        if (j.hosted_url) setStripeHostedUrl(j.hosted_url);
+        if (j.stripe_invoice_number) setStripeInvoiceNumber(j.stripe_invoice_number);
+        if (typeof j.open_edit_count === "number") setOpenEditCount(j.open_edit_count);
+        toast.success(`Invoice updated. (${j.open_edit_count ?? openEditCount + 1}/3 edits used)`);
+        router.refresh();
+        return;
+      }
 
+      // Special case: saving an UNCOLLECTIBLE invoice → void Stripe + create new draft
+      if (status === "uncollectible") {
+        await persistInvoiceData();
+        const res = await fetch(`/api/invoices/${invoice.id}/void`, { method: "POST" });
+        const j = (await res.json().catch(() => ({}))) as { success?: boolean; error?: string };
+        if (!res.ok) throw new Error(j.error ?? "Failed to reset invoice");
+        toast.success("Invoice reset to draft. You can now re-finalize it.");
+        router.push(`/dashboard/projects/${project.id}`);
+        router.refresh();
+        return;
+      }
+
+      const finalStatus = await persistInvoiceData(overrideStatus);
       if (overrideStatus) setStatus(overrideStatus);
 
       // Auto-sync to Stripe as DRAFT when Stripe is connected and status is draft
       if (stripeConnected && finalStatus === "draft") {
         if (automaticTaxEnabled && !project.address) {
-          toast.warning(
-            "Add an address to the project to enable auto-tax on Stripe.",
-          );
+          toast.warning("Add an address to the project to enable auto-tax on Stripe.");
         } else {
           try {
-            const syncRes = await fetch(
-              `/api/invoices/${invoice.id}/sync-stripe`,
-              { method: "POST" },
-            );
-            const syncJson = (await syncRes.json()) as {
-              hosted_url?: string;
-              error?: string;
-            };
-            if (syncRes.ok && syncJson.hosted_url) {
-              setStripeHostedUrl(syncJson.hosted_url);
-            } else if (syncJson.error) {
-              console.warn("[sync-stripe]", syncJson.error);
-            }
-          } catch {
-            // non-blocking — invoice is saved regardless
-          }
+            const syncRes = await fetch(`/api/invoices/${invoice.id}/sync-stripe`, { method: "POST" });
+            const syncJson = (await syncRes.json()) as { hosted_url?: string; error?: string };
+            if (syncRes.ok && syncJson.hosted_url) setStripeHostedUrl(syncJson.hosted_url);
+          } catch { /* non-blocking */ }
         }
       }
 
@@ -409,11 +437,13 @@ export function DraftInvoiceCard({
       const j = (await res.json().catch(() => ({}))) as {
         success?: boolean;
         hosted_url?: string | null;
+        stripe_invoice_number?: string | null;
         error?: string;
       };
       if (!res.ok) throw new Error(j.error ?? "Finalize failed");
 
       if (j.hosted_url) setStripeHostedUrl(j.hosted_url);
+      if (j.stripe_invoice_number) setStripeInvoiceNumber(j.stripe_invoice_number);
       setStatus("open");
       toast.success(
         stripeConnected
@@ -444,6 +474,7 @@ export function DraftInvoiceCard({
       if (!res.ok) throw new Error(j.error ?? "Void failed");
       toast.success("Invoice voided. A new draft has been created.");
       router.push(`/dashboard/projects/${project.id}`);
+      router.refresh();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to void invoice");
     } finally {
@@ -471,6 +502,45 @@ export function DraftInvoiceCard({
       toast.error(
         e instanceof Error ? e.message : "Failed to mark uncollectible",
       );
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  // ── Clear Invoice (draft only) ──
+
+  async function handleClearInvoice() {
+    setSaving(true);
+    try {
+      const today = new Date().toISOString().slice(0, 10);
+      setRows([newRow()]);
+      setTaxRate("0");
+      setDate(today);
+      // Persist cleared state to DB
+      const { error: invErr } = await supabase
+        .from("invoices")
+        .update({
+          date: today,
+          status: "draft",
+          subtotal: "0",
+          tax_rate: "0",
+          tax_amount: "0",
+          total: "0",
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", invoice.id);
+      if (invErr) throw new Error(invErr.message);
+      await supabase.from("invoice_items").delete().eq("invoice_id", invoice.id);
+      // Re-sync Stripe draft so it also clears in Stripe
+      if (stripeConnected) {
+        try {
+          await fetch(`/api/invoices/${invoice.id}/sync-stripe`, { method: "POST" });
+        } catch { /* non-blocking */ }
+      }
+      toast.success("Invoice cleared.");
+      router.refresh();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to clear invoice");
     } finally {
       setSaving(false);
     }
@@ -528,8 +598,9 @@ export function DraftInvoiceCard({
         params.push(`subject=${encodeURIComponent(subject)}`);
         params.push(`body=${encodeURIComponent(body)}`);
         mailtoUrl += `?${params.join("&")}`;
-        // window.location.href is the most reliable cross-browser way to trigger mailto:
-        window.location.href = mailtoUrl;
+        // Fire window.open BEFORE any React state changes — re-renders can swallow
+        // programmatic navigation like window.location.href in some browsers.
+        window.open(mailtoUrl);
         // Update status to "sent"
         await supabase.from("invoices").update({ status: "sent", updated_at: new Date().toISOString() }).eq("id", invoice.id);
         setStatus("sent");
@@ -736,11 +807,166 @@ export function DraftInvoiceCard({
         </div>
       )}
 
+      {/* ── Status Change Popup ── */}
+      {statusDialogOpen && (() => {
+        // Available options depend on current status
+        const optionsByStatus: Record<string, InvoiceStatus[]> = {
+          open: ["sent", "paid", "void", "uncollectible"],
+          sent: ["paid", "void", "uncollectible"],
+          paid: ["void"],
+          uncollectible: ["paid", "void"],
+        };
+        const options = optionsByStatus[status] ?? [];
+
+        const meta: Record<string, { label: string; desc: string; caution?: string }> = {
+          sent: {
+            label: "Sent",
+            desc: "Invoice has been sent to the client.",
+          },
+          paid: {
+            label: "Paid",
+            desc: "Payment was collected.",
+            caution: "You cannot undo this action.",
+          },
+          void: {
+            label: "Void",
+            desc: "This invoice was accidentally finalized or contains a mistake.",
+            caution: "You cannot undo this action.",
+          },
+          uncollectible: {
+            label: "Uncollectible",
+            desc: "Payment of this invoice is not expected. It is still possible to collect payment should your customer attempt to pay.",
+            caution: "This invoice will no longer be open. After marking it as uncollectible, you'll only be able to change the status to paid or void.",
+          },
+        };
+
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+            <div className="bg-white dark:bg-slate-950 rounded-xl shadow-xl w-full max-w-sm border border-slate-200 dark:border-slate-800 p-6 flex flex-col gap-5">
+              <div>
+                <div className="font-semibold text-slate-900 dark:text-slate-50 text-base mb-0.5">
+                  Change invoice status
+                </div>
+                <p className="text-sm text-slate-500">Mark invoice as…</p>
+              </div>
+
+              <div className="flex flex-col gap-3">
+                {options.map((opt) => {
+                  const m = meta[opt];
+                  return (
+                    <label
+                      key={opt}
+                      className="flex items-start gap-3 cursor-pointer group"
+                    >
+                      <input
+                        type="radio"
+                        name="status-option"
+                        value={opt}
+                        checked={selectedStatusOption === opt}
+                        onChange={() => setSelectedStatusOption(opt)}
+                        className="mt-0.5 accent-primary"
+                      />
+                      <div>
+                        <div className="text-sm font-medium text-slate-800 dark:text-slate-100">
+                          {m.label}
+                        </div>
+                        <div className="text-xs text-slate-500 mt-0.5">{m.desc}</div>
+                        {m.caution && (
+                          <div className="text-xs text-amber-600 dark:text-amber-400 mt-1 font-medium">
+                            ⚠ Caution: {m.caution}
+                          </div>
+                        )}
+                      </div>
+                    </label>
+                  );
+                })}
+              </div>
+
+              <a
+                href="https://docs.stripe.com/invoicing/overview#invoice-statuses"
+                target="_blank"
+                rel="noreferrer"
+                className="text-xs text-primary hover:underline -mt-1"
+              >
+                Learn more →
+              </a>
+
+              <div className="flex items-center justify-end gap-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setStatusDialogOpen(false)}
+                  disabled={saving}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={!selectedStatusOption || saving}
+                  onClick={() => {
+                    setStatusDialogOpen(false);
+                    if (!selectedStatusOption) return;
+                    if (selectedStatusOption === "void") {
+                      // Void needs its own confirm dialog
+                      setVoidConfirmOpen(true);
+                    } else if (selectedStatusOption === "paid") {
+                      void (async () => {
+                        setSaving(true);
+                        try {
+                          const res = await fetch(`/api/invoices/${invoice.id}/mark-paid`, { method: "POST" });
+                          const j = (await res.json().catch(() => ({}))) as { error?: string };
+                          if (!res.ok) throw new Error(j.error ?? "Failed to mark paid");
+                          setStatus("paid");
+                          toast.success("Invoice marked as paid.");
+                          router.refresh();
+                        } catch (e) {
+                          toast.error(e instanceof Error ? e.message : "Failed");
+                        } finally { setSaving(false); }
+                      })();
+                    } else if (selectedStatusOption === "uncollectible") {
+                      void (async () => {
+                        setSaving(true);
+                        try {
+                          const res = await fetch(`/api/invoices/${invoice.id}/uncollectible`, { method: "POST" });
+                          const j = (await res.json().catch(() => ({}))) as { error?: string };
+                          if (!res.ok) throw new Error(j.error ?? "Failed");
+                          setStatus("uncollectible");
+                          toast.success("Invoice marked as uncollectible.");
+                          router.refresh();
+                        } catch (e) {
+                          toast.error(e instanceof Error ? e.message : "Failed");
+                        } finally { setSaving(false); }
+                      })();
+                    } else if (selectedStatusOption === "sent") {
+                      void (async () => {
+                        setSaving(true);
+                        try {
+                          await supabase.from("invoices").update({ status: "sent", updated_at: new Date().toISOString() }).eq("id", invoice.id);
+                          setStatus("sent");
+                          toast.success("Invoice marked as sent.");
+                          router.refresh();
+                        } catch (e) {
+                          toast.error(e instanceof Error ? e.message : "Failed");
+                        } finally { setSaving(false); }
+                      })();
+                    }
+                  }}
+                >
+                  Update status
+                </Button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* Invoice Card */}
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between gap-3 flex-wrap">
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 flex-wrap">
               <CardTitle>Invoice</CardTitle>
               <Badge variant={statusVariant(status)}>
                 {status.charAt(0).toUpperCase() + status.slice(1)}
@@ -750,9 +976,36 @@ export function DraftInvoiceCard({
                   {invoice.invoice_number}
                 </span>
               )}
+              {/* Stripe invoice number — shown after finalization */}
+              {stripeInvoiceNumber && invoice.stripe_invoice_id && (
+                <span className="inline-flex items-center gap-1.5 text-xs font-mono text-slate-500">
+                  <span className="text-slate-300 dark:text-slate-600">|</span>
+                  <a
+                    href={`https://dashboard.stripe.com/invoices/${invoice.stripe_invoice_id}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1 text-primary hover:underline"
+                    title="Open in Stripe Dashboard"
+                  >
+                    Stripe: {stripeInvoiceNumber}
+                    <ExternalLink className="w-3 h-3 opacity-60" />
+                  </a>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void navigator.clipboard.writeText(stripeInvoiceNumber);
+                      toast.success("Stripe invoice number copied");
+                    }}
+                    title="Copy Stripe invoice number"
+                    className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition-colors"
+                  >
+                    <Copy className="w-3 h-3" />
+                  </button>
+                </span>
+              )}
             </div>
 
-            {/* Status selector + Stripe indicator */}
+            {/* Stripe indicator + Status change button */}
             <div className="flex items-center gap-2">
               {stripeConnected ? (
                 <span className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-800 shrink-0">
@@ -767,37 +1020,26 @@ export function DraftInvoiceCard({
                   Stripe
                 </a>
               )}
-              <Select
-                value={status}
-                onValueChange={(v) => {
-                  if (status === "draft") {
-                    toast.info("Use 'Finalize Invoice' to change from Draft status.");
-                    return;
-                  }
-                  if (v === "draft") {
-                    toast.error("Invoice already finalized. Use the Void button to return to Draft.");
-                    return;
-                  }
-                  if (v === "void" && status !== "void") {
-                    setVoidConfirmOpen(true);
-                    return;
-                  }
-                  setStatus(v as InvoiceStatus);
+              {/* Status change trigger — disabled on draft and void (terminal states) */}
+              <button
+                type="button"
+                disabled={status === "draft" || status === "void"}
+                onClick={() => {
+                  setSelectedStatusOption(null);
+                  setStatusDialogOpen(true);
                 }}
-                disabled={status === "draft"}
+                title={
+                  status === "draft"
+                    ? "Finalize the invoice to change status"
+                    : status === "void"
+                    ? "Void is a terminal status"
+                    : "Change invoice status"
+                }
+                className="inline-flex items-center gap-1.5 h-8 px-3 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
               >
-                <SelectTrigger className="h-8 text-xs w-36">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="draft">Draft</SelectItem>
-                  <SelectItem value="open">Open</SelectItem>
-                  <SelectItem value="sent">Sent</SelectItem>
-                  <SelectItem value="paid">Paid</SelectItem>
-                  <SelectItem value="void">Void</SelectItem>
-                  <SelectItem value="uncollectible">Uncollectible</SelectItem>
-                </SelectContent>
-              </Select>
+                {status.charAt(0).toUpperCase() + status.slice(1)}
+                <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+              </button>
             </div>
           </div>
         </CardHeader>
@@ -1078,62 +1320,112 @@ export function DraftInvoiceCard({
                 alternatePaymentInstructions={null}
               />
 
-              {/* DRAFT: Finalize Invoice */}
+              {/* ── DRAFT buttons ── */}
               {status === "draft" && (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => void handleFinalize()}
-                  disabled={saving}
-                  title="Finalizing locks the invoice. If Stripe is connected, it will also be finalized in Stripe and a payment link will be generated."
-                >
-                  Finalize Invoice
-                </Button>
+                <>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => void handleFinalize()}
+                    disabled={saving}
+                    title="Finalizing locks the invoice. If Stripe is connected, it will also be finalized in Stripe and a payment link will be generated."
+                  >
+                    Finalize Invoice
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => void handleClearInvoice()}
+                    disabled={saving}
+                    title="Clear line items, tax, and date — keeps notes"
+                  >
+                    Clear Invoice
+                  </Button>
+                </>
               )}
 
-              {/* OPEN: Send Via Stripe (Stripe connected only) */}
-              {(status === "open" || status === "sent") && stripeConnected && (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="gap-1.5"
-                  onClick={openSendStripeDialog}
-                  disabled={saving || !project.client_email}
-                  title={
-                    !project.client_email
-                      ? "Please add client email to the project first"
-                      : "Send the Stripe invoice to your client via email"
-                  }
-                >
-                  <Send className="w-3.5 h-3.5" />
-                  Send Via Stripe
-                </Button>
-              )}
-
-              {/* OPEN: Send Via Email (mailto) */}
+              {/* ── OPEN / SENT buttons ── */}
               {(status === "open" || status === "sent") && (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="gap-1.5"
-                  onClick={openSendEmailDialog}
-                  disabled={!project.client_email}
-                  title={
-                    !project.client_email
-                      ? "Please add client email to the project first"
-                      : "Open your email client with a pre-filled invoice email"
-                  }
-                >
-                  <Mail className="w-3.5 h-3.5" />
-                  Send Via Email
-                </Button>
+                <>
+                  {stripeConnected && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="gap-1.5"
+                      onClick={openSendStripeDialog}
+                      disabled={saving || !project.client_email}
+                      title={
+                        !project.client_email
+                          ? "Please add client email to the project first"
+                          : "Send the Stripe invoice to your client via email"
+                      }
+                    >
+                      <Send className="w-3.5 h-3.5" />
+                      Send Via Stripe
+                    </Button>
+                  )}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5"
+                    onClick={openSendEmailDialog}
+                    disabled={!project.client_email}
+                    title={
+                      !project.client_email
+                        ? "Please add client email to the project first"
+                        : "Open your email client with a pre-filled invoice email"
+                    }
+                  >
+                    <Mail className="w-3.5 h-3.5" />
+                    Send Via Email
+                  </Button>
+                </>
               )}
 
-              {/* Void — available on open, sent, paid, and uncollectible */}
-              {(status === "open" || status === "sent" || status === "paid" || status === "uncollectible") && (
+              {/* ── UNCOLLECTIBLE: Void + Paid ── */}
+              {status === "uncollectible" && (
+                <>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setVoidConfirmOpen(true)}
+                    disabled={saving}
+                    title="Void this invoice and create a new draft"
+                  >
+                    Void
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => void (async () => {
+                      setSaving(true);
+                      try {
+                        const res = await fetch(`/api/invoices/${invoice.id}/mark-paid`, { method: "POST" });
+                        const j = (await res.json().catch(() => ({}))) as { error?: string };
+                        if (!res.ok) throw new Error(j.error ?? "Failed to mark paid");
+                        setStatus("paid");
+                        toast.success("Invoice marked as paid.");
+                        router.refresh();
+                      } catch (e) {
+                        toast.error(e instanceof Error ? e.message : "Failed");
+                      } finally { setSaving(false); }
+                    })()}
+                    disabled={saving}
+                    title="Mark this invoice as paid"
+                  >
+                    Paid
+                  </Button>
+                </>
+              )}
+
+              {/* ── PAID: Void ── */}
+              {status === "paid" && (
                 <Button
                   type="button"
                   variant="outline"
@@ -1143,20 +1435,6 @@ export function DraftInvoiceCard({
                   title="Void this invoice and create a new draft"
                 >
                   Void
-                </Button>
-              )}
-
-              {/* Mark as Uncollectible — only for open/sent */}
-              {(status === "open" || status === "sent") && (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => void handleUncollectible()}
-                  disabled={saving}
-                  title="Mark this invoice as uncollectible"
-                >
-                  Uncollectible
                 </Button>
               )}
             </div>

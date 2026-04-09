@@ -98,8 +98,10 @@ export interface Invoice {
   stripe_payment_link_id?: string | null;
   stripe_checkout_session_id?: string | null;
   stripe_invoice_id?: string | null;
+  stripe_invoice_number?: string | null;
   stripe_hosted_url?: string | null;
   automatic_tax_enabled?: boolean | null;
+  open_edit_count?: number | null;
   alternate_payment_instructions?: string | null;
   pay_with_ach_enabled?: boolean | null;
   created_at: string;
