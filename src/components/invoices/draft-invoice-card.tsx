@@ -620,7 +620,7 @@ export function DraftInvoiceCard({
       await supabase.from("invoices").update({ status: "sent", updated_at: new Date().toISOString() }).eq("id", invoice.id);
       setStatus("sent");
       setSendDialogMode(null);
-      toast.success("Email client opened. Invoice marked as Sent.");
+      toast.success("Invoice marked as Sent.");
       router.refresh();
     } catch {
       toast.error("Failed to mark invoice as sent");
@@ -797,25 +797,50 @@ export function DraftInvoiceCard({
                 </div>
               )}
             </div>
-            <div className="flex items-center justify-end gap-3">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => setSendDialogMode(null)}
-                disabled={saving}
-              >
-                Cancel
-              </Button>
-              {sendDialogMode === "email" ? (
-                <a
-                  href={mailtoUrl}
-                  onClick={() => void handleMarkEmailSent()}
-                  className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium h-9 px-3 bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
+            {sendDialogMode === "email" ? (
+              <div className="flex flex-col gap-3">
+                <p className="text-xs text-slate-500">
+                  1. Click <strong>Open Email Client</strong> to launch your mail app pre-filled with the invoice.
+                  <br />2. After sending, click <strong>Mark as Sent</strong> to update the invoice status.
+                </p>
+                <div className="flex items-center justify-end gap-3">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setSendDialogMode(null)}
+                  >
+                    Cancel
+                  </Button>
+                  {/* Native anchor — no onClick so the component doesn't unmount before the browser fires mailto */}
+                  <a
+                    href={mailtoUrl}
+                    className="inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-md text-sm font-medium h-9 px-3 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+                  >
+                    <Mail className="w-3.5 h-3.5" />
+                    Open Email Client
+                  </a>
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={() => void handleMarkEmailSent()}
+                    disabled={saving}
+                  >
+                    Mark as Sent
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-center justify-end gap-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setSendDialogMode(null)}
+                  disabled={saving}
                 >
-                  Open Email Client
-                </a>
-              ) : (
+                  Cancel
+                </Button>
                 <Button
                   type="button"
                   size="sm"
@@ -824,8 +849,8 @@ export function DraftInvoiceCard({
                 >
                   Send via Stripe
                 </Button>
-              )}
-            </div>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -1004,7 +1029,7 @@ export function DraftInvoiceCard({
                 <span className="inline-flex items-center gap-1.5 text-xs font-mono text-slate-500">
                   <span className="text-slate-300 dark:text-slate-600">|</span>
                   <a
-                    href={`https://dashboard.stripe.com/invoices/${stripeInvoiceId}`}
+                    href={`https://dashboard.stripe.com/${profile?.stripe_connect_account_id ?? ""}/invoices/${stripeInvoiceId}`}
                     target="_blank"
                     rel="noreferrer"
                     className="inline-flex items-center gap-1 text-primary hover:underline"

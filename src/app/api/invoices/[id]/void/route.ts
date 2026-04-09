@@ -26,10 +26,10 @@ export async function POST(
   }
 
   try {
-    // Fetch invoice to get project_id
+    // Fetch invoice with all fields needed to clone into new draft
     const { data: invoice } = await supabase
       .from("invoices")
-      .select("id, project_id, status, stripe_invoice_id")
+      .select("id, project_id, status, stripe_invoice_id, date, notes, subtotal, tax_rate, tax_amount, total, automatic_tax_enabled")
       .eq("id", id)
       .eq("user_id", user.id)
       .single();
@@ -38,7 +38,15 @@ export async function POST(
       return NextResponse.json({ error: "Invoice not found" }, { status: 404 });
     }
 
-    const projectId = (invoice as Record<string, unknown>).project_id as string;
+    const inv = invoice as Record<string, unknown>;
+    const projectId = inv.project_id as string;
+
+    // Fetch existing line items so we can copy them to the new draft
+    const { data: existingItems } = await supabase
+      .from("invoice_items")
+      .select("name, description, quantity, unit_price, total, sort_order")
+      .eq("invoice_id", id)
+      .order("sort_order", { ascending: true });
 
     // Void Stripe invoice silently (handles errors internally)
     await voidStripeInvoice(id, user.id);
@@ -69,7 +77,7 @@ export async function POST(
 
     const newInvoiceNumber = `INV-${String(maxNum + 1).padStart(3, "0")}`;
 
-    // Create new blank draft for the same project
+    // Create new draft for the same project, copying all editable fields from the voided invoice
     const { data: newInvoice, error: insertErr } = await supabase
       .from("invoices")
       .insert({
@@ -77,24 +85,42 @@ export async function POST(
         user_id: user.id,
         invoice_number: newInvoiceNumber,
         status: "draft",
-        subtotal: "0",
-        tax_rate: "0",
-        tax_amount: "0",
-        total: "0",
-        date: new Date().toISOString().slice(0, 10),
+        date: (inv.date as string | null) ?? new Date().toISOString().slice(0, 10),
+        notes: (inv.notes as string | null) ?? null,
+        subtotal: (inv.subtotal as string | null) ?? "0",
+        tax_rate: (inv.tax_rate as string | null) ?? "0",
+        tax_amount: (inv.tax_amount as string | null) ?? "0",
+        total: (inv.total as string | null) ?? "0",
+        automatic_tax_enabled: (inv.automatic_tax_enabled as boolean | null) ?? false,
       })
       .select("id")
       .single();
 
     if (insertErr || !newInvoice) {
       console.error("[void] Failed to create new draft:", insertErr?.message);
-      // Still return success for the void — draft creation is best-effort
       return NextResponse.json({ success: true, new_invoice_id: null });
+    }
+
+    const newInvoiceId = (newInvoice as Record<string, unknown>).id as string;
+
+    // Copy line items to the new draft
+    if (existingItems && existingItems.length > 0) {
+      await supabase.from("invoice_items").insert(
+        (existingItems as Array<Record<string, unknown>>).map((item, idx) => ({
+          invoice_id: newInvoiceId,
+          name: item.name as string | null,
+          description: item.description as string | null,
+          quantity: item.quantity as string,
+          unit_price: item.unit_price as string,
+          total: item.total as string,
+          sort_order: (item.sort_order as number | null) ?? idx,
+        })),
+      );
     }
 
     return NextResponse.json({
       success: true,
-      new_invoice_id: (newInvoice as Record<string, unknown>).id,
+      new_invoice_id: newInvoiceId,
     });
   } catch (err) {
     console.error("[void]", err);
