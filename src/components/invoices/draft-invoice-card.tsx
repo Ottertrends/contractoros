@@ -596,17 +596,25 @@ export function DraftInvoiceCard({
 
   // ── Shared email subject + body (used by all three compose URL memos) ──
   const emailSubject = React.useMemo(
-    () => `Invoice ${invoice.invoice_number ?? ""} — ${profile?.company_name ?? ""}`,
+    () => `New invoice from ${profile?.company_name ?? ""} #${invoice.invoice_number ?? ""}`,
     [invoice.invoice_number, profile?.company_name],
   );
   const emailBody = React.useMemo(() => {
     const payLink = stripeHostedUrl || paymentLinkUrl;
     return [
-      "Hi,",
+      `Hi,`,
       "",
-      "Please find your invoice attached.",
+      `${profile?.company_name ?? "Your service provider"} has sent you an invoice.`,
       "",
-      ...(payLink ? [`Pay online: ${payLink}`, ""] : []),
+      ...(payLink
+        ? [
+            "View and pay your invoice here:",
+            payLink,
+            "",
+          ]
+        : []),
+      "Thank you for your business.",
+      "",
       "Best regards,",
       profile?.company_name ?? "",
     ].join("\n");
