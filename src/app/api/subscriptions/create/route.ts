@@ -39,6 +39,7 @@ export async function POST(req: NextRequest) {
     setup_fee?: number;
     trial_period_days?: number;
     tax_category?: TaxCategory;
+    custom_tax_amount?: number;
   };
 
   try {
@@ -56,6 +57,7 @@ export async function POST(req: NextRequest) {
     setup_fee = 0,
     trial_period_days = 0,
     tax_category,
+    custom_tax_amount = 0,
   } = body;
 
   if (!project_id || !name || !amount || amount < 0.50 || !interval) {
@@ -78,8 +80,11 @@ export async function POST(req: NextRequest) {
   const stripeOpts = { stripeAccount: connectedAccountId };
   const origin = req.headers.get("origin") ?? "https://app.worksupp.com";
 
+  const isFixedTax = tax_category === "other" && custom_tax_amount > 0;
+  const isAutoTax = !!tax_category && tax_category !== "other";
+
   try {
-    // 1. Create Stripe Product
+    // 1. Create Stripe Product (no tax_code for fixed-amount "other" tax)
     const product = await stripe.products.create(
       {
         name,
@@ -113,7 +118,25 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 4. Create Checkout session (subscription mode)
+    // 4. For fixed-amount tax: create a Stripe TaxRate with the calculated percentage
+    //    (percentage = custom_tax_amount / amount * 100, applied to each recurring invoice)
+    let fixedTaxRateIds: string[] = [];
+    if (isFixedTax) {
+      const pct = Math.round((custom_tax_amount / amount) * 10000) / 100; // 2 decimal places
+      const taxRate = await stripe.taxRates.create(
+        {
+          display_name: "Tax",
+          percentage: pct,
+          inclusive: false,
+        },
+        stripeOpts,
+      );
+      fixedTaxRateIds = [taxRate.id];
+    }
+
+    // 5. Create Checkout session (subscription mode)
+    // NOTE: customer_update requires a pre-existing `customer` ID — cannot use with customer_email.
+    // For auto-tax, we use billing_address_collection: "required" so Stripe collects the address.
     const session = await stripe.checkout.sessions.create(
       {
         mode: "subscription",
@@ -124,13 +147,16 @@ export async function POST(req: NextRequest) {
         ],
         subscription_data: {
           trial_period_days: trial_period_days > 0 ? trial_period_days : undefined,
+          default_tax_rates: fixedTaxRateIds.length > 0 ? fixedTaxRateIds : undefined,
           metadata: {
             project_id,
             contractor_user_id: user.id,
           },
         },
-        automatic_tax: { enabled: !!tax_category },
-        customer_update: tax_category ? { address: "auto" } : undefined,
+        // Auto-tax: let Stripe calculate based on client location (address required at checkout)
+        automatic_tax: { enabled: isAutoTax },
+        // Collect billing address when auto-tax is on (replaces customer_update which needs customer ID)
+        billing_address_collection: isAutoTax ? "required" : "auto",
         metadata: {
           project_id,
           contractor_user_id: user.id,
@@ -142,7 +168,7 @@ export async function POST(req: NextRequest) {
       stripeOpts,
     );
 
-    // 5. Save service plan
+    // 6. Save service plan
     const { data: plan, error: planErr } = await supabase
       .from("service_plans")
       .insert({
@@ -155,6 +181,7 @@ export async function POST(req: NextRequest) {
         setup_fee: String(setup_fee),
         trial_period_days,
         tax_category: tax_category ?? null,
+        custom_tax_amount: isFixedTax ? custom_tax_amount : null,
         stripe_product_id: product.id,
         stripe_price_id: recurringPrice.id,
         stripe_checkout_url: session.url,
@@ -167,7 +194,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Failed to save plan" }, { status: 500 });
     }
 
-    // 6. Save pending subscription record
+    // 7. Save pending subscription record
     const { data: sub, error: subErr } = await supabase
       .from("client_subscriptions")
       .insert({

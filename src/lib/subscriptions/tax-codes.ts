@@ -5,10 +5,12 @@ export const TAX_CATEGORY_LABELS: Record<TaxCategory, string> = {
   landscaping:  "Landscaping",
   construction: "Construction",
   materials:    "Materials & Supplies",
+  other:        "Other (Fixed Amount)",
 };
 
 // Stripe product tax codes — https://stripe.com/docs/tax/tax-codes
-export const TAX_CODE_MAP: Record<TaxCategory, string> = {
+// "other" uses a fixed TaxRate instead of a tax_code, so it's omitted here.
+export const TAX_CODE_MAP: Partial<Record<TaxCategory, string>> = {
   repair:       "txcd_30060006", // Repair / maintenance services
   landscaping:  "txcd_30060006", // General services (closest match)
   construction: "txcd_30060001", // Construction services

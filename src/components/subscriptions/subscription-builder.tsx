@@ -29,6 +29,7 @@ export function SubscriptionBuilder({ projects, onClose, onCreated }: Props) {
   const [setupFee, setSetupFee] = React.useState("");
   const [trialDays, setTrialDays] = React.useState("0");
   const [taxCategory, setTaxCategory] = React.useState<TaxCategory | "">("");
+  const [customTaxAmount, setCustomTaxAmount] = React.useState("");
 
   const selectedProject = projects.find((p) => p.id === projectId);
 
@@ -41,6 +42,11 @@ export function SubscriptionBuilder({ projects, onClose, onCreated }: Props) {
     const amountNum = parseFloat(amount);
     if (isNaN(amountNum) || amountNum < 0.5) {
       toast.error("Amount must be at least $0.50.");
+      return;
+    }
+    const customTaxNum = parseFloat(customTaxAmount) || 0;
+    if (taxCategory === "other" && customTaxNum <= 0) {
+      toast.error("Please enter a fixed tax amount greater than $0.");
       return;
     }
 
@@ -58,6 +64,7 @@ export function SubscriptionBuilder({ projects, onClose, onCreated }: Props) {
           setup_fee: parseFloat(setupFee) || 0,
           trial_period_days: parseInt(trialDays) || 0,
           tax_category: taxCategory || undefined,
+          custom_tax_amount: taxCategory === "other" ? (parseFloat(customTaxAmount) || 0) : undefined,
         }),
       });
 
@@ -274,14 +281,17 @@ export function SubscriptionBuilder({ projects, onClose, onCreated }: Props) {
               </div>
 
               {/* Tax Category */}
-              <div>
-                <Label htmlFor="sub-tax" className="text-xs font-medium text-slate-500 mb-1.5 block">
-                  Tax Category <span className="text-slate-400">(optional)</span>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="sub-tax" className="text-xs font-medium text-slate-500">
+                  Tax <span className="text-slate-400">(optional)</span>
                 </Label>
                 <select
                   id="sub-tax"
                   value={taxCategory}
-                  onChange={(e) => setTaxCategory(e.target.value as TaxCategory | "")}
+                  onChange={(e) => {
+                    setTaxCategory(e.target.value as TaxCategory | "");
+                    setCustomTaxAmount("");
+                  }}
                   className="flex h-9 w-full rounded-md border border-slate-200 bg-white px-3 py-1 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
                 >
                   <option value="">No tax</option>
@@ -289,10 +299,38 @@ export function SubscriptionBuilder({ projects, onClose, onCreated }: Props) {
                     <option key={val} value={val}>{label}</option>
                   ))}
                 </select>
-                {taxCategory && (
-                  <p className="text-xs text-slate-400 mt-1">
+
+                {/* Auto-tax hint */}
+                {taxCategory && taxCategory !== "other" && (
+                  <p className="text-xs text-slate-400">
                     Stripe will calculate tax automatically based on your client&apos;s billing address.
                   </p>
+                )}
+
+                {/* Fixed amount input for "Other" */}
+                {taxCategory === "other" && (
+                  <div>
+                    <Label htmlFor="sub-custom-tax" className="text-xs font-medium text-slate-500 mb-1.5 block">
+                      Fixed Tax Amount <span className="text-red-500">*</span>
+                    </Label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-400">$</span>
+                      <Input
+                        id="sub-custom-tax"
+                        type="number"
+                        min="0.01"
+                        step="0.01"
+                        value={customTaxAmount}
+                        onChange={(e) => setCustomTaxAmount(e.target.value)}
+                        placeholder="8.50"
+                        className="pl-7"
+                        required
+                      />
+                    </div>
+                    <p className="text-xs text-slate-400 mt-1">
+                      This fixed amount will be charged as tax on every billing cycle.
+                    </p>
+                  </div>
                 )}
               </div>
             </div>

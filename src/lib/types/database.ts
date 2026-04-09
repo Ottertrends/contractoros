@@ -164,7 +164,7 @@ export interface ProjectMedia {
 
 export type SubscriptionInterval = "week" | "month";
 export type SubscriptionStatus = "incomplete" | "trialing" | "active" | "past_due" | "canceled";
-export type TaxCategory = "repair" | "landscaping" | "construction" | "materials";
+export type TaxCategory = "repair" | "landscaping" | "construction" | "materials" | "other";
 
 export interface ServicePlan {
   id: string;
@@ -177,6 +177,7 @@ export interface ServicePlan {
   setup_fee: string;
   trial_period_days: number;
   tax_category: TaxCategory | null;
+  custom_tax_amount: string | null; // Fixed dollar tax (when tax_category === "other")
   stripe_product_id: string | null;
   stripe_price_id: string | null;
   stripe_checkout_url: string | null;
