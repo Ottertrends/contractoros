@@ -353,6 +353,13 @@ async function handleMessagesUpsert(
           .update({ whatsapp_owner_lid: jid, whatsapp_lid_pending: false })
           .eq("id", userId);
       }
+      // Notify the user so they know to resend — otherwise silence makes it look broken
+      try {
+        const evolution = createEvolutionClient();
+        await evolution.sendText(instance, jid, "🔗 Conexión establecida. Por favor envía tu comando de nuevo.");
+      } catch (e) {
+        console.warn("[evolution-webhook] bootstrap reply failed:", e instanceof Error ? e.message : e);
+      }
     } else if (ownerLid) {
       if (jid !== ownerLid) {
         // LID mismatch — WhatsApp rotates LIDs frequently (~1-2 hrs).

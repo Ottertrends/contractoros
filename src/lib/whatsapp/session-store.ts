@@ -35,11 +35,18 @@ export function getSessionSlice(
       typeof slice.lid_pending === "boolean");
 
   if (hasJsonSlice && slice) {
+    // profile.whatsapp_lid_pending is only meaningful for the primary instance —
+    // the bootstrap code only clears it when isPrimaryInstance() is true.
+    // For secondary instances we must rely solely on the per-session JSONB slice;
+    // otherwise the secondary is permanently stuck in bootstrap mode after reconnect.
+    const primaryId = profile?.whatsapp_instance_id ?? canonicalPrimaryInstanceName;
+    const isThisPrimary = !!primaryId && instanceName === primaryId;
+    const profileLidPending = isThisPrimary ? !!(profile?.whatsapp_lid_pending) : false;
+
     return {
       ownerJid: (slice.owner_jid as string | null) ?? null,
       ownerLid: (slice.owner_lid as string | null) ?? null,
-      // Profile-level whatsapp_lid_pending=true always wins (e.g. after a manual reset)
-      lidPending: !!(profile?.whatsapp_lid_pending) || !!(slice.lid_pending ?? false),
+      lidPending: profileLidPending || !!(slice.lid_pending ?? false),
     };
   }
 
