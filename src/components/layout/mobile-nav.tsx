@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   Menu,
   X,
@@ -19,11 +19,13 @@ import {
   HelpCircle,
   CalendarDays,
   ClipboardList,
+  Languages,
 } from "lucide-react";
 
 import Image from "next/image";
 import { useLanguage } from "@/lib/i18n/client";
 import { HelpModal } from "@/components/help/help-modal";
+import { ThemeToggle } from "@/components/theme/theme-toggle";
 
 type Props = {
   userName?: string;
@@ -34,8 +36,14 @@ export function MobileNav({ userName, userEmail }: Props) {
   const [open, setOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
-  const { t } = useLanguage();
+  const { t, lang, setLang } = useLanguage();
   const pathname = usePathname();
+  const router = useRouter();
+
+  function toggleLang() {
+    setLang(lang === "en" ? "es" : "en");
+    router.refresh();
+  }
 
   // Mount guard for createPortal (SSR-safe)
   useEffect(() => {
@@ -125,6 +133,25 @@ export function MobileNav({ userName, userEmail }: Props) {
             );
           })}
         </nav>
+
+        {/* Theme + Language toggles */}
+        <div className="shrink-0 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 px-5 py-3 flex items-center justify-between">
+          <span className="text-sm text-slate-500 dark:text-slate-400">Appearance</span>
+          <div className="flex items-center gap-3">
+            <ThemeToggle />
+            <button
+              type="button"
+              onClick={toggleLang}
+              className="text-xs font-semibold px-2.5 py-1 rounded border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors select-none"
+              title="Toggle language"
+            >
+              <span className="flex items-center gap-1">
+                <Languages className="h-3.5 w-3.5" />
+                {lang === "en" ? "ES" : "EN"}
+              </span>
+            </button>
+          </div>
+        </div>
 
         {/* Help button at the bottom of the drawer */}
         <div className="shrink-0 p-4 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">

@@ -207,6 +207,25 @@ async function generatePDF({
   rightY += 12;
   doc.text(`Date: ${dateStr}`, pageWidth - margin, rightY, { align: "right" });
 
+  // PAID badge — shown when invoice is paid
+  if (invoice.status === "paid") {
+    rightY += 18;
+    const badgeW = 58;
+    const badgeH = 18;
+    const badgeX = pageWidth - margin - badgeW;
+    const badgeY = rightY - 13;
+    doc.setFillColor(220, 252, 231);
+    doc.setDrawColor(22, 163, 74);
+    doc.setLineWidth(1.5);
+    doc.roundedRect(badgeX, badgeY, badgeW, badgeH, 3, 3, "FD");
+    doc.setFont(titleFont, "bold");
+    doc.setFontSize(10);
+    doc.setTextColor(22, 163, 74);
+    doc.text("PAID", badgeX + badgeW / 2, badgeY + badgeH / 2 + 3.5, { align: "center" });
+    doc.setFontSize(9);
+    doc.setTextColor(80);
+  }
+
   // ── Divider ───────────────────────────────────────────────────────────────
   const dividerY = Math.max(leftY, rightY) + 14;
   doc.setDrawColor(pr, pg, pb);
@@ -254,10 +273,10 @@ async function generatePDF({
   if (hasAnyLineTax) headerLabels.push("Tax");
   headerLabels.push("Total");
 
-  // Center numeric column headers; left-align the description header.
+  // Right-align numeric column headers (consistent with data alignment).
   const headerRow = headerLabels.map((h, i) => ({
     content: h,
-    styles: { halign: (i === 0 ? "left" : "center") as "left" | "center" },
+    styles: { halign: (i === 0 ? "left" : "right") as "left" | "right" },
   }));
 
   const columnStyles: Record<number, { cellWidth: number | "auto"; halign?: "left" | "right" | "center" }> = {
@@ -292,9 +311,9 @@ async function generatePDF({
   const finalY: number = (doc as any).lastAutoTable?.finalY ?? y + 60;
 
   // ── Totals ────────────────────────────────────────────────────────────────
-  // Two-column layout: labels left-aligned at labelX, amounts right-aligned at amtX.
-  // labelX = half the page gives ~266pt of label space — enough for long tax strings.
-  const labelX = pageWidth / 2;
+  // Two-column totals: labels left-aligned at labelX (aligned with table's numeric columns),
+  // amounts right-aligned at amtX. 200pt label area handles long tax breakdown text.
+  const labelX = pageWidth - margin - 200;
   const amtX   = pageWidth - margin;
   let ty = finalY + 18;
 

@@ -1702,18 +1702,36 @@ export function DraftInvoiceCard({
                 </>
               )}
 
-              {/* ── PAID: Void ── */}
+              {/* ── PAID: Send Email + Void ── */}
               {status === "paid" && (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setVoidConfirmOpen(true)}
-                  disabled={saving}
-                  title="Void this invoice and create a new draft"
-                >
-                  Void
-                </Button>
+                <>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5"
+                    onClick={openSendEmailDialog}
+                    disabled={!project.client_email}
+                    title={
+                      !project.client_email
+                        ? "Please add client email to the project first"
+                        : "Send paid invoice receipt to client via email"
+                    }
+                  >
+                    <Mail className="w-3.5 h-3.5" />
+                    Send Via Email
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setVoidConfirmOpen(true)}
+                    disabled={saving}
+                    title="Void this invoice and create a new draft"
+                  >
+                    Void
+                  </Button>
+                </>
               )}
             </div>
 
