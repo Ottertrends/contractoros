@@ -286,6 +286,19 @@ async function handleConnectionUpdate(
       );
     }
     await admin.from("profiles").update(patch).eq("id", userId);
+
+    // Re-register webhook URL on every connect so it survives Evolution server restarts.
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "");
+    if (appUrl) {
+      const webhookUrl = `${appUrl}/api/webhooks/evolution`;
+      try {
+        const evolution = createEvolutionClient();
+        await evolution.setWebhook(instance, webhookUrl, ["MESSAGES_UPSERT", "CONNECTION_UPDATE", "QRCODE_UPDATED"]);
+        console.log("[evolution-webhook] webhook re-registered on connect for", instance, "→", webhookUrl);
+      } catch (e) {
+        console.warn("[evolution-webhook] webhook re-register failed for", instance, e instanceof Error ? e.message : e);
+      }
+    }
   } else if (
     state.includes("close") ||
     state.includes("logout") ||
