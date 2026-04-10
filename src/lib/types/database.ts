@@ -169,7 +169,7 @@ export type TaxCategory = "repair" | "landscaping" | "construction" | "materials
 export interface ServicePlan {
   id: string;
   user_id: string;
-  project_id: string;
+  project_id: string | null;
   name: string;
   description: string | null;
   amount: string; // NUMERIC → string via PostgREST
@@ -187,11 +187,13 @@ export interface ServicePlan {
 export interface ClientSubscription {
   id: string;
   user_id: string;
-  project_id: string;
+  project_id: string | null;
   service_plan_id: string | null;
   stripe_subscription_id: string | null;
   stripe_customer_id: string | null;
   stripe_checkout_session_id: string | null;
+  stripe_customer_email: string | null;
+  stripe_customer_name: string | null;
   status: SubscriptionStatus;
   current_period_end: string | null;
   trial_end: string | null;

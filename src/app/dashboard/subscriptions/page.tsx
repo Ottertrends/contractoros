@@ -8,6 +8,7 @@ import { supabase } from "@/lib/supabase/client";
 import { SubscriptionBuilder } from "@/components/subscriptions/subscription-builder";
 import {
   ActiveSubscriptionsTable,
+  UnlinkedSubscribersTable,
   SubscriptionPlansTable,
 } from "@/components/subscriptions/subscriptions-list";
 import type { Project, ServicePlan, ClientSubscription } from "@/lib/types/database";
@@ -106,6 +107,8 @@ export default function SubscriptionsPage() {
     );
   }
 
+  const linkedSubs = subscriptions.filter((s) => !!s.project_id);
+  const unlinkedSubs = subscriptions.filter((s) => !s.project_id);
   const activeCount = subscriptions.filter((s) =>
     ["active", "trialing", "past_due"].includes(s.status),
   ).length;
@@ -121,13 +124,7 @@ export default function SubscriptionsPage() {
           </p>
         </div>
         <Button
-          onClick={() => {
-            if (projects.length === 0) {
-              alert("You need at least one active project to create a subscription plan.");
-              return;
-            }
-            setBuilderOpen(true);
-          }}
+          onClick={() => setBuilderOpen(true)}
           className="flex items-center gap-2"
         >
           <Plus className="w-4 h-4" />
@@ -151,15 +148,32 @@ export default function SubscriptionsPage() {
         </div>
       </div>
 
-      {/* Active client subscriptions */}
+      {/* Active client subscriptions (project-linked) */}
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Active Client Subscriptions</CardTitle>
         </CardHeader>
         <CardContent>
-          <ActiveSubscriptionsTable subscriptions={subscriptions} onRefresh={refresh} />
+          <ActiveSubscriptionsTable subscriptions={linkedSubs} onRefresh={refresh} />
         </CardContent>
       </Card>
+
+      {/* Shared-link subscribers (no project) */}
+      {unlinkedSubs.length > 0 && (
+        <Card>
+          <CardHeader>
+            <div>
+              <CardTitle className="text-base">Subscribers — Shared Link</CardTitle>
+              <p className="text-xs text-slate-500 mt-0.5">
+                These clients subscribed via a shared checkout link and are not linked to a specific project.
+              </p>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <UnlinkedSubscribersTable subscriptions={unlinkedSubs} projects={projects} onRefresh={refresh} />
+          </CardContent>
+        </Card>
+      )}
 
       {/* Subscription plans */}
       <Card>

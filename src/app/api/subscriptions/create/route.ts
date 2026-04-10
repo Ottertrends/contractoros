@@ -31,7 +31,7 @@ export async function POST(req: NextRequest) {
   }
 
   let body: {
-    project_id: string;
+    project_id?: string | null;
     name: string;
     description?: string;
     amount: number;
@@ -49,7 +49,7 @@ export async function POST(req: NextRequest) {
   }
 
   const {
-    project_id,
+    project_id = null,
     name,
     description,
     amount,
@@ -60,20 +60,23 @@ export async function POST(req: NextRequest) {
     custom_tax_amount = 0,
   } = body;
 
-  if (!project_id || !name || !amount || amount < 0.50 || !interval) {
-    return NextResponse.json({ error: "Missing required fields (project_id, name, amount ≥ $0.50, interval)" }, { status: 400 });
+  if (!name || !amount || amount < 0.50 || !interval) {
+    return NextResponse.json({ error: "Missing required fields (name, amount ≥ $0.50, interval)" }, { status: 400 });
   }
 
-  // Fetch project for client info
-  const { data: project } = await supabase
-    .from("projects")
-    .select("id, name, client_name, client_email")
-    .eq("id", project_id)
-    .eq("user_id", user.id)
-    .single();
-
-  if (!project) {
-    return NextResponse.json({ error: "Project not found" }, { status: 404 });
+  // Fetch project for client info if a project_id was provided
+  let project: { id: string; name: string; client_name: string | null; client_email: string | null } | null = null;
+  if (project_id) {
+    const { data } = await supabase
+      .from("projects")
+      .select("id, name, client_name, client_email")
+      .eq("id", project_id)
+      .eq("user_id", user.id)
+      .single();
+    if (!data) {
+      return NextResponse.json({ error: "Project not found" }, { status: 404 });
+    }
+    project = data as typeof project;
   }
 
   const stripe = getStripe();
@@ -137,10 +140,11 @@ export async function POST(req: NextRequest) {
     // 5. Create Checkout session (subscription mode)
     // NOTE: customer_update requires a pre-existing `customer` ID — cannot use with customer_email.
     // For auto-tax, we use billing_address_collection: "required" so Stripe collects the address.
+    const clientEmail = (project as Record<string, unknown> | null)?.client_email as string | undefined ?? undefined;
     const session = await stripe.checkout.sessions.create(
       {
         mode: "subscription",
-        customer_email: (project as Record<string, unknown>).client_email as string | undefined ?? undefined,
+        customer_email: clientEmail,
         line_items: [
           { price: recurringPrice.id, quantity: 1 },
           ...(setupFeePrice ? [{ price: setupFeePrice.id, quantity: 1 }] : []),
@@ -149,7 +153,7 @@ export async function POST(req: NextRequest) {
           trial_period_days: trial_period_days > 0 ? trial_period_days : undefined,
           default_tax_rates: fixedTaxRateIds.length > 0 ? fixedTaxRateIds : undefined,
           metadata: {
-            project_id,
+            ...(project_id ? { project_id } : {}),
             contractor_user_id: user.id,
           },
         },
@@ -158,7 +162,7 @@ export async function POST(req: NextRequest) {
         // Collect billing address when auto-tax is on (replaces customer_update which needs customer ID)
         billing_address_collection: isAutoTax ? "required" : "auto",
         metadata: {
-          project_id,
+          ...(project_id ? { project_id } : {}),
           contractor_user_id: user.id,
           internal: "client_subscription",
         },
@@ -173,7 +177,7 @@ export async function POST(req: NextRequest) {
       .from("service_plans")
       .insert({
         user_id: user.id,
-        project_id,
+        project_id: project_id ?? null,
         name,
         description: description ?? null,
         amount: String(amount),
@@ -194,28 +198,36 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Failed to save plan" }, { status: 500 });
     }
 
-    // 7. Save pending subscription record
-    const { data: sub, error: subErr } = await supabase
-      .from("client_subscriptions")
-      .insert({
-        user_id: user.id,
-        project_id,
-        service_plan_id: (plan as Record<string, unknown>).id as string,
-        stripe_checkout_session_id: session.id,
-        status: "incomplete",
-      })
-      .select("id")
-      .single();
+    const planId = (plan as Record<string, unknown>).id as string;
 
-    if (subErr) {
-      console.error("[subscriptions/create] subscription insert error:", subErr.message);
+    // 7. Pre-create a pending subscription record ONLY when linked to a specific project.
+    //    For shared (project-free) plans, the webhook will create records per paying client.
+    let subId: string | null = null;
+    if (project_id) {
+      const { data: sub, error: subErr } = await supabase
+        .from("client_subscriptions")
+        .insert({
+          user_id: user.id,
+          project_id,
+          service_plan_id: planId,
+          stripe_checkout_session_id: session.id,
+          status: "incomplete",
+        })
+        .select("id")
+        .single();
+
+      if (subErr) {
+        console.error("[subscriptions/create] subscription insert error:", subErr.message);
+      } else {
+        subId = sub ? (sub as Record<string, unknown>).id as string : null;
+      }
     }
 
     return NextResponse.json({
       success: true,
       checkout_url: session.url,
-      service_plan_id: (plan as Record<string, unknown>).id,
-      client_subscription_id: sub ? (sub as Record<string, unknown>).id : null,
+      service_plan_id: planId,
+      client_subscription_id: subId,
     });
   } catch (err) {
     console.error("[subscriptions/create]", err);

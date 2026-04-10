@@ -2,10 +2,10 @@
 
 import * as React from "react";
 import { toast } from "sonner";
-import { Copy, ExternalLink, Ban } from "lucide-react";
+import { Copy, ExternalLink, Ban, Link2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import type { ServicePlan, ClientSubscription } from "@/lib/types/database";
+import type { Project, ServicePlan, ClientSubscription } from "@/lib/types/database";
 
 type PlanWithProject = ServicePlan & {
   projects?: { name: string; client_name: string | null; client_email: string | null } | null;
@@ -165,6 +165,135 @@ export function ActiveSubscriptionsTable({ subscriptions, onRefresh }: SubsTable
                       Cancel
                     </button>
                   )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </>
+  );
+}
+
+// ── Unlinked Subscribers Table (shared-link subscriptions without a project) ──
+
+interface UnlinkedSubsTableProps {
+  subscriptions: SubWithRelations[];
+  projects: Project[];
+  onRefresh: () => void;
+}
+
+export function UnlinkedSubscribersTable({ subscriptions, projects, onRefresh }: UnlinkedSubsTableProps) {
+  const [linking, setLinking] = React.useState<string | null>(null);
+  const [linkProjectId, setLinkProjectId] = React.useState<string>("");
+  const [savingLink, setSavingLink] = React.useState(false);
+
+  async function handleLink(subId: string) {
+    if (!linkProjectId) return;
+    setSavingLink(true);
+    try {
+      const res = await fetch(`/api/subscriptions/${subId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ project_id: linkProjectId }),
+      });
+      const j = (await res.json()) as { error?: string };
+      if (!res.ok) throw new Error(j.error ?? "Failed to link");
+      toast.success("Subscription linked to project.");
+      setLinking(null);
+      setLinkProjectId("");
+      onRefresh();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to link");
+    } finally {
+      setSavingLink(false);
+    }
+  }
+
+  return (
+    <>
+      {/* Link-to-project dialog */}
+      {linking && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white dark:bg-slate-950 rounded-xl shadow-xl w-full max-w-sm border border-slate-200 dark:border-slate-800 p-6 flex flex-col gap-4">
+            <div>
+              <div className="font-semibold text-slate-900 dark:text-slate-50 mb-1">Link to Project</div>
+              <p className="text-sm text-slate-500">
+                Assign this subscriber to a project. This enables auto-invoice generation on renewals.
+              </p>
+            </div>
+            <select
+              value={linkProjectId}
+              onChange={(e) => setLinkProjectId(e.target.value)}
+              className="flex h-9 w-full rounded-md border border-slate-200 bg-white px-3 py-1 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+            >
+              <option value="">Select a project…</option>
+              {projects.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}{p.client_name ? ` — ${p.client_name}` : ""}
+                </option>
+              ))}
+            </select>
+            <div className="flex items-center justify-end gap-3">
+              <Button variant="outline" size="sm" onClick={() => { setLinking(null); setLinkProjectId(""); }}>Cancel</Button>
+              <Button size="sm" disabled={!linkProjectId || savingLink} onClick={() => void handleLink(linking)}>
+                {savingLink ? "Saving…" : "Link Project"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-slate-200 dark:border-slate-800 text-xs text-slate-500">
+              <th className="text-left py-2 pr-4 font-medium">Subscriber</th>
+              <th className="text-left py-2 pr-4 font-medium">Plan</th>
+              <th className="text-left py-2 pr-4 font-medium">Status</th>
+              <th className="text-left py-2 pr-4 font-medium">Next Billing</th>
+              <th className="text-right py-2 font-medium">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {subscriptions.map((sub) => (
+              <tr key={sub.id} className="border-b border-slate-100 dark:border-slate-800 last:border-0">
+                <td className="py-3 pr-4">
+                  <div className="font-medium text-slate-800 dark:text-slate-200">
+                    {sub.stripe_customer_name ?? sub.stripe_customer_email ?? "Unknown"}
+                  </div>
+                  {sub.stripe_customer_email && sub.stripe_customer_name && (
+                    <div className="text-xs text-slate-400">{sub.stripe_customer_email}</div>
+                  )}
+                </td>
+                <td className="py-3 pr-4">
+                  {sub.service_plans ? (
+                    <div>
+                      <div className="text-slate-700 dark:text-slate-300">{sub.service_plans.name}</div>
+                      <div className="text-xs text-slate-400">
+                        {fmt(sub.service_plans.amount)} / {sub.service_plans.interval}
+                      </div>
+                    </div>
+                  ) : "—"}
+                </td>
+                <td className="py-3 pr-4">
+                  <Badge variant={statusVariant(sub.status)}>{statusLabel(sub.status)}</Badge>
+                </td>
+                <td className="py-3 pr-4 text-slate-600 dark:text-slate-400">
+                  {sub.status === "trialing" && sub.trial_end
+                    ? `Trial ends ${fmtDate(sub.trial_end)}`
+                    : fmtDate(sub.current_period_end)}
+                </td>
+                <td className="py-3 text-right">
+                  <button
+                    type="button"
+                    onClick={() => { setLinking(sub.id); setLinkProjectId(""); }}
+                    className="inline-flex items-center gap-1.5 text-xs text-slate-500 hover:text-primary transition-colors"
+                    title="Link to project"
+                  >
+                    <Link2 className="w-3.5 h-3.5" />
+                    Link project
+                  </button>
                 </td>
               </tr>
             ))}

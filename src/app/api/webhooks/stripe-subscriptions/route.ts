@@ -51,36 +51,103 @@ export async function POST(req: NextRequest) {
         let status = "active";
         let currentPeriodEnd: string | null = null;
         let trialEnd: string | null = null;
+        let stripeSubscription: Stripe.Subscription | null = null;
 
         // Fetch subscription details if available
         if (stripeSubId && connectedAccountId) {
           try {
-            const sub = await stripe.subscriptions.retrieve(
+            stripeSubscription = await stripe.subscriptions.retrieve(
               stripeSubId,
               {},
               { stripeAccount: connectedAccountId },
             );
-            status = sub.status === "trialing" ? "trialing" : "active";
-            currentPeriodEnd = new Date((sub as unknown as Record<string, unknown>).current_period_end as number * 1000).toISOString();
-            trialEnd = (sub as unknown as Record<string, unknown>).trial_end
-              ? new Date(((sub as unknown as Record<string, unknown>).trial_end as number) * 1000).toISOString()
+            const subRecord = stripeSubscription as unknown as Record<string, unknown>;
+            status = stripeSubscription.status === "trialing" ? "trialing" : "active";
+            currentPeriodEnd = new Date((subRecord.current_period_end as number) * 1000).toISOString();
+            trialEnd = subRecord.trial_end
+              ? new Date((subRecord.trial_end as number) * 1000).toISOString()
               : null;
           } catch (e) {
             console.error("[stripe-subscriptions webhook] Failed to retrieve subscription:", e);
           }
         }
 
-        await supabase
+        // Check if we have a pre-created subscription record (per-project flow)
+        const { data: existing } = await supabase
           .from("client_subscriptions")
-          .update({
+          .select("id")
+          .eq("stripe_checkout_session_id", session.id)
+          .maybeSingle();
+
+        if (existing) {
+          // Per-project flow: update the pre-created record
+          await supabase
+            .from("client_subscriptions")
+            .update({
+              stripe_subscription_id: stripeSubId,
+              stripe_customer_id: stripeCustomerId,
+              status,
+              current_period_end: currentPeriodEnd,
+              trial_end: trialEnd,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", (existing as Record<string, unknown>).id as string);
+        } else {
+          // Shared-link flow: create a new record per paying client
+          const contractorUserId = session.metadata?.contractor_user_id;
+          const projectId = session.metadata?.project_id ?? null;
+
+          if (!contractorUserId) {
+            console.warn("[stripe-subscriptions webhook] checkout.session.completed: no contractor_user_id in metadata");
+            break;
+          }
+
+          // Fetch customer email + name from Stripe
+          let customerEmail: string | null = null;
+          let customerName: string | null = null;
+          if (stripeCustomerId && connectedAccountId) {
+            try {
+              const customer = await stripe.customers.retrieve(
+                stripeCustomerId,
+                {},
+                { stripeAccount: connectedAccountId },
+              );
+              if (!customer.deleted) {
+                customerEmail = customer.email ?? null;
+                customerName = customer.name ?? null;
+              }
+            } catch (e) {
+              console.error("[stripe-subscriptions webhook] Failed to retrieve customer:", e);
+            }
+          }
+
+          // Find service plan by stripe_price_id
+          const priceId = stripeSubscription?.items?.data?.[0]?.price?.id ?? null;
+          let servicePlanId: string | null = null;
+          if (priceId) {
+            const { data: plan } = await supabase
+              .from("service_plans")
+              .select("id")
+              .eq("stripe_price_id", priceId)
+              .eq("user_id", contractorUserId)
+              .maybeSingle();
+            servicePlanId = plan ? (plan as Record<string, unknown>).id as string : null;
+          }
+
+          await supabase.from("client_subscriptions").insert({
+            user_id: contractorUserId,
+            project_id: projectId,
+            service_plan_id: servicePlanId,
+            stripe_checkout_session_id: session.id,
             stripe_subscription_id: stripeSubId,
             stripe_customer_id: stripeCustomerId,
+            stripe_customer_email: customerEmail,
+            stripe_customer_name: customerName,
             status,
             current_period_end: currentPeriodEnd,
             trial_end: trialEnd,
-            updated_at: new Date().toISOString(),
-          })
-          .eq("stripe_checkout_session_id", session.id);
+          });
+        }
 
         break;
       }
@@ -147,6 +214,12 @@ export async function POST(req: NextRequest) {
         }
 
         const sub = subRow as Record<string, unknown>;
+
+        // Skip auto-invoice for subscriptions not linked to a project
+        if (!sub.project_id) {
+          console.log("[stripe-subscriptions webhook] invoice.paid: subscription has no project_id — skipping auto-invoice");
+          break;
+        }
 
         // Fetch service plan for name
         let planName = "Subscription";

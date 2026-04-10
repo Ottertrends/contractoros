@@ -20,8 +20,8 @@ export function SubscriptionBuilder({ projects, onClose, onCreated }: Props) {
   const [saving, setSaving] = React.useState(false);
   const [checkoutUrl, setCheckoutUrl] = React.useState<string | null>(null);
 
-  // Form fields
-  const [projectId, setProjectId] = React.useState(projects[0]?.id ?? "");
+  // Form fields — empty string means "no project" (shared link)
+  const [projectId, setProjectId] = React.useState("");
   const [name, setName] = React.useState("");
   const [description, setDescription] = React.useState("");
   const [amount, setAmount] = React.useState("");
@@ -35,7 +35,7 @@ export function SubscriptionBuilder({ projects, onClose, onCreated }: Props) {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!projectId || !name.trim() || !amount) {
+    if (!name.trim() || !amount) {
       toast.error("Please fill in all required fields.");
       return;
     }
@@ -56,7 +56,7 @@ export function SubscriptionBuilder({ projects, onClose, onCreated }: Props) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          project_id: projectId,
+          project_id: projectId || null,
           name: name.trim(),
           description: description.trim() || undefined,
           amount: amountNum,
@@ -148,18 +148,18 @@ export function SubscriptionBuilder({ projects, onClose, onCreated }: Props) {
           <form onSubmit={(e) => void handleSubmit(e)} className="flex flex-col flex-1 overflow-hidden">
             <div className="flex flex-col gap-4 px-6 py-5 overflow-y-auto flex-1">
 
-              {/* Project */}
+              {/* Project — optional */}
               <div>
                 <Label htmlFor="sub-project" className="text-xs font-medium text-slate-500 mb-1.5 block">
-                  Project <span className="text-red-500">*</span>
+                  Project <span className="text-slate-400">(optional)</span>
                 </Label>
                 <select
                   id="sub-project"
                   value={projectId}
                   onChange={(e) => setProjectId(e.target.value)}
-                  required
                   className="flex h-9 w-full rounded-md border border-slate-200 bg-white px-3 py-1 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
                 >
+                  <option value="">No project — shared link (any client can subscribe)</option>
                   {projects.map((p) => (
                     <option key={p.id} value={p.id}>
                       {p.name}{p.client_name ? ` — ${p.client_name}` : ""}
@@ -168,12 +168,12 @@ export function SubscriptionBuilder({ projects, onClose, onCreated }: Props) {
                 </select>
                 {selectedProject?.client_email && (
                   <p className="text-xs text-slate-400 mt-1">
-                    Client email: <span className="font-mono">{selectedProject.client_email}</span>
+                    Client email pre-filled: <span className="font-mono">{selectedProject.client_email}</span>
                   </p>
                 )}
-                {!selectedProject?.client_email && (
-                  <p className="text-xs text-amber-500 mt-1">
-                    ⚠ This project has no client email — the checkout link won&apos;t be pre-filled.
+                {!projectId && (
+                  <p className="text-xs text-slate-400 mt-1">
+                    Share this link with any number of clients — each will get their own subscription record.
                   </p>
                 )}
               </div>
