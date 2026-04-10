@@ -286,8 +286,10 @@ async function generatePDF({
   const finalY: number = (doc as any).lastAutoTable?.finalY ?? y + 60;
 
   // ── Totals ────────────────────────────────────────────────────────────────
-  const col1 = pageWidth - margin - 80;
-  const col2 = pageWidth - margin;
+  // Two-column layout: labels left-aligned at labelX, amounts right-aligned at amtX.
+  // labelX = half the page gives ~266pt of label space — enough for long tax strings.
+  const labelX = pageWidth / 2;
+  const amtX   = pageWidth - margin;
   let ty = finalY + 18;
 
   const subtotal = parseFloat(invoice.subtotal) || 0;
@@ -320,39 +322,39 @@ async function generatePDF({
   doc.setFontSize(9);
   doc.setFont(bodyFont, "normal");
   doc.setTextColor(60);
-  doc.text("Subtotal:", col1, ty, { align: "right" });
-  doc.text(fmt(subtotal), col2, ty, { align: "right" });
+  doc.text("Subtotal:", labelX, ty);
+  doc.text(fmt(subtotal), amtX, ty, { align: "right" });
   ty += 14;
 
   if (taxAmount > 0) {
     if (hasAnyLineTax && taxBreakdown.length > 0) {
       // Stripe-style: "Total excl. tax" + per-rate breakdown lines
-      doc.text("Total excl. tax:", col1, ty, { align: "right" });
-      doc.text(fmt(subtotal), col2, ty, { align: "right" });
+      doc.text("Total excl. tax:", labelX, ty);
+      doc.text(fmt(subtotal), amtX, ty, { align: "right" });
       ty += 14;
       for (const b of taxBreakdown) {
         const label = `${b.label} (${b.rate}% on ${fmt(b.taxableAmount)}):`;
-        doc.text(label, col1, ty, { align: "right" });
-        doc.text(fmt(b.taxAmt), col2, ty, { align: "right" });
+        doc.text(label, labelX, ty);
+        doc.text(fmt(b.taxAmt), amtX, ty, { align: "right" });
         ty += 14;
       }
     } else {
       const taxLabel = taxRate > 0 ? `Tax (${taxRate}%):` : "Tax:";
-      doc.text(taxLabel, col1, ty, { align: "right" });
-      doc.text(fmt(taxAmount), col2, ty, { align: "right" });
+      doc.text(taxLabel, labelX, ty);
+      doc.text(fmt(taxAmount), amtX, ty, { align: "right" });
       ty += 14;
     }
   }
 
   doc.setDrawColor(pr, pg, pb);
   doc.setLineWidth(0.75);
-  doc.line(col1 - 60, ty - 4, col2, ty - 4);
+  doc.line(labelX, ty - 4, amtX, ty - 4);
 
   doc.setFont(titleFont, "bold");
   doc.setFontSize(11);
   doc.setTextColor(pr, pg, pb);
-  doc.text("TOTAL:", col1, ty + 8, { align: "right" });
-  doc.text(fmt(total), col2, ty + 8, { align: "right" });
+  doc.text("TOTAL:", labelX, ty + 8);
+  doc.text(fmt(total), amtX, ty + 8, { align: "right" });
 
   ty += 36;
   doc.setFontSize(9);
