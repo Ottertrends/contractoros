@@ -76,7 +76,7 @@ export async function POST(req: NextRequest) {
     if (!data) {
       return NextResponse.json({ error: "Project not found" }, { status: 404 });
     }
-    project = data as typeof project;
+    project = data as unknown as typeof project;
   }
 
   const stripe = getStripe();
