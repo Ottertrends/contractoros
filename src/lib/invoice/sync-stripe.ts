@@ -32,12 +32,18 @@ export async function syncToStripe(
     throw new Error(itemsError.message);
   }
 
-  // 2. Fetch user profile (need stripe_connect_account_id)
-  const { data: profile, error: profileError } = await supabase
-    .from("profiles")
-    .select("stripe_connect_account_id, stripe_connect_charges_enabled, email, company_name")
-    .eq("id", userId)
-    .single();
+  // 2. Fetch user profile (need stripe_connect_account_id) + saved tax rates for Stripe IDs
+  const [{ data: profile, error: profileError }, { data: savedTaxRates }] = await Promise.all([
+    supabase
+      .from("profiles")
+      .select("stripe_connect_account_id, stripe_connect_charges_enabled, email, company_name")
+      .eq("id", userId)
+      .single(),
+    supabase
+      .from("tax_rates")
+      .select("rate, stripe_tax_rate_id")
+      .eq("user_id", userId),
+  ]);
 
   if (profileError || !profile) {
     throw new Error(profileError?.message ?? "Profile not found");
@@ -158,9 +164,43 @@ export async function syncToStripe(
 
   // 9. Create Stripe InvoiceItems attached directly to the invoice
   // Attaching via invoice: id guarantees they appear regardless of whether there's a customer
+  // Cache ad-hoc tax rates to avoid re-creating for duplicate percentages
+  const adHocTaxRateCache = new Map<number, string>();
+
   for (const item of items ?? []) {
     const cents = Math.round((parseFloat(item.unit_price) || 0) * 100);
     if (cents < 1) continue;
+
+    // Resolve per-line tax rate → Stripe Tax Rate ID
+    const lineTaxPct = parseFloat((item as Record<string, unknown>).tax_rate as string) || 0;
+    const taxRateIds: string[] = [];
+
+    if (lineTaxPct > 0) {
+      // 1. Check user's saved rates for a matching Stripe Tax Rate ID
+      const saved = (savedTaxRates ?? []).find(
+        (r) => Math.abs(parseFloat(r.rate as string) - lineTaxPct) < 0.001 && r.stripe_tax_rate_id,
+      );
+
+      if (saved?.stripe_tax_rate_id) {
+        taxRateIds.push(saved.stripe_tax_rate_id);
+      } else if (adHocTaxRateCache.has(lineTaxPct)) {
+        // 2. Reuse an ad-hoc rate created earlier in this loop
+        taxRateIds.push(adHocTaxRateCache.get(lineTaxPct)!);
+      } else {
+        // 3. Create an ad-hoc Stripe TaxRate for this percentage
+        try {
+          const adhoc = await stripe.taxRates.create(
+            { display_name: "Tax", percentage: lineTaxPct, inclusive: false },
+            stripeOptions,
+          );
+          adHocTaxRateCache.set(lineTaxPct, adhoc.id);
+          taxRateIds.push(adhoc.id);
+        } catch (err) {
+          console.warn("[sync-stripe] Failed to create ad-hoc tax rate:", err);
+        }
+      }
+    }
+
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await (stripe.invoiceItems.create as any)(
       {
@@ -170,6 +210,7 @@ export async function syncToStripe(
         unit_amount: cents,
         quantity: Math.max(1, Math.round(parseFloat(item.quantity) || 1)),
         description: item.description || item.name || "Service",
+        ...(taxRateIds.length > 0 ? { tax_rates: taxRateIds } : {}),
         metadata: { worksupp_invoice_item_id: item.id },
       },
       stripeOptions,

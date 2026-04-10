@@ -147,7 +147,13 @@ export function DraftInvoiceCard({
 
   // ── User tax rates (for dropdown) ──
   const [userTaxRates, setUserTaxRates] = React.useState<TaxRate[]>([]);
-  const [customTaxRowId, setCustomTaxRowId] = React.useState<string | null>(null);
+  // Modal for saving a new tax rate from within the invoice (Custom… option)
+  const [newRateModal, setNewRateModal] = React.useState<{
+    rowId: string;
+    name: string;
+    rate: string;
+    saving: boolean;
+  } | null>(null);
 
   // ── Stripe invoice number + edit count + invoice ID ──
   const [stripeInvoiceNumber, setStripeInvoiceNumber] = React.useState<string | null>(
@@ -1228,10 +1234,9 @@ export function DraftInvoiceCard({
             {rows.map((row) => {
               const lineSubtotal = (parseFloat(row.quantity) || 0) * (parseFloat(row.unit_price) || 0);
               const lineTaxAmt = lineSubtotal * (parseFloat(row.tax_rate) || 0) / 100;
-              const isCustomTax = customTaxRowId === row._id;
-              // Determine if current tax_rate matches a saved rate
-              const matchesSavedRate = userTaxRates.some((tr) => parseFloat(tr.rate) === parseFloat(row.tax_rate));
-              const dropdownValue = parseFloat(row.tax_rate) > 0 && !matchesSavedRate ? "custom" : row.tax_rate;
+              // Determine if current tax_rate matches a saved rate (for dropdown value)
+              const matchesSavedRate = userTaxRates.some((tr) => Math.abs(parseFloat(tr.rate) - parseFloat(row.tax_rate)) < 0.001);
+              const dropdownValue = parseFloat(row.tax_rate) > 0 && !matchesSavedRate ? "custom-applied" : row.tax_rate;
 
               return (
               <div
@@ -1294,39 +1299,27 @@ export function DraftInvoiceCard({
                     onChange={(e) => {
                       const val = e.target.value;
                       if (val === "custom") {
-                        setCustomTaxRowId(row._id);
-                        updateRow(row._id, "tax_rate", "");
+                        // Open the save-and-reuse modal
+                        setNewRateModal({ rowId: row._id, name: "", rate: "", saving: false });
                       } else {
-                        setCustomTaxRowId(null);
                         updateRow(row._id, "tax_rate", val);
                       }
                     }}
                     className="flex h-9 w-full rounded-md border border-slate-200 bg-white px-2 py-1 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
                   >
-                    <option value="0">0%</option>
+                    {/* Saved rates first */}
                     {userTaxRates.map((tr) => (
                       <option key={tr.id} value={tr.rate}>
                         {tr.name} ({parseFloat(tr.rate).toFixed(2)}%)
                       </option>
                     ))}
-                    <option value="custom">Custom…</option>
+                    <option value="0">0%</option>
+                    {/* Show a display option when a custom rate is already applied */}
+                    {dropdownValue === "custom-applied" && (
+                      <option value="custom-applied">Custom ({parseFloat(row.tax_rate).toFixed(2)}%)</option>
+                    )}
+                    <option value="custom">+ Add new rate…</option>
                   </select>
-                  {isCustomTax && (
-                    <div className="relative">
-                      <Input
-                        type="number"
-                        min="0"
-                        max="100"
-                        step="0.01"
-                        placeholder="e.g. 8.75"
-                        value={row.tax_rate}
-                        onChange={(e) => updateRow(row._id, "tax_rate", e.target.value)}
-                        className="text-sm pr-6"
-                        autoFocus
-                      />
-                      <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-slate-400">%</span>
-                    </div>
-                  )}
                   {lineTaxAmt > 0 && (
                     <span className="text-xs text-slate-400 tabular-nums">+{fmt(lineTaxAmt)}</span>
                   )}
@@ -1363,6 +1356,94 @@ export function DraftInvoiceCard({
               {t.projects.addLineItem}
             </button>
           </div>
+
+          {/* ── New Tax Rate Modal (Custom… shortcut) ── */}
+          {newRateModal && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+              <div className="bg-white dark:bg-slate-950 rounded-xl shadow-xl w-full max-w-xs border border-slate-200 dark:border-slate-800 p-6 flex flex-col gap-4">
+                <div>
+                  <div className="font-semibold text-slate-900 dark:text-slate-50 text-base mb-0.5">
+                    Add Tax Rate
+                  </div>
+                  <p className="text-xs text-slate-500">This rate will be saved to your settings and applied to this line.</p>
+                </div>
+                <div className="flex flex-col gap-3">
+                  <div className="flex flex-col gap-1.5">
+                    <Label htmlFor="modal-tax-name" className="text-xs text-slate-500">Name</Label>
+                    <Input
+                      id="modal-tax-name"
+                      value={newRateModal.name}
+                      onChange={(e) => setNewRateModal((m) => m ? { ...m, name: e.target.value } : m)}
+                      placeholder="e.g. Texas Tax"
+                      autoFocus
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <Label htmlFor="modal-tax-rate" className="text-xs text-slate-500">Rate (%)</Label>
+                    <div className="relative">
+                      <Input
+                        id="modal-tax-rate"
+                        type="number"
+                        min="0.01"
+                        max="100"
+                        step="0.01"
+                        value={newRateModal.rate}
+                        onChange={(e) => setNewRateModal((m) => m ? { ...m, rate: e.target.value } : m)}
+                        placeholder="e.g. 8.75"
+                        className="pr-7"
+                      />
+                      <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400">%</span>
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center justify-end gap-3 pt-1">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setNewRateModal(null)}
+                    disabled={newRateModal.saving}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    disabled={newRateModal.saving || !newRateModal.name.trim() || !newRateModal.rate}
+                    onClick={() => {
+                      const { rowId, name, rate } = newRateModal;
+                      const rateNum = parseFloat(rate);
+                      if (!name.trim() || isNaN(rateNum) || rateNum <= 0 || rateNum > 100) {
+                        toast.error("Enter a name and a rate between 0 and 100.");
+                        return;
+                      }
+                      setNewRateModal((m) => m ? { ...m, saving: true } : m);
+                      void fetch("/api/tax-rates", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ name: name.trim(), rate: rateNum }),
+                      })
+                        .then((r) => r.json())
+                        .then((j: { tax_rate?: TaxRate; error?: string }) => {
+                          if (j.error) throw new Error(j.error);
+                          const saved = j.tax_rate!;
+                          setUserTaxRates((prev) => [...prev, saved]);
+                          updateRow(rowId, "tax_rate", String(rateNum));
+                          setNewRateModal(null);
+                          toast.success(`Tax rate "${saved.name}" saved and applied.`);
+                        })
+                        .catch((err: unknown) => {
+                          toast.error(err instanceof Error ? err.message : "Failed to save tax rate");
+                          setNewRateModal((m) => m ? { ...m, saving: false } : m);
+                        });
+                    }}
+                  >
+                    {newRateModal.saving ? "Saving…" : "Save & Apply"}
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Totals */}
           <div className="flex flex-col items-end gap-2 pt-3 border-t border-slate-200 dark:border-slate-800">

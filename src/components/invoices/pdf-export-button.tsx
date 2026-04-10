@@ -276,8 +276,9 @@ async function generatePDF({
   doc.text(fmt(subtotal), col2, ty, { align: "right" });
   ty += 14;
 
-  if (taxRate > 0) {
-    doc.text(`Tax (${taxRate}%):`, col1, ty, { align: "right" });
+  if (taxAmount > 0) {
+    const taxLabel = taxRate > 0 ? `Tax (${taxRate}%):` : "Tax:";
+    doc.text(taxLabel, col1, ty, { align: "right" });
     doc.text(fmt(taxAmount), col2, ty, { align: "right" });
     ty += 14;
   }
