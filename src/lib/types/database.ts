@@ -117,7 +117,17 @@ export interface InvoiceItem {
   quantity: string;
   unit_price: string;
   total: string;
+  tax_rate?: string | null; // NUMERIC(5,2) → string via PostgREST; per-line tax percent
   sort_order: number;
+  created_at: string;
+}
+
+export interface TaxRate {
+  id: string;
+  user_id: string;
+  name: string;
+  rate: string; // NUMERIC(5,2) → string via PostgREST; percentage e.g. "8.75"
+  stripe_tax_rate_id?: string | null;
   created_at: string;
 }
 

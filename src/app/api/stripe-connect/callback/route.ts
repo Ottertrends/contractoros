@@ -58,6 +58,19 @@ export async function GET(req: NextRequest) {
       })
       .eq("id", user.id);
 
+    // Auto-request ACH (us_bank_account) capability on the connected account
+    try {
+      await stripe.accounts.update(stripeAccountId, {
+        capabilities: {
+          us_bank_account_ach_payments: { requested: true },
+        },
+      });
+      console.log("[stripe-connect/callback] ACH capability requested for", stripeAccountId);
+    } catch (err) {
+      // Non-fatal — Stripe may reject if the account type doesn't support it
+      console.warn("[stripe-connect/callback] ACH capability request failed (non-fatal):", err);
+    }
+
     return NextResponse.redirect(`${appUrl}/dashboard/settings?stripe=connected`);
   } catch (err) {
     console.error("[stripe-connect/callback] token exchange error:", err);

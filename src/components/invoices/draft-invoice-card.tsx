@@ -15,6 +15,7 @@ import type {
   InvoiceStatus,
   PriceBookItem,
   Project,
+  TaxRate,
 } from "@/lib/types/database";
 import { PriceBookLineInput } from "./price-book-line-input";
 import { Badge } from "@/components/ui/badge";
@@ -38,7 +39,8 @@ interface LineItemRow {
   description: string;
   quantity: string;
   unit_price: string;
-  total: string;
+  tax_rate: string; // percentage e.g. "8.75"; "0" means no tax
+  total: string;    // subtotal: qty × unit_price (pre-tax)
 }
 
 interface Props {
@@ -77,6 +79,7 @@ function newRow(description = "", qty = "1", price = "0"): LineItemRow {
     description,
     quantity: qty,
     unit_price: price,
+    tax_rate: "0",
     total: calcRowTotal(qty, price),
   };
 }
@@ -136,10 +139,15 @@ export function DraftInvoiceCard({
           description: it.description || it.name || "",
           quantity: it.quantity,
           unit_price: it.unit_price,
+          tax_rate: it.tax_rate ? String(parseFloat(it.tax_rate)) : "0",
           total: it.total,
         }))
       : [newRow(projectName)],
   );
+
+  // ── User tax rates (for dropdown) ──
+  const [userTaxRates, setUserTaxRates] = React.useState<TaxRate[]>([]);
+  const [customTaxRowId, setCustomTaxRowId] = React.useState<string | null>(null);
 
   // ── Stripe invoice number + edit count + invoice ID ──
   const [stripeInvoiceNumber, setStripeInvoiceNumber] = React.useState<string | null>(
@@ -176,6 +184,12 @@ export function DraftInvoiceCard({
   });
 
   React.useEffect(() => {
+    // Fetch user's saved tax rates for the line item dropdown
+    fetch("/api/tax-rates")
+      .then((r) => r.json())
+      .then((j: { tax_rates?: TaxRate[] }) => setUserTaxRates(j.tax_rates ?? []))
+      .catch(() => {});
+
     supabase
       .from("profiles")
       .select(
@@ -234,7 +248,17 @@ export function DraftInvoiceCard({
       sum + (parseFloat(r.quantity) || 0) * (parseFloat(r.unit_price) || 0),
     0,
   );
-  const taxAmount = (subtotal * (parseFloat(taxRate) || 0)) / 100;
+
+  // Per-line tax: sum of (line_subtotal × line_tax_rate / 100) across all rows
+  const lineTaxTotal = rows.reduce((sum, r) => {
+    const lineSubtotal = (parseFloat(r.quantity) || 0) * (parseFloat(r.unit_price) || 0);
+    const lineTaxPct = parseFloat(r.tax_rate) || 0;
+    return sum + (lineSubtotal * lineTaxPct) / 100;
+  }, 0);
+
+  // Use per-line tax if any row has a non-zero tax; otherwise fall back to invoice-level taxRate
+  const hasLineTax = rows.some((r) => (parseFloat(r.tax_rate) || 0) > 0);
+  const taxAmount = hasLineTax ? lineTaxTotal : (subtotal * (parseFloat(taxRate) || 0)) / 100;
   const total = subtotal + taxAmount;
 
   const stripeConnected = !!(profile?.stripe_connect_charges_enabled);
@@ -250,10 +274,13 @@ export function DraftInvoiceCard({
       prev.map((r) => {
         if (r._id !== id) return r;
         const updated = { ...r, [field]: value };
-        updated.total = calcRowTotal(
-          field === "quantity" ? value : updated.quantity,
-          field === "unit_price" ? value : updated.unit_price,
-        );
+        // Recalculate pre-tax subtotal only when qty or price changes
+        if (field === "quantity" || field === "unit_price") {
+          updated.total = calcRowTotal(
+            field === "quantity" ? value : updated.quantity,
+            field === "unit_price" ? value : updated.unit_price,
+          );
+        }
         return updated;
       }),
     );
@@ -299,6 +326,7 @@ export function DraftInvoiceCard({
         description: label,
         quantity: "1",
         unit_price: price,
+        tax_rate: "0",
         total: price,
       },
     ]);
@@ -338,6 +366,7 @@ export function DraftInvoiceCard({
         quantity: r.quantity,
         unit_price: r.unit_price,
         total: r.total,
+        tax_rate: parseFloat(r.tax_rate) || 0,
         sort_order: idx,
       })),
     );
@@ -1175,7 +1204,7 @@ export function DraftInvoiceCard({
               {t.projects.lineItems}
             </div>
 
-            <div className="hidden sm:grid sm:grid-cols-[3fr_1fr_1.2fr_1fr_auto] gap-2 text-xs text-slate-400 px-1">
+            <div className="hidden sm:grid sm:grid-cols-[3fr_1fr_1.2fr_1fr_1fr_auto] gap-2 text-xs text-slate-400 px-1">
               <span className="flex items-center gap-2">
                 Product / Service
                 {priceBook.length > 0 && (
@@ -1191,14 +1220,23 @@ export function DraftInvoiceCard({
               </span>
               <span>{t.projects.qty}</span>
               <span>{t.projects.unitPrice}</span>
+              <span>Tax</span>
               <span className="text-right">{ti.lineTotal}</span>
               <span />
             </div>
 
-            {rows.map((row) => (
+            {rows.map((row) => {
+              const lineSubtotal = (parseFloat(row.quantity) || 0) * (parseFloat(row.unit_price) || 0);
+              const lineTaxAmt = lineSubtotal * (parseFloat(row.tax_rate) || 0) / 100;
+              const isCustomTax = customTaxRowId === row._id;
+              // Determine if current tax_rate matches a saved rate
+              const matchesSavedRate = userTaxRates.some((tr) => parseFloat(tr.rate) === parseFloat(row.tax_rate));
+              const dropdownValue = parseFloat(row.tax_rate) > 0 && !matchesSavedRate ? "custom" : row.tax_rate;
+
+              return (
               <div
                 key={row._id}
-                className="grid grid-cols-1 sm:grid-cols-[3fr_1fr_1.2fr_1fr_auto] gap-2 items-center"
+                className="grid grid-cols-1 sm:grid-cols-[3fr_1fr_1.2fr_1fr_1fr_auto] gap-2 items-start"
               >
                 <div>
                   <Label className="sm:hidden text-xs text-slate-400">
@@ -1248,18 +1286,60 @@ export function DraftInvoiceCard({
                     />
                   </div>
                 </div>
-                <div className="flex items-center justify-end sm:justify-start gap-2">
+                {/* Tax column */}
+                <div className="flex flex-col gap-1">
+                  <Label className="sm:hidden text-xs text-slate-400">Tax</Label>
+                  <select
+                    value={dropdownValue}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (val === "custom") {
+                        setCustomTaxRowId(row._id);
+                        updateRow(row._id, "tax_rate", "");
+                      } else {
+                        setCustomTaxRowId(null);
+                        updateRow(row._id, "tax_rate", val);
+                      }
+                    }}
+                    className="flex h-9 w-full rounded-md border border-slate-200 bg-white px-2 py-1 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                  >
+                    <option value="0">0%</option>
+                    {userTaxRates.map((tr) => (
+                      <option key={tr.id} value={tr.rate}>
+                        {tr.name} ({parseFloat(tr.rate).toFixed(2)}%)
+                      </option>
+                    ))}
+                    <option value="custom">Custom…</option>
+                  </select>
+                  {isCustomTax && (
+                    <div className="relative">
+                      <Input
+                        type="number"
+                        min="0"
+                        max="100"
+                        step="0.01"
+                        placeholder="e.g. 8.75"
+                        value={row.tax_rate}
+                        onChange={(e) => updateRow(row._id, "tax_rate", e.target.value)}
+                        className="text-sm pr-6"
+                        autoFocus
+                      />
+                      <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-slate-400">%</span>
+                    </div>
+                  )}
+                  {lineTaxAmt > 0 && (
+                    <span className="text-xs text-slate-400 tabular-nums">+{fmt(lineTaxAmt)}</span>
+                  )}
+                </div>
+                <div className="flex items-center justify-end sm:justify-start gap-2 pt-1">
                   <Label className="sm:hidden text-xs text-slate-400 mr-1">
                     {ti.lineTotal}
                   </Label>
                   <span className="text-sm font-mono text-slate-700 dark:text-slate-300 tabular-nums">
-                    {fmt(
-                      (parseFloat(row.quantity) || 0) *
-                        (parseFloat(row.unit_price) || 0),
-                    )}
+                    {fmt(lineSubtotal + lineTaxAmt)}
                   </span>
                 </div>
-                <div className="flex items-center justify-end">
+                <div className="flex items-center justify-end pt-1">
                   <button
                     type="button"
                     onClick={() => removeRow(row._id)}
@@ -1271,7 +1351,8 @@ export function DraftInvoiceCard({
                   </button>
                 </div>
               </div>
-            ))}
+              );
+            })}
 
             <button
               type="button"
@@ -1290,21 +1371,24 @@ export function DraftInvoiceCard({
                 <span>{ti.subtotal}</span>
                 <span className="font-mono">{fmt(subtotal)}</span>
               </div>
-              <div className="flex items-center justify-between gap-2 text-sm text-slate-600 dark:text-slate-400">
-                <span>{ti.taxRate}</span>
-                <Input
-                  type="number"
-                  min="0"
-                  max="100"
-                  step="0.1"
-                  value={taxRate}
-                  onChange={(e) => setTaxRate(e.target.value)}
-                  className="w-20 h-7 text-sm text-right"
-                />
-              </div>
+              {/* Invoice-level tax input — hidden when per-line tax is in use */}
+              {!hasLineTax && (
+                <div className="flex items-center justify-between gap-2 text-sm text-slate-600 dark:text-slate-400">
+                  <span>{ti.taxRate}</span>
+                  <Input
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.1"
+                    value={taxRate}
+                    onChange={(e) => setTaxRate(e.target.value)}
+                    className="w-20 h-7 text-sm text-right"
+                  />
+                </div>
+              )}
               {taxAmount > 0 && (
                 <div className="flex justify-between text-sm text-slate-600 dark:text-slate-400">
-                  <span>{ti.taxAmount}</span>
+                  <span>{hasLineTax ? "Tax (per line)" : ti.taxAmount}</span>
                   <span className="font-mono">{fmt(taxAmount)}</span>
                 </div>
               )}

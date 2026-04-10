@@ -312,6 +312,20 @@ interface PlansTableProps {
 }
 
 export function SubscriptionPlansTable({ plans, subscriptions }: PlansTableProps) {
+  const [popupPlanId, setPopupPlanId] = React.useState<string | null>(null);
+  const popupRef = React.useRef<HTMLDivElement>(null);
+
+  // Close popup on outside click
+  React.useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (popupRef.current && !popupRef.current.contains(e.target as Node)) {
+        setPopupPlanId(null);
+      }
+    }
+    if (popupPlanId) document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [popupPlanId]);
+
   if (plans.length === 0) {
     return (
       <div className="text-center py-10 text-slate-400 text-sm">
@@ -334,9 +348,11 @@ export function SubscriptionPlansTable({ plans, subscriptions }: PlansTableProps
         </thead>
         <tbody>
           {plans.map((plan) => {
-            const activeCount = subscriptions.filter(
+            const activeSubscribers = subscriptions.filter(
               (s) => s.service_plan_id === plan.id && ["active", "trialing", "past_due"].includes(s.status),
-            ).length;
+            );
+            const activeCount = activeSubscribers.length;
+            const isOpen = popupPlanId === plan.id;
 
             return (
               <tr key={plan.id} className="border-b border-slate-100 dark:border-slate-800 last:border-0">
@@ -354,9 +370,41 @@ export function SubscriptionPlansTable({ plans, subscriptions }: PlansTableProps
                   <div className="text-xs text-slate-400">/ {plan.interval}</div>
                 </td>
                 <td className="py-3 pr-4">
-                  <span className={`text-sm font-medium ${activeCount > 0 ? "text-emerald-600 dark:text-emerald-400" : "text-slate-400"}`}>
-                    {activeCount} {activeCount === 1 ? "client" : "clients"}
-                  </span>
+                  <div className="relative" ref={isOpen ? popupRef : undefined}>
+                    <button
+                      type="button"
+                      onClick={() => setPopupPlanId(isOpen ? null : plan.id)}
+                      className={`text-sm font-medium transition-colors ${activeCount > 0 ? "text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 underline-offset-2 hover:underline cursor-pointer" : "text-slate-400 cursor-default"}`}
+                      disabled={activeCount === 0}
+                    >
+                      {activeCount} {activeCount === 1 ? "client" : "clients"}
+                    </button>
+
+                    {isOpen && activeCount > 0 && (
+                      <div className="absolute left-0 top-full mt-1 z-50 w-72 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg p-3 flex flex-col gap-2">
+                        <div className="text-xs font-semibold text-slate-500 uppercase tracking-wide pb-1 border-b border-slate-100 dark:border-slate-800">
+                          Active Subscribers
+                        </div>
+                        {activeSubscribers.map((sub) => {
+                          const name = sub.projects?.client_name ?? sub.stripe_customer_name ?? null;
+                          const email = sub.projects?.client_email ?? sub.stripe_customer_email ?? null;
+                          return (
+                            <div key={sub.id} className="flex flex-col gap-0.5">
+                              <div className="text-sm font-medium text-slate-800 dark:text-slate-200">
+                                {name ?? email ?? "Unknown"}
+                              </div>
+                              {email && name && (
+                                <div className="text-xs text-slate-400">{email}</div>
+                              )}
+                              <div className="text-xs text-slate-400">
+                                Since {fmtDate(sub.created_at)}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
                 </td>
                 <td className="py-3 text-right">
                   {plan.stripe_checkout_url ? (

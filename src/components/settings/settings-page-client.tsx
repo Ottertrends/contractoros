@@ -18,6 +18,143 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { IntegrationsSettings } from "@/components/settings/integrations-settings";
 import { WhatsAppConnection } from "@/components/settings/whatsapp-connection";
+import type { TaxRate } from "@/lib/types/database";
+
+// ── Tax Rates Card ────────────────────────────────────────────────────────────
+
+function TaxRatesCard() {
+  const [taxRates, setTaxRates] = React.useState<TaxRate[]>([]);
+  const [loading, setLoading] = React.useState(true);
+  const [newName, setNewName] = React.useState("");
+  const [newRate, setNewRate] = React.useState("");
+  const [saving, setSaving] = React.useState(false);
+  const [deletingId, setDeletingId] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    fetch("/api/tax-rates")
+      .then((r) => r.json())
+      .then((j: { tax_rates?: TaxRate[] }) => setTaxRates(j.tax_rates ?? []))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  async function handleAdd(e: React.FormEvent) {
+    e.preventDefault();
+    const rate = parseFloat(newRate);
+    if (!newName.trim() || isNaN(rate) || rate <= 0 || rate > 100) {
+      toast.error("Enter a name and a rate between 0 and 100.");
+      return;
+    }
+    setSaving(true);
+    try {
+      const res = await fetch("/api/tax-rates", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: newName.trim(), rate }),
+      });
+      const j = (await res.json()) as { tax_rate?: TaxRate; error?: string };
+      if (!res.ok) throw new Error(j.error ?? "Failed to save");
+      setTaxRates((prev) => [...prev, j.tax_rate!]);
+      setNewName("");
+      setNewRate("");
+      toast.success("Tax rate saved" + (j.tax_rate?.stripe_tax_rate_id ? " and synced to Stripe." : "."));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to save tax rate");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleDelete(id: string) {
+    setDeletingId(id);
+    try {
+      const res = await fetch(`/api/tax-rates/${id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Failed to delete");
+      setTaxRates((prev) => prev.filter((r) => r.id !== id));
+      toast.success("Tax rate deleted.");
+    } catch {
+      toast.error("Failed to delete tax rate");
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Tax Rates</CardTitle>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-4">
+        <p className="text-sm text-slate-500 dark:text-slate-400">
+          Save your commonly used tax rates. They&apos;ll appear in the tax dropdown on each invoice line item and sync to Stripe when connected.
+        </p>
+
+        {/* Existing rates */}
+        {loading ? (
+          <p className="text-xs text-slate-400">Loading…</p>
+        ) : taxRates.length > 0 ? (
+          <div className="flex flex-col gap-2">
+            {taxRates.map((tr) => (
+              <div
+                key={tr.id}
+                className="flex items-center justify-between gap-3 px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900"
+              >
+                <div>
+                  <span className="text-sm font-medium text-slate-800 dark:text-slate-200">{tr.name}</span>
+                  <span className="ml-2 text-xs text-slate-500">{parseFloat(tr.rate).toFixed(2)}%</span>
+                  {tr.stripe_tax_rate_id && (
+                    <span className="ml-2 text-xs text-emerald-600 dark:text-emerald-400">Stripe ✓</span>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void handleDelete(tr.id)}
+                  disabled={deletingId === tr.id}
+                  className="text-xs text-slate-400 hover:text-red-500 transition-colors disabled:opacity-50"
+                >
+                  {deletingId === tr.id ? "Deleting…" : "Delete"}
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-xs text-slate-400 italic">No tax rates saved yet.</p>
+        )}
+
+        {/* Add new */}
+        <form onSubmit={(e) => void handleAdd(e)} className="flex items-end gap-3 pt-2 border-t border-slate-200 dark:border-slate-800">
+          <div className="flex flex-col gap-1.5 flex-1">
+            <Label htmlFor="tax-name" className="text-xs text-slate-500">Name</Label>
+            <Input
+              id="tax-name"
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              placeholder="e.g. Texas Tax"
+              required
+            />
+          </div>
+          <div className="flex flex-col gap-1.5 w-28">
+            <Label htmlFor="tax-rate" className="text-xs text-slate-500">Rate (%)</Label>
+            <Input
+              id="tax-rate"
+              type="number"
+              min="0.01"
+              max="100"
+              step="0.01"
+              value={newRate}
+              onChange={(e) => setNewRate(e.target.value)}
+              placeholder="8.75"
+              required
+            />
+          </div>
+          <Button type="submit" disabled={saving} className="shrink-0">
+            {saving ? "Saving…" : "Add Rate"}
+          </Button>
+        </form>
+      </CardContent>
+    </Card>
+  );
+}
 
 const quotesOptions: QuotesPerMonth[] = ["1-5", "6-15", "16-30", "30+"];
 
@@ -390,6 +527,9 @@ export function SettingsPageClient({ userId, profile }: { userId: string; profil
       </Card>
 
       <IntegrationsSettings profile={profile} />
+
+      {/* Tax Rates */}
+      <TaxRatesCard />
 
       {/* WhatsApp */}
       <Card>

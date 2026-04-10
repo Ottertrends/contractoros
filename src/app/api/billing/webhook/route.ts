@@ -125,6 +125,14 @@ export async function POST(req: NextRequest) {
           })
           .eq("stripe_connect_account_id", account.id);
       }
+      // Ensure ACH capability is requested whenever charges become enabled
+      if (account.charges_enabled && account.id) {
+        try {
+          await getStripe().accounts.update(account.id, {
+            capabilities: { us_bank_account_ach_payments: { requested: true } },
+          });
+        } catch { /* non-fatal */ }
+      }
       break;
     }
   }
