@@ -175,17 +175,23 @@ export async function buildInvoicePdfBuffer(opts: {
     return row;
   });
 
-  const headers = ["Description", "Qty", "Unit Price"];
-  if (hasAnyLineTax) headers.push("Tax");
-  headers.push("Total");
+  const headerLabels = ["Description", "Qty", "Unit Price"];
+  if (hasAnyLineTax) headerLabels.push("Tax");
+  headerLabels.push("Total");
 
-  const columnStyles: Record<number, { cellWidth: number | "auto"; halign?: "right" }> = {
-    0: { cellWidth: "auto" },
+  // Center numeric column headers; left-align the description header.
+  const headerRow = headerLabels.map((h, i) => ({
+    content: h,
+    styles: { halign: (i === 0 ? "left" : "center") as "left" | "center" },
+  }));
+
+  const columnStyles: Record<number, { cellWidth: number | "auto"; halign?: "left" | "right" | "center" }> = {
+    0: { cellWidth: "auto", halign: "left" },
     1: { cellWidth: 40, halign: "right" },
-    2: { cellWidth: 75, halign: "right" },
+    2: { cellWidth: 80, halign: "right" },
   };
   if (hasAnyLineTax) {
-    columnStyles[3] = { cellWidth: 50, halign: "right" };
+    columnStyles[3] = { cellWidth: 55, halign: "right" };
     columnStyles[4] = { cellWidth: 75, halign: "right" };
   } else {
     columnStyles[3] = { cellWidth: 75, halign: "right" };
@@ -193,7 +199,7 @@ export async function buildInvoicePdfBuffer(opts: {
 
   autoTable(doc, {
     startY: y + 14,
-    head: [headers],
+    head: [headerRow],
     body: tableBody,
     headStyles: { fillColor: [pr, pg, pb], textColor: 255, fontSize: 9, fontStyle: "bold" },
     bodyStyles: { fontSize: 9, font: bodyFont },
