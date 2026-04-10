@@ -29,13 +29,18 @@ export async function POST(
 
   if (invErr || !inv) return NextResponse.json({ error: "Invoice not found" }, { status: 404 });
 
-  const { data: items } = await admin
-    .from("invoice_items")
-    .select("*")
-    .eq("invoice_id", invoiceId)
-    .order("sort_order", { ascending: true });
-
-  const { data: profile } = await admin.from("profiles").select("*").eq("id", user.id).single();
+  const [{ data: items }, { data: profile }, { data: savedTaxRates }] = await Promise.all([
+    admin
+      .from("invoice_items")
+      .select("*")
+      .eq("invoice_id", invoiceId)
+      .order("sort_order", { ascending: true }),
+    admin.from("profiles").select("*").eq("id", user.id).single(),
+    admin
+      .from("tax_rates")
+      .select("name, rate")
+      .eq("user_id", user.id),
+  ]);
 
   const design: InvoiceDesign = {
     logoUrl: profile?.invoice_logo_url ?? null,
@@ -71,7 +76,9 @@ export async function POST(
       quantity: String(it.quantity),
       unit_price: String(it.unit_price),
       total: String(it.total),
+      tax_rate: it.tax_rate != null ? String(it.tax_rate) : "0",
     })),
+    savedTaxRates: (savedTaxRates ?? []).map((r) => ({ name: r.name as string, rate: String(r.rate) })),
     stripePaymentLinkUrl: (inv.stripe_payment_link_url as string | null) ?? null,
     stripeHostedUrl: (inv.stripe_hosted_url as string | null) ?? null,
     alternatePaymentInstructions: (inv.alternate_payment_instructions as string | null) ?? null,

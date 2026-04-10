@@ -41,10 +41,10 @@ export async function POST(
     const inv = invoice as Record<string, unknown>;
     const projectId = inv.project_id as string;
 
-    // Fetch existing line items so we can copy them to the new draft
+    // Fetch existing line items so we can copy them to the new draft (include per-line tax_rate)
     const { data: existingItems } = await supabase
       .from("invoice_items")
-      .select("name, description, quantity, unit_price, total, sort_order")
+      .select("name, description, quantity, unit_price, total, tax_rate, sort_order")
       .eq("invoice_id", id)
       .order("sort_order", { ascending: true });
 
@@ -113,6 +113,7 @@ export async function POST(
           quantity: item.quantity as string,
           unit_price: item.unit_price as string,
           total: item.total as string,
+          tax_rate: (item.tax_rate as number | null) ?? 0,
           sort_order: (item.sort_order as number | null) ?? idx,
         })),
       );

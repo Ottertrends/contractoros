@@ -121,9 +121,8 @@ export function DraftInvoiceCard({
   const [taxRate, setTaxRate] = React.useState(
     invoice.tax_rate ? String(parseFloat(invoice.tax_rate)) : "0",
   );
-  const [automaticTaxEnabled, setAutomaticTaxEnabled] = React.useState(
-    !!(invoice.automatic_tax_enabled),
-  );
+  // Auto-tax toggle removed — always disabled (per-line tax rates are used instead)
+  const automaticTaxEnabled = false;
   const [paymentLinkUrl, setPaymentLinkUrl] = React.useState(
     invoice.stripe_payment_link_url ?? "",
   );
@@ -1447,12 +1446,13 @@ export function DraftInvoiceCard({
 
           {/* Totals */}
           <div className="flex flex-col items-end gap-2 pt-3 border-t border-slate-200 dark:border-slate-800">
-            <div className="w-64 flex flex-col gap-1.5">
+            <div className="w-72 flex flex-col gap-1.5">
               <div className="flex justify-between text-sm text-slate-600 dark:text-slate-400">
                 <span>{ti.subtotal}</span>
                 <span className="font-mono">{fmt(subtotal)}</span>
               </div>
-              {/* Invoice-level tax input — hidden when per-line tax is in use */}
+
+              {/* Invoice-level tax input — only shown when no per-line tax */}
               {!hasLineTax && (
                 <div className="flex items-center justify-between gap-2 text-sm text-slate-600 dark:text-slate-400">
                   <span>{ti.taxRate}</span>
@@ -1467,44 +1467,54 @@ export function DraftInvoiceCard({
                   />
                 </div>
               )}
-              {taxAmount > 0 && (
+
+              {/* Per-line tax breakdown (Stripe-style) */}
+              {hasLineTax && taxAmount > 0 && (() => {
+                // Compute per-rate totals
+                const rateMap = new Map<number, { label: string; taxableAmount: number; taxAmt: number }>();
+                for (const r of rows) {
+                  const pct = parseFloat(r.tax_rate) || 0;
+                  if (pct === 0) continue;
+                  const lineSubtotal = (parseFloat(r.quantity) || 0) * (parseFloat(r.unit_price) || 0);
+                  const matched = userTaxRates.find((tr) => Math.abs(parseFloat(tr.rate) - pct) < 0.001);
+                  const label = matched?.name ?? "Tax";
+                  if (rateMap.has(pct)) {
+                    const e = rateMap.get(pct)!;
+                    e.taxableAmount += lineSubtotal;
+                    e.taxAmt += lineSubtotal * pct / 100;
+                  } else {
+                    rateMap.set(pct, { label, taxableAmount: lineSubtotal, taxAmt: lineSubtotal * pct / 100 });
+                  }
+                }
+                const breakdown = Array.from(rateMap.entries());
+                return (
+                  <>
+                    <div className="flex justify-between text-sm text-slate-600 dark:text-slate-400">
+                      <span>Total excl. tax</span>
+                      <span className="font-mono">{fmt(subtotal)}</span>
+                    </div>
+                    {breakdown.map(([rate, b]) => (
+                      <div key={rate} className="flex justify-between text-sm text-slate-600 dark:text-slate-400">
+                        <span className="truncate mr-2">{b.label} ({rate}% on {fmt(b.taxableAmount)})</span>
+                        <span className="font-mono shrink-0">{fmt(b.taxAmt)}</span>
+                      </div>
+                    ))}
+                  </>
+                );
+              })()}
+
+              {/* Invoice-level tax amount row (only when invoice-level tax is set) */}
+              {!hasLineTax && taxAmount > 0 && (
                 <div className="flex justify-between text-sm text-slate-600 dark:text-slate-400">
-                  <span>{hasLineTax ? "Tax (per line)" : ti.taxAmount}</span>
+                  <span>{ti.taxAmount}</span>
                   <span className="font-mono">{fmt(taxAmount)}</span>
                 </div>
               )}
+
               <div className="flex justify-between border-t border-slate-200 pt-2 text-base font-semibold text-slate-900 dark:text-slate-50">
                 <span>{ti.grandTotal}</span>
                 <span className="font-mono">{fmt(total)}</span>
               </div>
-
-              {/* Stripe auto-tax — only visible when Stripe is connected */}
-              {stripeConnected && (
-                <label className="flex items-center gap-2 pt-1 cursor-pointer select-none">
-                  <input
-                    type="checkbox"
-                    checked={automaticTaxEnabled}
-                    onChange={(e) => {
-                      if (e.target.checked) {
-                        const hasAddress =
-                          project.address &&
-                          project.city &&
-                          project.state &&
-                          project.zip;
-                        if (!hasAddress) {
-                          toast.warning(
-                            "Fill in the client's complete address (address, city, state, zip) in the Edit Project form before enabling auto-tax.",
-                          );
-                          return;
-                        }
-                      }
-                      setAutomaticTaxEnabled(e.target.checked);
-                    }}
-                    className="rounded border-slate-300 text-primary focus:ring-primary"
-                  />
-                  <span className="text-xs text-slate-500">Stripe auto-tax</span>
-                </label>
-              )}
             </div>
           </div>
 
@@ -1581,7 +1591,9 @@ export function DraftInvoiceCard({
                   quantity: r.quantity,
                   unit_price: r.unit_price,
                   total: r.total,
+                  tax_rate: r.tax_rate,
                 }))}
+                savedTaxRates={userTaxRates.map((tr) => ({ name: tr.name, rate: tr.rate }))}
                 stripePaymentLinkUrl={stripeHostedUrl || paymentLinkUrl || null}
                 alternatePaymentInstructions={null}
               />

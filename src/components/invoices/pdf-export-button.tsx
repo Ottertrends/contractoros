@@ -11,6 +11,12 @@ interface LineItem {
   quantity: string;
   unit_price: string;
   total: string;
+  tax_rate?: string | null; // percentage e.g. "8.75"
+}
+
+interface SavedTaxRate {
+  name: string;
+  rate: string;
 }
 
 interface PdfInvoice {
@@ -36,6 +42,7 @@ interface Props {
   profile: PdfProfile | null;
   design?: InvoiceDesign | null;
   items: LineItem[];
+  savedTaxRates?: SavedTaxRate[];
   /** Stripe Connect payment link shown on PDF when sent */
   stripePaymentLinkUrl?: string | null;
   /** Zelle, Venmo, ACH — custom block */
@@ -136,6 +143,7 @@ async function generatePDF({
   profile,
   design,
   items,
+  savedTaxRates = [],
   stripePaymentLinkUrl,
   alternatePaymentInstructions,
 }: Props) {
@@ -228,16 +236,39 @@ async function generatePDF({
   }
 
   // ── Line items table ──────────────────────────────────────────────────────
-  const tableBody = items.map((it) => [
-    it.description,
-    String(parseFloat(it.quantity) || 0),
-    fmt(parseFloat(it.unit_price) || 0),
-    fmt(parseFloat(it.total) || 0),
-  ]);
+  const hasAnyLineTax = items.some((it) => (parseFloat(it.tax_rate ?? "0") || 0) > 0);
+
+  const tableBody = items.map((it) => {
+    const taxPct = parseFloat(it.tax_rate ?? "0") || 0;
+    const row = [
+      it.description,
+      String(parseFloat(it.quantity) || 0),
+      fmt(parseFloat(it.unit_price) || 0),
+    ];
+    if (hasAnyLineTax) row.push(taxPct > 0 ? `${taxPct}%` : "");
+    row.push(fmt(parseFloat(it.total) || 0));
+    return row;
+  });
+
+  const headers = ["Description", "Qty", "Unit Price"];
+  if (hasAnyLineTax) headers.push("Tax");
+  headers.push("Total");
+
+  const columnStyles: Record<number, { cellWidth: number | "auto"; halign?: "right" }> = {
+    0: { cellWidth: "auto" },
+    1: { cellWidth: 40, halign: "right" },
+    2: { cellWidth: 75, halign: "right" },
+  };
+  if (hasAnyLineTax) {
+    columnStyles[3] = { cellWidth: 50, halign: "right" };
+    columnStyles[4] = { cellWidth: 75, halign: "right" };
+  } else {
+    columnStyles[3] = { cellWidth: 75, halign: "right" };
+  }
 
   autoTable(doc, {
     startY: y + 14,
-    head: [["Description", "Qty", "Unit Price", "Total"]],
+    head: [headers],
     body: tableBody,
     headStyles: {
       fillColor: [pr, pg, pb],
@@ -247,12 +278,7 @@ async function generatePDF({
     },
     bodyStyles: { fontSize: 9, font: bodyFont },
     alternateRowStyles: { fillColor: [248, 250, 252] },
-    columnStyles: {
-      0: { cellWidth: "auto" },
-      1: { cellWidth: 40, halign: "right" },
-      2: { cellWidth: 75, halign: "right" },
-      3: { cellWidth: 75, halign: "right" },
-    },
+    columnStyles,
     margin: { left: margin, right: margin },
   });
 
@@ -269,6 +295,28 @@ async function generatePDF({
   const taxAmount = parseFloat(invoice.tax_amount) || 0;
   const total = parseFloat(invoice.total) || 0;
 
+  // Compute per-rate breakdown (Stripe-style: "Texas Tax (8.75% on $150.00)")
+  interface TaxBreakdown { label: string; rate: number; taxableAmount: number; taxAmt: number }
+  const taxBreakdown: TaxBreakdown[] = [];
+  if (hasAnyLineTax) {
+    const rateMap = new Map<number, TaxBreakdown>();
+    for (const it of items) {
+      const pct = parseFloat(it.tax_rate ?? "0") || 0;
+      if (pct === 0) continue;
+      const lineSubtotal = parseFloat(it.total) || 0;
+      const matched = savedTaxRates.find((r) => Math.abs(parseFloat(r.rate) - pct) < 0.001);
+      const label = matched?.name ?? "Tax";
+      if (rateMap.has(pct)) {
+        const e = rateMap.get(pct)!;
+        e.taxableAmount += lineSubtotal;
+        e.taxAmt += lineSubtotal * pct / 100;
+      } else {
+        rateMap.set(pct, { label, rate: pct, taxableAmount: lineSubtotal, taxAmt: lineSubtotal * pct / 100 });
+      }
+    }
+    taxBreakdown.push(...rateMap.values());
+  }
+
   doc.setFontSize(9);
   doc.setFont(bodyFont, "normal");
   doc.setTextColor(60);
@@ -277,10 +325,23 @@ async function generatePDF({
   ty += 14;
 
   if (taxAmount > 0) {
-    const taxLabel = taxRate > 0 ? `Tax (${taxRate}%):` : "Tax:";
-    doc.text(taxLabel, col1, ty, { align: "right" });
-    doc.text(fmt(taxAmount), col2, ty, { align: "right" });
-    ty += 14;
+    if (hasAnyLineTax && taxBreakdown.length > 0) {
+      // Stripe-style: "Total excl. tax" + per-rate breakdown lines
+      doc.text("Total excl. tax:", col1, ty, { align: "right" });
+      doc.text(fmt(subtotal), col2, ty, { align: "right" });
+      ty += 14;
+      for (const b of taxBreakdown) {
+        const label = `${b.label} (${b.rate}% on ${fmt(b.taxableAmount)}):`;
+        doc.text(label, col1, ty, { align: "right" });
+        doc.text(fmt(b.taxAmt), col2, ty, { align: "right" });
+        ty += 14;
+      }
+    } else {
+      const taxLabel = taxRate > 0 ? `Tax (${taxRate}%):` : "Tax:";
+      doc.text(taxLabel, col1, ty, { align: "right" });
+      doc.text(fmt(taxAmount), col2, ty, { align: "right" });
+      ty += 14;
+    }
   }
 
   doc.setDrawColor(pr, pg, pb);
@@ -355,6 +416,7 @@ export function PdfExportButton({
   profile,
   design,
   items,
+  savedTaxRates,
   stripePaymentLinkUrl,
   alternatePaymentInstructions,
 }: Props) {
@@ -366,6 +428,7 @@ export function PdfExportButton({
         profile,
         design,
         items,
+        savedTaxRates,
         stripePaymentLinkUrl,
         alternatePaymentInstructions,
       });
