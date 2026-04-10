@@ -56,6 +56,8 @@ export interface SendMessageResponse {
 }
 
 export interface SetWebhookBody {
+  /** Evolution v1.x requires enabled:true or the request is rejected */
+  enabled?: boolean;
   url: string;
   webhook_by_events?: boolean;
   webhook_base64?: boolean;

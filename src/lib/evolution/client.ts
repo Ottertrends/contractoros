@@ -154,11 +154,11 @@ export function createEvolutionClient(): EvolutionClient {
 
     async setWebhook(instanceName: string, webhookUrl: string, events: string[]) {
       const body: SetWebhookBody = {
+        enabled: true,          // required by Evolution v1.x; harmless on v2
         url: webhookUrl,
         webhook_by_events: false,
         events,
       };
-      // Evolution v2 uses POST (not PUT) for webhook/set
       await evolutionFetch(
         `/webhook/set/${encodeURIComponent(instanceName)}`,
         { method: "POST", body: JSON.stringify(body) },
