@@ -156,6 +156,9 @@ export async function syncToStripe(
       collection_method: "send_invoice", // required for sendInvoice() API + no auto-charge
       days_until_due: 30, // required when collection_method is send_invoice
       automatic_tax: { enabled: automaticTaxEnabled },
+      payment_settings: {
+        payment_method_types: ["card", "us_bank_account"],
+      },
       metadata: { worksupp_invoice_id: invoiceId, worksupp_user_id: userId },
       description: `Invoice ${(invoice as Record<string, unknown>).invoice_number ?? invoiceId}`,
     },

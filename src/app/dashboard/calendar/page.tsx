@@ -31,7 +31,7 @@ export default async function CalendarPage() {
 
   const rules: RecurringRule[] = (rulesRaw ?? []).map((r) => ({
     id: r.id as string,
-    project_id: r.project_id as string,
+    project_id: r.project_id as string | null,
     project_name: (r.projects as { name?: string | null } | null)?.name ?? null,
     recurrence_type: r.recurrence_type as RecurringRule["recurrence_type"],
     day_of_week: r.day_of_week as number | null,

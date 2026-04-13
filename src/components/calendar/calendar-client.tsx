@@ -170,7 +170,6 @@ export function CalendarClient({ initialRules, projects, initialNotificationsEna
   }
 
   async function handleAddRule() {
-    if (!formProjectId) { toast.error("Select a project"); return; }
     if (formType === "manual" && selectedDates.size === 0) {
       toast.error("Select at least one date on the calendar");
       return;
@@ -345,9 +344,9 @@ export function CalendarClient({ initialRules, projects, initialNotificationsEna
                       <div
                         key={r.id}
                         className="truncate rounded px-1 py-0.5 text-[10px] font-medium bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-300"
-                        title={[r.project_name ?? "Project", r.event_time, r.notes].filter(Boolean).join(" · ")}
+                        title={[r.project_name ?? "Internal task", r.event_time, r.notes].filter(Boolean).join(" · ")}
                       >
-                        {r.project_name ?? "Project"}
+                        {r.project_name ?? "Internal task"}
                         {r.event_time ? ` ${r.event_time}` : ""}
                       </div>
                     ))}
@@ -374,7 +373,7 @@ export function CalendarClient({ initialRules, projects, initialNotificationsEna
                 onChange={e => setFormProjectId(e.target.value)}
                 className="w-full rounded-md border border-slate-200 dark:border-slate-700 dark:bg-slate-900 dark:text-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500"
               >
-                <option value="">— Select project —</option>
+                <option value="">— No project (internal task) —</option>
                 {projects.map(p => (
                   <option key={p.id} value={p.id}>{p.name ?? "Untitled"}</option>
                 ))}
@@ -483,7 +482,7 @@ export function CalendarClient({ initialRules, projects, initialNotificationsEna
             <button
               type="button"
               onClick={() => void handleAddRule()}
-              disabled={formSaving || !formProjectId}
+              disabled={formSaving || (formType === "manual" && selectedDates.size === 0)}
               className="w-full rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {formSaving ? "Saving..." : "Add Schedule"}
@@ -497,7 +496,7 @@ export function CalendarClient({ initialRules, projects, initialNotificationsEna
               {rules.map(r => (
                 <div key={r.id} className="flex items-start justify-between gap-2 text-sm">
                   <div className="min-w-0">
-                    <p className="font-medium text-slate-800 dark:text-slate-200">{r.project_name ?? "Project"}</p>
+                    <p className="font-medium text-slate-800 dark:text-slate-200">{r.project_name ?? "Internal task"}</p>
                     <p className="text-xs text-slate-400">
                       {describeRule(r)} · Next: {r.next_occurrence}
                       {r.event_time ? ` · ${r.event_time}` : ""}

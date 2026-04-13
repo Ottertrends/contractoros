@@ -294,11 +294,11 @@ export const CONTRACTOR_TOOLS: Tool[] = [
   {
     name: "create_calendar_event",
     description:
-      "Create a recurring calendar event for a project. Use when the contractor says they have a recurring job, weekly visit, monthly service, or specific scheduled dates. Requires project_id — call list_projects first to identify it.",
+      "Create a recurring calendar event. Use when the contractor says they have a recurring job, weekly visit, monthly service, or specific scheduled dates. project_id is optional — omit if there is no linked project (e.g. a general internal task). If a project is mentioned, call list_projects first to identify it.",
     input_schema: {
       type: "object",
       properties: {
-        project_id: { type: "string", description: "UUID of the project this event belongs to" },
+        project_id: { type: "string", description: "UUID of the project this event belongs to (optional — omit for internal tasks not linked to a project)" },
         recurrence_type: {
           type: "string",
           enum: ["weekly", "interval", "monthly", "manual"],
@@ -334,7 +334,7 @@ export const CONTRACTOR_TOOLS: Tool[] = [
           description: "Optional notes for this recurring event (e.g. 'bring extra material', 'call before arriving')",
         },
       },
-      required: ["project_id", "recurrence_type"],
+      required: ["recurrence_type"],
     },
   },
   {

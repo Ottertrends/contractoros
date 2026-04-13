@@ -5,7 +5,7 @@ import { syncRecurringRuleToGoogle, deleteGoogleEventForRule } from "@/lib/integ
 
 export interface RecurringRule {
   id: string;
-  project_id: string;
+  project_id: string | null;
   project_name: string | null;
   recurrence_type: "weekly" | "interval" | "monthly" | "manual";
   day_of_week: number | null;
@@ -82,7 +82,7 @@ export async function GET() {
 
   const result: RecurringRule[] = (rules ?? []).map((r) => ({
     id: r.id as string,
-    project_id: r.project_id as string,
+    project_id: r.project_id as string | null,
     project_name: (r.projects as { name?: string | null } | null)?.name ?? null,
     recurrence_type: r.recurrence_type as RecurringRule["recurrence_type"],
     day_of_week: r.day_of_week as number | null,
@@ -119,8 +119,8 @@ export async function POST(request: Request) {
   };
 
   const { projectId, recurrence_type, day_of_week, interval_days, day_of_month, manual_dates } = body;
-  if (!projectId || !recurrence_type) {
-    return NextResponse.json({ error: "projectId and recurrence_type required" }, { status: 400 });
+  if (!recurrence_type) {
+    return NextResponse.json({ error: "recurrence_type required" }, { status: 400 });
   }
 
   if (recurrence_type === "manual" && (!manual_dates || manual_dates.length === 0)) {
@@ -141,7 +141,7 @@ export async function POST(request: Request) {
     .from("recurring_projects")
     .insert({
       user_id: user.id,
-      project_id: projectId,
+      project_id: projectId || null,
       recurrence_type,
       day_of_week: day_of_week ?? null,
       interval_days: interval_days ?? null,

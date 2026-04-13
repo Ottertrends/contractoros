@@ -766,9 +766,8 @@ export async function executeTool(
     }
 
     case "create_calendar_event": {
-      const projectId = String(input.project_id ?? "").trim();
+      const projectId = String(input.project_id ?? "").trim() || null;
       const recurrenceType = String(input.recurrence_type ?? "").trim() as "weekly" | "interval" | "monthly" | "manual";
-      if (!projectId) return jsonResult({ error: "project_id is required" });
       if (!["weekly", "interval", "monthly", "manual"].includes(recurrenceType)) {
         return jsonResult({ error: "recurrence_type must be one of: weekly, interval, monthly, manual" });
       }
@@ -819,7 +818,7 @@ export async function executeTool(
         .from("recurring_projects")
         .insert({
           user_id: userId,
-          project_id: projectId,
+          project_id: projectId || null,
           recurrence_type: recurrenceType,
           day_of_week: dayOfWeek,
           interval_days: intervalDays,
