@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { isPremium, maxMonthlyMessages } from "@/lib/billing/access";
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -19,12 +21,33 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "messages required" }, { status: 400 });
   }
 
-  // Fetch minimal profile for system-prompt context
+  // Fetch profile for access check + system prompt context
   const { data: profile } = await supabase
     .from("profiles")
-    .select("company_name, services, business_areas")
+    .select("company_name, services, business_areas, subscription_plan, subscription_status, subscription_seats")
     .eq("id", user.id)
     .single();
+
+  // Free tier: check monthly message limit (shared with WhatsApp)
+  if (!isPremium(profile ?? {})) {
+    const limit = maxMonthlyMessages(profile ?? {});
+    if (isFinite(limit)) {
+      const admin = createSupabaseAdminClient();
+      const thisMonth = new Date().toISOString().slice(0, 7);
+      const { data: usageRows } = await admin
+        .from("api_usage")
+        .select("web_messages")
+        .eq("user_id", user.id)
+        .gte("date", `${thisMonth}-01`);
+      const monthMessages = (usageRows ?? []).reduce((a: number, r: { web_messages?: number }) => a + (r.web_messages ?? 0), 0);
+      if (monthMessages >= limit) {
+        return NextResponse.json(
+          { error: `You've reached your ${limit} free messages for this month. Upgrade to Premium at /dashboard/billing for unlimited messages.` },
+          { status: 402 }
+        );
+      }
+    }
+  }
 
   const companyLine = profile?.company_name
     ? `The user runs a contracting company called "${profile.company_name}".`
@@ -70,6 +93,17 @@ export async function POST(req: NextRequest) {
       }
     },
   });
+
+  // Track message usage (fire-and-forget)
+  try {
+    const admin = createSupabaseAdminClient();
+    const today = new Date().toISOString().slice(0, 10);
+    await admin.rpc("increment_usage", {
+      p_user_id: user.id,
+      p_date: today,
+      p_web_messages: 1,
+    });
+  } catch { /* non-fatal */ }
 
   return new Response(readable, {
     headers: { "Content-Type": "text/plain; charset=utf-8" },

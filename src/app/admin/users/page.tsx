@@ -5,9 +5,21 @@ import Link from "next/link";
 import { AdminLogoutButton } from "@/app/admin/AdminLogoutButton";
 
 function planBadge(plan: string) {
-  if (plan === "free") return "Free";
-  if (plan === "discounted") return "Discounted";
-  return "Standard";
+  const map: Record<string, string> = {
+    basic: "Basic",
+    premium: "Premium",
+    premium_team: "Team",
+    free_premium: "Free Premium",
+    free_premium_team: "Free Team",
+    discounted_premium: "Discounted",
+    discounted_premium_team: "Disc. Team",
+    // legacy
+    standard: "Premium",
+    paid: "Premium",
+    free: "Free Premium",
+    discounted: "Discounted",
+  };
+  return map[plan] ?? plan;
 }
 
 function statusBadge(status: string) {

@@ -31,8 +31,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const admin = createSupabaseAdminClient();
   const body = await req.json();
 
-  // Only allow changing subscription_plan and subscription_status
-  const allowed = ["subscription_plan", "subscription_status"];
+  // Only allow changing subscription fields
+  const allowed = ["subscription_plan", "subscription_status", "subscription_seats", "subscription_billing_interval"];
   const updates: Record<string, unknown> = {};
   for (const key of allowed) {
     if (key in body) updates[key] = body[key];

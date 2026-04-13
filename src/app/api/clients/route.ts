@@ -1,5 +1,6 @@
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { maxClients } from "@/lib/billing/access";
 
 export async function GET() {
   const supabase = await createSupabaseServerClient();
@@ -28,6 +29,28 @@ export async function POST(request: Request) {
   if (!client_name?.trim()) return new Response("client_name is required", { status: 400 });
 
   const admin = createSupabaseAdminClient();
+
+  // Free tier: check client count limit
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("subscription_plan, subscription_status")
+    .eq("id", user.id)
+    .single();
+
+  const limit = maxClients(profile ?? {});
+  if (isFinite(limit)) {
+    const { count } = await admin
+      .from("clients")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", user.id);
+    if ((count ?? 0) >= limit) {
+      return Response.json(
+        { error: `Free plan allows up to ${limit} clients. Upgrade to Premium for unlimited clients.` },
+        { status: 402 }
+      );
+    }
+  }
+
   const { data, error } = await admin
     .from("clients")
     .insert({

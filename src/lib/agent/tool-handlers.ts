@@ -2,6 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { syncDraftFromProject } from "@/lib/invoice/sync-draft";
 import { DEFAULT_ANTHROPIC_MODEL } from "@/lib/agent/model";
+import { isPremium, maxProjects, maxMonthlySearches } from "@/lib/billing/access";
 import type { ProjectStatus } from "@/lib/types/database";
 import type { ContentBlock, ProposalLineItem } from "@/lib/types/proposals";
 
@@ -23,27 +24,24 @@ export async function executeTool(
       const nameVal = String(input.name ?? "").trim();
       if (!nameVal) return jsonResult({ error: "name is required" });
 
-      // ── Free tier limit: max 1 project ────────────────────────────────────
+      // ── Free tier limit: max 3 projects ──────────────────────────────────
       const { data: subProfile } = await admin
         .from("profiles")
-        .select("subscription_plan, subscription_status")
+        .select("subscription_plan, subscription_status, subscription_seats")
         .eq("id", userId)
         .maybeSingle();
 
-      const isPaid =
-        subProfile?.subscription_plan === "free" ||
-        ["active", "trialing"].includes(subProfile?.subscription_status ?? "");
-
-      if (!isPaid) {
+      if (!isPremium(subProfile ?? {})) {
+        const limit = maxProjects(subProfile ?? {});
         const { count: projectCount } = await admin
           .from("projects")
           .select("*", { count: "exact", head: true })
           .eq("user_id", userId);
 
-        if ((projectCount ?? 0) >= 1) {
+        if ((projectCount ?? 0) >= limit) {
           return jsonResult({
             error:
-              "Free plan is limited to 1 project. Upgrade to Standard at worksup.vercel.app/dashboard/billing to add more.",
+              `Free plan is limited to ${limit} projects. Upgrade to Premium at worksup.vercel.app/dashboard/billing to add unlimited projects.`,
           });
         }
       }
@@ -563,22 +561,29 @@ export async function executeTool(
       const rawQuery = String(input.query ?? "").trim();
       if (!rawQuery) return jsonResult({ error: "query is required" });
 
-      // ── Free tier: web search not available ───────────────────────────────
+      // ── Free tier: web search limited to 4/month ─────────────────────────
       const { data: wsProfile } = await admin
         .from("profiles")
-        .select("subscription_plan, subscription_status")
+        .select("subscription_plan, subscription_status, subscription_seats")
         .eq("id", userId)
         .maybeSingle();
 
-      const wsIsPaid =
-        wsProfile?.subscription_plan === "free" ||
-        ["active", "trialing"].includes(wsProfile?.subscription_status ?? "");
-
-      if (!wsIsPaid) {
-        return jsonResult({
-          error:
-            "Web search is available on the Standard plan ($50/month). Upgrade at worksup.vercel.app/dashboard/billing",
-        });
+      if (!isPremium(wsProfile ?? {})) {
+        const searchLimit = maxMonthlySearches(wsProfile ?? {});
+        if (isFinite(searchLimit)) {
+          const thisMonth = new Date().toISOString().slice(0, 7); // "YYYY-MM"
+          const { data: usageRows } = await admin
+            .from("api_usage")
+            .select("tavily_searches")
+            .eq("user_id", userId)
+            .gte("date", `${thisMonth}-01`);
+          const monthSearches = (usageRows ?? []).reduce((a, r) => a + (r.tavily_searches ?? 0), 0);
+          if (monthSearches >= searchLimit) {
+            return jsonResult({
+              error: `You've used your ${searchLimit} free web searches for this month. Upgrade to Premium at worksup.vercel.app/dashboard/billing for unlimited searches.`,
+            });
+          }
+        }
       }
 
       const apiKey = process.env.TAVILY_API_KEY?.trim();

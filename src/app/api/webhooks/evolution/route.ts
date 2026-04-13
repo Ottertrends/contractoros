@@ -172,13 +172,27 @@ async function processPayload(payload: EvolutionWebhookPayload) {
     return;
   }
 
+  // Team member routing: if this user is an active team member, run the agent
+  // against the owner's workspace. Replies still go back to the member's instance.
+  let workspaceUserId = userId;
+  const { data: membership } = await admin
+    .from("team_members")
+    .select("owner_user_id")
+    .eq("member_user_id", userId)
+    .eq("status", "active")
+    .maybeSingle();
+  if (membership?.owner_user_id) {
+    workspaceUserId = membership.owner_user_id;
+    console.log("[evolution-webhook] Team member:", userId, "→ workspace owner:", workspaceUserId);
+  }
+
   if (!allowWebhookEvent(instance)) {
     console.log("[evolution-webhook] Rate limited for instance:", instance);
     return;
   }
 
   const eventRaw = String(payload.event ?? "").toLowerCase();
-  console.log("[evolution-webhook] Processing event:", eventRaw, "| userId:", userId);
+  console.log("[evolution-webhook] Processing event:", eventRaw, "| userId:", userId, "| workspaceUserId:", workspaceUserId);
 
   if (eventRaw.includes("connection")) {
     const payloadSenderForConn =
@@ -222,7 +236,7 @@ async function processPayload(payload: EvolutionWebhookPayload) {
     for (const chunk of chunks) {
       await handleMessagesUpsert(
         admin,
-        userId,
+        workspaceUserId,
         instance,
         chunk,
         ownerJid,

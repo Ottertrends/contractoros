@@ -11,6 +11,7 @@ import {
   MessageSquare,
   Boxes,
   Users,
+  UserPlus2,
   Palette,
   Settings as SettingsIcon,
   CreditCard,
@@ -21,6 +22,7 @@ import {
   ChevronRight,
   RefreshCcw,
 } from "lucide-react";
+import { isPremiumTeam } from "@/lib/billing/access";
 
 import { useLanguage } from "@/lib/i18n/client";
 import { HelpModal } from "@/components/help/help-modal";
@@ -28,13 +30,16 @@ import { HelpModal } from "@/components/help/help-modal";
 type Props = {
   userName?: string;
   userEmail?: string;
+  subscriptionPlan?: string | null;
 };
 
-export function Sidebar({ userName, userEmail }: Props) {
+export function Sidebar({ userName, userEmail, subscriptionPlan }: Props) {
   const { t } = useLanguage();
   const pathname = usePathname();
   const [helpOpen, setHelpOpen] = React.useState(false);
   const [collapsed, setCollapsed] = React.useState(false);
+
+  const showTeam = isPremiumTeam({ subscription_plan: subscriptionPlan });
 
   const primaryNav = [
     { href: "/dashboard", label: t.nav.dashboard, icon: LayoutDashboard },
@@ -45,6 +50,7 @@ export function Sidebar({ userName, userEmail }: Props) {
     { href: "/dashboard/price-book", label: t.nav.priceBook, icon: Boxes },
     { href: "/dashboard/clients", label: t.nav.clients, icon: Users },
     { href: "/dashboard/subscriptions", label: "Subscriptions", icon: RefreshCcw },
+    ...(showTeam ? [{ href: "/dashboard/team", label: "Team", icon: UserPlus2 }] : []),
   ];
 
   const secondaryNav = [

@@ -11,6 +11,8 @@ interface Profile {
   phone?: string;
   subscription_status?: string;
   subscription_plan?: string;
+  subscription_seats?: number;
+  subscription_billing_interval?: string;
   subscription_started_at?: string;
   subscription_ended_at?: string;
   stripe_customer_id?: string;
@@ -86,8 +88,10 @@ interface Props {
 
 export function AdminUserDetailClient({ userId, profile, projects, invoices, memory, usage }: Props) {
   const router = useRouter();
-  const [plan, setPlan] = useState(profile.subscription_plan ?? "standard");
+  const [plan, setPlan] = useState(profile.subscription_plan ?? "basic");
   const [status, setStatus] = useState(profile.subscription_status ?? "none");
+  const [seats, setSeats] = useState(profile.subscription_seats ?? 0);
+  const [billingInterval, setBillingInterval] = useState(profile.subscription_billing_interval ?? "monthly");
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState("");
 
@@ -161,7 +165,12 @@ export function AdminUserDetailClient({ userId, profile, projects, invoices, mem
       const res = await fetch(`/api/admin/users/${userId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ subscription_plan: plan, subscription_status: status }),
+        body: JSON.stringify({
+          subscription_plan: plan,
+          subscription_status: status,
+          subscription_seats: seats,
+          subscription_billing_interval: billingInterval,
+        }),
       });
       const data = await res.json();
       if (res.ok) {
@@ -286,9 +295,13 @@ export function AdminUserDetailClient({ userId, profile, projects, invoices, mem
               onChange={(e) => setPlan(e.target.value)}
               className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary"
             >
-              <option value="standard">Standard</option>
-              <option value="discounted">Discounted (50%)</option>
-              <option value="free">Free (Complimentary)</option>
+              <option value="basic">Basic (Free Tier)</option>
+              <option value="premium">Premium</option>
+              <option value="premium_team">Premium Team</option>
+              <option value="free_premium">Free Premium (Complimentary)</option>
+              <option value="free_premium_team">Free Premium Team (Comp. — Unlimited Seats)</option>
+              <option value="discounted_premium">Discounted 50% — Premium</option>
+              <option value="discounted_premium_team">Discounted 50% — Premium Team</option>
             </select>
           </div>
           <div className="flex flex-col gap-1">
@@ -305,6 +318,32 @@ export function AdminUserDetailClient({ userId, profile, projects, invoices, mem
               <option value="canceled">Canceled</option>
             </select>
           </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-xs text-slate-500 uppercase font-medium">Billing Interval</label>
+            <select
+              value={billingInterval}
+              onChange={(e) => setBillingInterval(e.target.value)}
+              className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary"
+            >
+              <option value="monthly">Monthly</option>
+              <option value="annual">Annual</option>
+            </select>
+          </div>
+          {(plan === "premium_team" || plan === "free_premium_team" || plan === "discounted_premium_team") && (
+            <div className="flex flex-col gap-1">
+              <label className="text-xs text-slate-500 uppercase font-medium">Extra Seats (beyond base 2)</label>
+              <input
+                type="number"
+                min={0}
+                value={seats}
+                onChange={(e) => setSeats(Math.max(0, parseInt(e.target.value) || 0))}
+                className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary"
+              />
+              <span className="text-xs text-slate-400">
+                {plan === "free_premium_team" ? "Unlimited seats (admin-granted)" : `Total seats: ${2 + seats} (owner + ${1 + seats} members)`}
+              </span>
+            </div>
+          )}
         </div>
         <div className="flex items-center gap-3">
           <button

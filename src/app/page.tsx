@@ -38,6 +38,12 @@ export default function LandingPage() {
           </div>
           <div className="flex items-center gap-2 shrink-0">
             <a
+              href="/pricing"
+              className="hidden sm:inline-flex items-center justify-center rounded-lg px-3 py-1.5 sm:px-4 sm:py-2 text-sm font-medium text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white transition-colors whitespace-nowrap"
+            >
+              Pricing
+            </a>
+            <a
               href="/auth/signup"
               className="inline-flex items-center justify-center rounded-lg px-3 py-1.5 sm:px-4 sm:py-2 text-sm font-semibold text-white transition-colors whitespace-nowrap
                 bg-primary hover:bg-primary/90

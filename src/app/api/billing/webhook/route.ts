@@ -36,7 +36,13 @@ export async function POST(req: NextRequest) {
       const session = event.data.object as {
         customer: string;
         subscription?: string | null;
-        metadata?: { supabase_user_id?: string; internal_invoice_id?: string };
+        metadata?: {
+          supabase_user_id?: string;
+          internal_invoice_id?: string;
+          plan?: string;
+          interval?: string;
+          extra_seats?: string;
+        };
         payment_status?: string;
       };
 
@@ -56,11 +62,17 @@ export async function POST(req: NextRequest) {
       const userId = session.metadata?.supabase_user_id ?? await getSupabaseUserId(session.customer);
       if (userId) {
         const { data: prof } = await admin.from("profiles").select("subscription_plan").eq("id", userId).single();
-        const planUpdate = (prof?.subscription_plan !== "free" && prof?.subscription_plan !== "discounted")
-          ? { subscription_plan: "paid" } : {};
+        // Honor admin-granted plans — don't overwrite them
+        const adminGranted = prof?.subscription_plan === "free_premium" || prof?.subscription_plan === "free_premium_team";
+        const newPlan = adminGranted
+          ? prof?.subscription_plan
+          : (session.metadata?.plan ?? "premium");
+        const extraSeats = parseInt(session.metadata?.extra_seats ?? "0", 10);
         await updateProfile(userId, {
           subscription_status: "active",
-          ...planUpdate,
+          subscription_plan: newPlan,
+          subscription_seats: extraSeats,
+          subscription_billing_interval: session.metadata?.interval ?? "monthly",
           stripe_customer_id: session.customer,
           stripe_subscription_id: session.subscription,
           subscription_started_at: new Date().toISOString(),
@@ -74,9 +86,11 @@ export async function POST(req: NextRequest) {
       const userId = await getSupabaseUserId(invoice.customer);
       if (userId) {
         const { data: prof } = await admin.from("profiles").select("subscription_plan").eq("id", userId).single();
-        const planUpdate = (prof?.subscription_plan !== "free" && prof?.subscription_plan !== "discounted")
-          ? { subscription_plan: "paid" } : {};
-        await updateProfile(userId, { subscription_status: "active", ...planUpdate });
+        // Keep admin-granted plans intact
+        const adminGranted = prof?.subscription_plan === "free_premium" || prof?.subscription_plan === "free_premium_team";
+        if (!adminGranted) {
+          await updateProfile(userId, { subscription_status: "active" });
+        }
       }
       break;
     }

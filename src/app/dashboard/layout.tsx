@@ -29,6 +29,33 @@ export default async function DashboardLayout({
     getServerLang(),
   ]);
 
+  // If this user was invited as a team member, link their user_id to the team_members row
+  const ownerUserId = user.user_metadata?.owner_user_id as string | undefined;
+  if (ownerUserId && user.email) {
+    try {
+      const { createSupabaseAdminClient } = await import("@/lib/supabase/admin");
+      const adminClient = createSupabaseAdminClient();
+      const { data: row } = await adminClient
+        .from("team_members")
+        .select("id, status")
+        .eq("owner_user_id", ownerUserId)
+        .eq("invited_email", user.email)
+        .in("status", ["pending"])
+        .maybeSingle();
+      if (row) {
+        await adminClient
+          .from("team_members")
+          .update({
+            member_user_id: user.id,
+            status: "active",
+            accepted_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", row.id);
+      }
+    } catch { /* non-fatal */ }
+  }
+
   const safeProfile = profile ?? {
     id: user.id,
     full_name: (user.user_metadata?.full_name as string | undefined) ?? "User",
@@ -59,7 +86,11 @@ export default async function DashboardLayout({
     <LanguageProvider initialLang={lang}>
       <div className="min-h-screen bg-background">
         <div className="flex">
-          <Sidebar userName={safeProfile.full_name} userEmail={safeProfile.email} />
+          <Sidebar
+            userName={safeProfile.full_name}
+            userEmail={safeProfile.email}
+            subscriptionPlan={(safeProfile as { subscription_plan?: string | null }).subscription_plan ?? null}
+          />
           <div className="flex-1 min-w-0">
             <DashboardRealtimeBridge userId={user.id} />
             <TopBar profile={safeProfile} />
