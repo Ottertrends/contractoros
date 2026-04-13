@@ -158,6 +158,7 @@ export default async function ProjectDetailPage({
       {/* Primary Invoice — always shows the most recent invoice in full editor */}
       {primaryInvoice ? (
         <DraftInvoiceCard
+          key={primaryInvoice.id}
           projectName={safeProject.name}
           invoice={primaryInvoice}
           items={primaryItems}

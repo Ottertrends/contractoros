@@ -57,7 +57,7 @@ export async function POST(
       .update({
         status: "void",
         stripe_invoice_id: null,
-        stripe_hosted_url: null,
+        // Keep stripe_hosted_url so the link remains visible in invoice history
         updated_at: new Date().toISOString(),
       })
       .eq("id", id)
