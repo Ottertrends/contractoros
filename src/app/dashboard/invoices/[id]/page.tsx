@@ -27,7 +27,7 @@ export default async function InvoiceDetailPage({
     .single();
 
   if (invoice?.project_id) {
-    redirect(`/dashboard/projects/${invoice.project_id}`);
+    redirect(`/dashboard/projects/${invoice.project_id}?invoiceId=${id}`);
   }
 
   // Fallback — invoice has no project or wasn't found

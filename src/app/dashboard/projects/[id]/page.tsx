@@ -32,8 +32,10 @@ function fmt(n: number) {
 
 export default async function ProjectDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const supabase = await createSupabaseServerClient();
   const {
@@ -47,6 +49,8 @@ export default async function ProjectDetailPage({
   const ti = t.invoices;
 
   const { id: projectId } = await params;
+  const sp = await searchParams;
+  const requestedInvoiceId = typeof sp.invoiceId === "string" ? sp.invoiceId : null;
 
   const { data: project, error: projectError } = await supabase
     .from("projects")
@@ -75,9 +79,12 @@ export default async function ProjectDetailPage({
 
   const safeInvoices = (invoices ?? []) as Invoice[];
 
-  // Use the most recent invoice (any status) as the primary editable invoice.
+  // Use the requested invoice (via ?invoiceId=) if valid, otherwise most recent.
   // If none exist, auto-create a draft via the app-layer fallback.
-  let primaryInvoice = safeInvoices[0] ?? null;
+  let primaryInvoice =
+    (requestedInvoiceId
+      ? safeInvoices.find((inv) => inv.id === requestedInvoiceId)
+      : null) ?? safeInvoices[0] ?? null;
 
   if (!primaryInvoice) {
     const admin = createSupabaseAdminClient();
@@ -111,8 +118,8 @@ export default async function ProjectDetailPage({
     .order("item_name");
   const priceBook = (priceBookRaw ?? []) as PriceBookItem[];
 
-  // Older invoices shown in a read-only table below the primary editor
-  const olderInvoices = safeInvoices.slice(1);
+  // All invoices except the one currently shown in the editor
+  const olderInvoices = safeInvoices.filter((inv) => inv.id !== primaryInvoice?.id);
 
   // Load project media and generate signed URLs
   const { data: mediaRows } = await supabase
@@ -199,7 +206,7 @@ export default async function ProjectDetailPage({
                     <tr key={inv.id} className="hover:bg-slate-50 dark:hover:bg-slate-900">
                       <td className="py-3 pr-3">
                         <Link
-                          href={`/dashboard/invoices/${inv.id}`}
+                          href={`/dashboard/projects/${projectId}?invoiceId=${inv.id}`}
                           className="font-mono text-primary hover:underline"
                         >
                           {inv.invoice_number ?? inv.id.slice(0, 8)}
