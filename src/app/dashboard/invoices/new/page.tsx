@@ -24,7 +24,12 @@ export default async function NewInvoicePage({
   const projectId =
     typeof searchParams.projectId === "string" ? searchParams.projectId : undefined;
 
-  // Project selected → go straight to the project invoice editor
+  // "Create new project" selected → go to new project page
+  if (projectId === "__new__") {
+    redirect("/dashboard/projects/new");
+  }
+
+  // Existing project selected → go straight to the project invoice editor
   if (projectId) {
     redirect(`/dashboard/projects/${projectId}`);
   }
@@ -94,6 +99,7 @@ export default async function NewInvoicePage({
                   {p.name ?? "Untitled"}
                 </option>
               ))}
+              <option value="__new__">+ Create new project</option>
             </select>
           </div>
 
