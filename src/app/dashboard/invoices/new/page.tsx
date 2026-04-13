@@ -9,7 +9,7 @@ import type { Project } from "@/lib/types/database";
 export default async function NewInvoicePage({
   searchParams,
 }: {
-  searchParams: Record<string, string | string[] | undefined>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const supabase = await createSupabaseServerClient();
   const {
@@ -21,8 +21,9 @@ export default async function NewInvoicePage({
   const t = getT(lang);
   const ti = t.invoices;
 
+  const sp = await searchParams;
   const projectId =
-    typeof searchParams.projectId === "string" ? searchParams.projectId : undefined;
+    typeof sp.projectId === "string" ? sp.projectId : undefined;
 
   // "Create new project" selected → go to new project page
   if (projectId === "__new__") {
