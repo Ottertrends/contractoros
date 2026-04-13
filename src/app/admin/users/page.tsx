@@ -53,16 +53,18 @@ export default async function AdminUsersPage() {
   const { data: usageRows } = userIds.length
     ? await admin
         .from("api_usage")
-        .select("user_id, claude_input_tokens, claude_output_tokens, tavily_searches")
+        .select("user_id, claude_input_tokens, claude_output_tokens, tavily_searches, haiku_input_tokens, haiku_output_tokens")
         .gte("date", since)
     : { data: [] };
 
-  const usageMap: Record<string, { input: number; output: number; tavily: number }> = {};
+  const usageMap: Record<string, { input: number; output: number; tavily: number; haikuIn: number; haikuOut: number }> = {};
   for (const u of usageRows ?? []) {
-    if (!usageMap[u.user_id]) usageMap[u.user_id] = { input: 0, output: 0, tavily: 0 };
+    if (!usageMap[u.user_id]) usageMap[u.user_id] = { input: 0, output: 0, tavily: 0, haikuIn: 0, haikuOut: 0 };
     usageMap[u.user_id].input += u.claude_input_tokens;
     usageMap[u.user_id].output += u.claude_output_tokens;
     usageMap[u.user_id].tavily += u.tavily_searches;
+    usageMap[u.user_id].haikuIn += (u.haiku_input_tokens ?? 0);
+    usageMap[u.user_id].haikuOut += (u.haiku_output_tokens ?? 0);
   }
 
   return (
@@ -93,14 +95,17 @@ export default async function AdminUsersPage() {
                   <th className="px-4 py-3">Since</th>
                   <th className="px-4 py-3">Projects</th>
                   <th className="px-4 py-3">Tokens (30d)</th>
+                  <th className="px-4 py-3">Haiku %</th>
                   <th className="px-4 py-3">Tavily (30d)</th>
                   <th className="px-4 py-3"></th>
                 </tr>
               </thead>
               <tbody>
                 {(profiles ?? []).map((p) => {
-                  const usage = usageMap[p.id] ?? { input: 0, output: 0, tavily: 0 };
-                  const totalTokens = usage.input + usage.output;
+                  const usage = usageMap[p.id] ?? { input: 0, output: 0, tavily: 0, haikuIn: 0, haikuOut: 0 };
+                  const haikuTokens = usage.haikuIn + usage.haikuOut;
+                  const totalTokens = usage.input + usage.output + haikuTokens;
+                  const haikuPct = totalTokens > 0 ? Math.round((haikuTokens / totalTokens) * 100) : null;
                   const status = p.subscription_status ?? "none";
                   return (
                     <tr key={p.id} className="border-b border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/50">
@@ -122,6 +127,13 @@ export default async function AdminUsersPage() {
                       </td>
                       <td className="px-4 py-3 text-center text-slate-600 dark:text-slate-400">{projectMap[p.id] ?? 0}</td>
                       <td className="px-4 py-3 text-slate-500">{totalTokens.toLocaleString()}</td>
+                      <td className="px-4 py-3 text-slate-500">
+                        {haikuPct !== null ? (
+                          <span className={haikuPct >= 50 ? "text-emerald-600 dark:text-emerald-400 font-medium" : ""}>
+                            {haikuPct}%
+                          </span>
+                        ) : "—"}
+                      </td>
                       <td className="px-4 py-3 text-slate-500">{usage.tavily}</td>
                       <td className="px-4 py-3">
                         <Link href={`/admin/users/${p.id}`} className="text-primary text-xs hover:underline">
@@ -133,7 +145,7 @@ export default async function AdminUsersPage() {
                 })}
                 {!profiles?.length && (
                   <tr>
-                    <td colSpan={9} className="px-4 py-8 text-center text-slate-400">No users yet</td>
+                    <td colSpan={10} className="px-4 py-8 text-center text-slate-400">No users yet</td>
                   </tr>
                 )}
               </tbody>

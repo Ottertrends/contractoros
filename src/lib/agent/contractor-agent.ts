@@ -9,13 +9,10 @@ import type {
 
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { executeTool } from "@/lib/agent/tool-handlers";
-import { DEFAULT_ANTHROPIC_MODEL } from "@/lib/agent/model";
+import { DEFAULT_ANTHROPIC_MODEL, HAIKU_MODEL } from "@/lib/agent/model";
+import { routeToModel } from "@/lib/agent/model-router";
 import { buildSystemPrompt } from "@/lib/agent/types";
 import { CONTRACTOR_TOOLS } from "@/lib/agent/tools";
-
-function getModel() {
-  return process.env.ANTHROPIC_MODEL?.trim() || DEFAULT_ANTHROPIC_MODEL;
-}
 
 function formatAgentError(e: unknown): string {
   if (e instanceof Error) {
@@ -87,12 +84,14 @@ export async function processContractorMessage(
     "Sorry, I'm having trouble processing that. Please try again in a moment.";
 
   try {
-    const model = getModel();
+    const client = getClient();
+
+    // Route to Haiku (simple) or Sonnet (complex) based on message content
+    const { model, method: routeMethod } = await routeToModel(messageText, client);
     console.log(
       "[contractor-agent] start",
-      { model, userId: userId.slice(0, 8), historyLen: history.length },
+      { model: model === HAIKU_MODEL ? "haiku" : "sonnet", routeMethod, userId: userId.slice(0, 8), historyLen: history.length },
     );
-    const client = getClient();
 
     // Fetch this contractor's long-term memory + location context
     const admin = createSupabaseAdminClient();
@@ -151,17 +150,20 @@ export async function processContractorMessage(
         messages,
       });
 
-      // Track token usage
+      // Track token usage — split by model tier
       if (response.usage) {
         const today = new Date().toISOString().slice(0, 10);
+        const isHaiku = model === HAIKU_MODEL;
         void Promise.resolve(
           admin.rpc("increment_usage", {
             p_user_id: userId,
             p_date: today,
-            p_input: response.usage.input_tokens ?? 0,
-            p_output: response.usage.output_tokens ?? 0,
-            p_tavily: 0,
+            p_input:        isHaiku ? 0 : (response.usage.input_tokens ?? 0),
+            p_output:       isHaiku ? 0 : (response.usage.output_tokens ?? 0),
+            p_tavily:       0,
             p_web_messages: 0,
+            p_haiku_input:  isHaiku ? (response.usage.input_tokens ?? 0) : 0,
+            p_haiku_output: isHaiku ? (response.usage.output_tokens ?? 0) : 0,
           })
         ).catch((err: unknown) => console.warn("[contractor-agent] usage tracking failed:", err));
       }
