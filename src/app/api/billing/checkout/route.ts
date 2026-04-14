@@ -69,14 +69,12 @@ export async function POST(req: NextRequest) {
     lineItems.push({ price: SEAT_PRICE_MAP[interval], quantity: extraSeats });
   }
 
-  // Apply 50% coupon for discounted plans
+  // Apply 50% discount for discounted plans via existing STRIPE_PROMO_ID promotion code
   const isDiscounted = normalizedPlan === "discounted_premium" || normalizedPlan === "discounted_premium_team";
-  const discounts =
-    isDiscounted && process.env.STRIPE_COUPON_50PCT
-      ? [{ coupon: process.env.STRIPE_COUPON_50PCT }]
+  const appliedDiscounts =
+    isDiscounted && process.env.STRIPE_PROMO_ID
+      ? [{ promotion_code: process.env.STRIPE_PROMO_ID }]
       : [];
-
-  const appliedDiscounts = discounts;
 
   const session = await getStripe().checkout.sessions.create({
     customer: customerId,
