@@ -76,13 +76,7 @@ export async function POST(req: NextRequest) {
       ? [{ coupon: process.env.STRIPE_COUPON_50PCT }]
       : [];
 
-  // Legacy promo code support
-  const legacyDiscounts =
-    !isDiscounted && normalizedPlan === "discounted_premium" && process.env.STRIPE_PROMO_ID
-      ? [{ promotion_code: process.env.STRIPE_PROMO_ID }]
-      : [];
-
-  const appliedDiscounts = discounts.length ? discounts : legacyDiscounts;
+  const appliedDiscounts = discounts;
 
   const session = await getStripe().checkout.sessions.create({
     customer: customerId,
