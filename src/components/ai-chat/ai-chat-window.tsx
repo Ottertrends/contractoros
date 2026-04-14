@@ -17,7 +17,7 @@ interface Props {
 export function AiChatWindow({ open, onClose }: Props) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
-  const [streaming, setStreaming] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [mounted, setMounted] = useState(false);
 
   // Drag state — desktop only
@@ -73,13 +73,16 @@ export function AiChatWindow({ open, onClose }: Props) {
   // ── Send message ───────────────────────────────────────────────────────────
   async function sendMessage() {
     const text = input.trim();
-    if (!text || streaming) return;
+    if (!text || loading) return;
 
     const userMsg: Message = { role: "user", content: text };
     const newHistory = [...messages, userMsg];
     setMessages(newHistory);
     setInput("");
-    setStreaming(true);
+    setLoading(true);
+
+    // Show typing indicator
+    setMessages((prev) => [...prev, { role: "assistant", content: "" }]);
 
     try {
       const res = await fetch("/api/chat", {
@@ -88,40 +91,41 @@ export function AiChatWindow({ open, onClose }: Props) {
         body: JSON.stringify({ messages: newHistory }),
       });
 
-      if (!res.ok || !res.body) throw new Error("Request failed");
+      const data = (await res.json()) as { reply?: string; error?: string };
 
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let accumulated = "";
-
-      // Append empty placeholder for the assistant turn
-      setMessages((prev) => [...prev, { role: "assistant", content: "" }]);
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        accumulated += decoder.decode(value, { stream: true });
+      if (!res.ok) {
+        const errMsg = data.error ?? "Request failed";
         setMessages((prev) => {
           const updated = [...prev];
           if (updated[updated.length - 1]?.role === "assistant") {
-            updated[updated.length - 1] = {
-              role: "assistant",
-              content: accumulated,
-            };
+            updated[updated.length - 1] = { role: "assistant", content: errMsg };
           }
           return updated;
         });
+        return;
       }
+
+      const reply = data.reply ?? "";
+      setMessages((prev) => {
+        const updated = [...prev];
+        if (updated[updated.length - 1]?.role === "assistant") {
+          updated[updated.length - 1] = { role: "assistant", content: reply };
+        }
+        return updated;
+      });
     } catch {
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: "assistant",
-          content: "Sorry, I couldn't connect right now. Please try again.",
-        },
-      ]);
+      setMessages((prev) => {
+        const updated = [...prev];
+        if (updated[updated.length - 1]?.role === "assistant") {
+          updated[updated.length - 1] = {
+            role: "assistant",
+            content: "Sorry, I couldn't connect right now. Please try again.",
+          };
+        }
+        return updated;
+      });
     } finally {
-      setStreaming(false);
+      setLoading(false);
     }
   }
 
@@ -193,7 +197,7 @@ export function AiChatWindow({ open, onClose }: Props) {
               >
                 {msg.content === "" &&
                 msg.role === "assistant" &&
-                streaming &&
+                loading &&
                 i === messages.length - 1 ? (
                   <span className="flex gap-1 items-center py-0.5">
                     <span className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce [animation-delay:0ms]" />
@@ -223,16 +227,16 @@ export function AiChatWindow({ open, onClose }: Props) {
             }
           }}
           placeholder="Ask anything…"
-          disabled={streaming}
+          disabled={loading}
           className="flex-1 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400 dark:focus:ring-slate-500 disabled:opacity-50 placeholder:text-slate-400"
         />
         <button
           type="button"
           onClick={() => void sendMessage()}
-          disabled={streaming || !input.trim()}
+          disabled={loading || !input.trim()}
           className="shrink-0 flex items-center justify-center h-9 w-9 rounded-lg bg-slate-900 dark:bg-slate-700 text-white hover:bg-slate-700 dark:hover:bg-slate-600 disabled:opacity-40 transition-colors"
         >
-          {streaming ? (
+          {loading ? (
             <Loader2 className="h-4 w-4 animate-spin" />
           ) : (
             <Send className="h-4 w-4" />

@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import Anthropic from "@anthropic-ai/sdk";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { isPremium, maxMonthlyMessages } from "@/lib/billing/access";
+import { processContractorMessage } from "@/lib/agent/contractor-agent";
 
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+export const maxDuration = 60; // allow up to 60s for agent tool loops
 
 export async function POST(req: NextRequest) {
   const supabase = await createSupabaseServerClient();
@@ -21,10 +21,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "messages required" }, { status: 400 });
   }
 
-  // Fetch profile for access check + system prompt context
+  // Fetch profile for access check
   const { data: profile } = await supabase
     .from("profiles")
-    .select("company_name, services, business_areas, subscription_plan, subscription_status, subscription_seats")
+    .select("subscription_plan, subscription_status, subscription_seats")
     .eq("id", user.id)
     .single();
 
@@ -39,60 +39,33 @@ export async function POST(req: NextRequest) {
         .select("web_messages")
         .eq("user_id", user.id)
         .gte("date", `${thisMonth}-01`);
-      const monthMessages = (usageRows ?? []).reduce((a: number, r: { web_messages?: number }) => a + (r.web_messages ?? 0), 0);
+      const monthMessages = (usageRows ?? []).reduce(
+        (a: number, r: { web_messages?: number }) => a + (r.web_messages ?? 0),
+        0,
+      );
       if (monthMessages >= limit) {
         return NextResponse.json(
-          { error: `You've reached your ${limit} free messages for this month. Upgrade to Premium at /dashboard/billing for unlimited messages.` },
-          { status: 402 }
+          {
+            error: `You've reached your ${limit} free messages for this month. Upgrade to Premium at /dashboard/billing for unlimited messages.`,
+          },
+          { status: 402 },
         );
       }
     }
   }
 
-  const companyLine = profile?.company_name
-    ? `The user runs a contracting company called "${profile.company_name}".`
-    : "";
-  const servicesLine =
-    Array.isArray(profile?.services) && profile.services.length > 0
-      ? `Their main services include: ${profile.services.join(", ")}.`
-      : "";
+  // Extract the last user message and prior history
+  const lastUserMessage = [...body.messages].reverse().find((m) => m.role === "user");
+  if (!lastUserMessage) {
+    return NextResponse.json({ error: "No user message found" }, { status: 400 });
+  }
+  const history = body.messages.slice(0, -1).map((m) => ({
+    role: m.role as "user" | "assistant",
+    content: m.content,
+  }));
 
-  const systemPrompt = [
-    "You are an AI assistant built into WorkSupp, a business management platform for contractors.",
-    "You help contractors with invoices, project management, client communications, pricing, and general business questions.",
-    companyLine,
-    servicesLine,
-    "Be concise, practical, and professional. When asked to draft emails or templates, provide them in full so the user can copy them directly.",
-  ]
-    .filter(Boolean)
-    .join(" ");
-
-  const stream = await anthropic.messages.create({
-    model: "claude-opus-4-5",
-    max_tokens: 1024,
-    system: systemPrompt,
-    messages: body.messages.map((m) => ({ role: m.role, content: m.content })),
-    stream: true,
-  });
-
-  const readable = new ReadableStream({
-    async start(controller) {
-      const enc = new TextEncoder();
-      try {
-        for await (const event of stream) {
-          if (
-            event.type === "content_block_delta" &&
-            event.delta.type === "text_delta"
-          ) {
-            controller.enqueue(enc.encode(event.delta.text));
-          }
-        }
-        controller.close();
-      } catch (err) {
-        controller.error(err);
-      }
-    },
-  });
+  // Run the full contractor agent (same as WhatsApp)
+  const result = await processContractorMessage(user.id, lastUserMessage.content, history);
 
   // Track message usage (fire-and-forget)
   try {
@@ -103,9 +76,9 @@ export async function POST(req: NextRequest) {
       p_date: today,
       p_web_messages: 1,
     });
-  } catch { /* non-fatal */ }
+  } catch {
+    /* non-fatal */
+  }
 
-  return new Response(readable, {
-    headers: { "Content-Type": "text/plain; charset=utf-8" },
-  });
+  return NextResponse.json({ reply: result.reply });
 }

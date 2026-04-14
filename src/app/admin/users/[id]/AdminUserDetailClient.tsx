@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { normalizePlan } from "@/lib/billing/access";
 
 interface Profile {
   id: string;
@@ -88,7 +89,7 @@ interface Props {
 
 export function AdminUserDetailClient({ userId, profile, projects, invoices, memory, usage }: Props) {
   const router = useRouter();
-  const [plan, setPlan] = useState(profile.subscription_plan ?? "basic");
+  const [plan, setPlan] = useState(normalizePlan(profile.subscription_plan));
   const [status, setStatus] = useState(profile.subscription_status ?? "none");
   const [seats, setSeats] = useState(profile.subscription_seats ?? 0);
   const [billingInterval, setBillingInterval] = useState(profile.subscription_billing_interval ?? "monthly");

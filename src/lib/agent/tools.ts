@@ -408,6 +408,68 @@ export const CONTRACTOR_TOOLS: Tool[] = [
       },
       required: ["proposal_id"],
     },
+  },
+
+  // ── Invoice Finalization & Sharing ──────────────────────────────────────
+  {
+    name: "finalize_invoice",
+    description:
+      "Finalize a draft invoice. If the contractor has Stripe connected, this also finalizes it in Stripe and generates a hosted payment link. Returns the hosted URL if available. Call list_invoices first to get the invoice_id.",
+    input_schema: {
+      type: "object",
+      properties: {
+        invoice_id: { type: "string", description: "UUID of the invoice to finalize" },
+      },
+      required: ["invoice_id"],
+    },
+  },
+  {
+    name: "send_invoice_stripe",
+    description:
+      "Send a finalized invoice to the client via Stripe email. The invoice must already be finalized (status: open) and the project must have a client_email. This emails the invoice with a payment link directly from Stripe.",
+    input_schema: {
+      type: "object",
+      properties: {
+        invoice_id: { type: "string", description: "UUID of the invoice to send via Stripe" },
+      },
+      required: ["invoice_id"],
+    },
+  },
+  {
+    name: "get_invoice_payment_link",
+    description:
+      "Get the Stripe payment link or hosted invoice URL for a finalized invoice. Use when the contractor asks for a payment link to share with their client.",
+    input_schema: {
+      type: "object",
+      properties: {
+        invoice_id: { type: "string", description: "UUID of the invoice" },
+      },
+      required: ["invoice_id"],
+    },
+  },
+  {
+    name: "share_proposal",
+    description:
+      "Generate a public shareable link for a proposal so the client can view it without logging in. Returns the full share URL. Call list_proposals first to get the proposal_id.",
+    input_schema: {
+      type: "object",
+      properties: {
+        proposal_id: { type: "string", description: "UUID of the proposal to share" },
+      },
+      required: ["proposal_id"],
+    },
+  },
+  {
+    name: "share_invoice",
+    description:
+      "Generate a public shareable link for a finalized invoice so the client can view it without logging in. Only works for invoices with status: open, sent, paid, or uncollectible. Returns the full share URL.",
+    input_schema: {
+      type: "object",
+      properties: {
+        invoice_id: { type: "string", description: "UUID of the invoice to share" },
+      },
+      required: ["invoice_id"],
+    },
     // cache_control marks the end of the cached tools prefix — all tools are cached together
     cache_control: { type: "ephemeral" } as { type: "ephemeral" },
   },

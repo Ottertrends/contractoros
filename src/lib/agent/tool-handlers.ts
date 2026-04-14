@@ -3,6 +3,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { syncDraftFromProject } from "@/lib/invoice/sync-draft";
 import { DEFAULT_ANTHROPIC_MODEL } from "@/lib/agent/model";
 import { isPremium, maxProjects, maxMonthlySearches } from "@/lib/billing/access";
+import { getStripe } from "@/lib/stripe";
 import type { ProjectStatus } from "@/lib/types/database";
 import type { ContentBlock, ProposalLineItem } from "@/lib/types/proposals";
 
@@ -1154,6 +1155,156 @@ Return ONLY valid JSON, no markdown:
         content_block_count: blocks.length,
         share_token: data.share_token,
       });
+    }
+
+    // ── Invoice Finalization & Sharing ────────────────────────────────────────
+
+    case "finalize_invoice": {
+      const invoiceId = String(input.invoice_id ?? "").trim();
+      if (!invoiceId) return jsonResult({ error: "invoice_id is required" });
+
+      const { data: inv } = await admin
+        .from("invoices")
+        .select("id, status, stripe_invoice_id, user_id")
+        .eq("id", invoiceId)
+        .eq("user_id", userId)
+        .single();
+
+      if (!inv) return jsonResult({ error: "Invoice not found" });
+      if (inv.status !== "draft") return jsonResult({ error: `Invoice is already ${inv.status}` });
+
+      let hostedUrl: string | null = null;
+
+      if (inv.stripe_invoice_id) {
+        try {
+          const stripeInv = await getStripe().invoices.finalizeInvoice(inv.stripe_invoice_id);
+          hostedUrl = stripeInv.hosted_invoice_url ?? null;
+          await admin
+            .from("invoices")
+            .update({ status: "open", stripe_hosted_url: hostedUrl, updated_at: new Date().toISOString() })
+            .eq("id", invoiceId);
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : "Stripe error";
+          return jsonResult({ error: `Failed to finalize in Stripe: ${msg}` });
+        }
+      } else {
+        await admin
+          .from("invoices")
+          .update({ status: "open", updated_at: new Date().toISOString() })
+          .eq("id", invoiceId);
+      }
+
+      return jsonResult({ ok: true, status: "open", hosted_url: hostedUrl });
+    }
+
+    case "send_invoice_stripe": {
+      const invoiceId = String(input.invoice_id ?? "").trim();
+      if (!invoiceId) return jsonResult({ error: "invoice_id is required" });
+
+      const { data: inv } = await admin
+        .from("invoices")
+        .select("id, status, stripe_invoice_id, user_id")
+        .eq("id", invoiceId)
+        .eq("user_id", userId)
+        .single();
+
+      if (!inv) return jsonResult({ error: "Invoice not found" });
+      if (!inv.stripe_invoice_id) return jsonResult({ error: "This invoice is not linked to Stripe. Finalize it first with Stripe connected." });
+      if (inv.status === "draft") return jsonResult({ error: "Invoice must be finalized before sending. Call finalize_invoice first." });
+
+      try {
+        await getStripe().invoices.sendInvoice(inv.stripe_invoice_id);
+        await admin
+          .from("invoices")
+          .update({ status: "sent", updated_at: new Date().toISOString() })
+          .eq("id", invoiceId);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : "Stripe error";
+        return jsonResult({ error: `Failed to send via Stripe: ${msg}` });
+      }
+
+      return jsonResult({ ok: true, message: "Invoice sent to client via Stripe email." });
+    }
+
+    case "get_invoice_payment_link": {
+      const invoiceId = String(input.invoice_id ?? "").trim();
+      if (!invoiceId) return jsonResult({ error: "invoice_id is required" });
+
+      const { data: inv } = await admin
+        .from("invoices")
+        .select("id, status, stripe_hosted_url, stripe_payment_link_url, user_id")
+        .eq("id", invoiceId)
+        .eq("user_id", userId)
+        .single();
+
+      if (!inv) return jsonResult({ error: "Invoice not found" });
+      const url = inv.stripe_hosted_url || inv.stripe_payment_link_url;
+      if (!url) return jsonResult({ error: "No payment link available. Finalize the invoice with Stripe connected to generate one." });
+
+      return jsonResult({ ok: true, payment_link_url: url });
+    }
+
+    case "share_proposal": {
+      const proposalId = String(input.proposal_id ?? "").trim();
+      if (!proposalId) return jsonResult({ error: "proposal_id is required" });
+
+      const { data: prop } = await admin
+        .from("proposals")
+        .select("id, share_token, user_id")
+        .eq("id", proposalId)
+        .eq("user_id", userId)
+        .single();
+
+      if (!prop) return jsonResult({ error: "Proposal not found" });
+
+      let token = prop.share_token as string | null;
+      if (!token) {
+        const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+        const arr = new Uint8Array(24);
+        crypto.getRandomValues(arr);
+        token = Array.from(arr, (b) => chars[b % chars.length]).join("");
+        await admin
+          .from("proposals")
+          .update({ share_token: token, updated_at: new Date().toISOString() })
+          .eq("id", proposalId);
+      }
+
+      const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? "https://worksup.vercel.app").replace(/\/$/, "");
+      return jsonResult({ ok: true, share_url: `${appUrl}/proposal/${token}` });
+    }
+
+    case "share_invoice": {
+      const invoiceId = String(input.invoice_id ?? "").trim();
+      if (!invoiceId) return jsonResult({ error: "invoice_id is required" });
+
+      const { data: inv } = await admin
+        .from("invoices")
+        .select("id, status, share_token, user_id")
+        .eq("id", invoiceId)
+        .eq("user_id", userId)
+        .single();
+
+      if (!inv) return jsonResult({ error: "Invoice not found" });
+
+      const shareableStatuses = ["open", "sent", "paid", "uncollectible"];
+      if (!shareableStatuses.includes(inv.status)) {
+        return jsonResult({ error: `Invoice must be finalized before sharing. Current status: ${inv.status}` });
+      }
+
+      let token = inv.share_token as string | null;
+      if (!token) {
+        const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+        const arr = new Uint8Array(24);
+        crypto.getRandomValues(arr);
+        token = Array.from(arr, (b) => chars[b % chars.length]).join("");
+        await admin
+          .from("invoices")
+          .update({ share_token: token, updated_at: new Date().toISOString() })
+          .eq("id", invoiceId);
+      }
+
+      const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? "https://worksup.vercel.app").replace(/\/$/, "");
+      return jsonResult({ ok: true, share_url: `${appUrl}/invoice/${token}` });
     }
 
     default:

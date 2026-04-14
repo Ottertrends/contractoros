@@ -1,6 +1,16 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { isPremiumTeam } from "@/lib/billing/access";
+
+interface BillingInvoice {
+  id: string;
+  date: string;
+  amount: number;
+  status: string;
+  pdf: string | null;
+  url: string | null;
+}
 
 interface Props {
   paid: boolean;
@@ -77,20 +87,119 @@ export function BillingActions({ paid, hasStripeCustomer, plan, normalizedPlan }
 
   const isDiscounted = normalizedPlan === "discounted_premium" || normalizedPlan === "discounted_premium_team";
 
+  // Billing history (only loaded for paid users with Stripe)
+  const [history, setHistory] = useState<BillingInvoice[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+
+  useEffect(() => {
+    if (paid && hasStripeCustomer) {
+      setHistoryLoading(true);
+      fetch("/api/billing/history")
+        .then((r) => r.json())
+        .then((d: { invoices?: BillingInvoice[] }) => setHistory(d.invoices ?? []))
+        .catch(() => {})
+        .finally(() => setHistoryLoading(false));
+    }
+  }, [paid, hasStripeCustomer]);
+
+  const isTeamPlan = isPremiumTeam({ subscription_plan: normalizedPlan });
+
   if (paid && hasStripeCustomer) {
     return (
-      <div className="flex flex-col gap-2">
-        <p className="text-sm text-slate-600 dark:text-slate-400">
-          <strong>{PLAN_LABELS[normalizedPlan] ?? plan}</strong>
-        </p>
-        <button
-          onClick={handlePortal}
-          disabled={loading}
-          className="px-4 py-2 w-fit rounded-lg bg-primary text-white text-sm font-semibold hover:bg-primary/90 disabled:opacity-50"
-        >
-          {loading ? "Loading..." : "Manage Subscription"}
-        </button>
-        {error && <p className="text-sm text-red-500">{error}</p>}
+      <div className="flex flex-col gap-6">
+        {/* Section A — Current Plan + Manage */}
+        <div className="flex flex-col gap-2">
+          <p className="text-sm font-semibold text-slate-900 dark:text-white">
+            {PLAN_LABELS[normalizedPlan] ?? plan}
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={handlePortal}
+              disabled={loading}
+              className="px-4 py-2 rounded-lg bg-primary text-white text-sm font-semibold hover:bg-primary/90 disabled:opacity-50"
+            >
+              {loading ? "Loading..." : "Manage Subscription"}
+            </button>
+          </div>
+          <p className="text-xs text-slate-400">
+            To change plans, update payment method, or cancel, use the customer portal.
+          </p>
+          {error && <p className="text-sm text-red-500">{error}</p>}
+        </div>
+
+        {/* Section B — Add Seats (team only) */}
+        {isTeamPlan && (
+          <div className="flex flex-col gap-1.5 p-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900">
+            <p className="text-sm font-semibold text-slate-900 dark:text-white">Team Seats</p>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Need more team members? Each additional seat is $10/mo or $100/yr.
+            </p>
+            <button
+              onClick={handlePortal}
+              disabled={loading}
+              className="mt-1 px-4 py-2 w-fit rounded-lg border border-slate-300 dark:border-slate-600 text-sm font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-50"
+            >
+              {loading ? "Loading..." : "Add or Remove Seats"}
+            </button>
+          </div>
+        )}
+
+        {/* Section C — Billing History */}
+        <div className="flex flex-col gap-3">
+          <p className="text-sm font-semibold text-slate-900 dark:text-white">Billing History</p>
+          {historyLoading ? (
+            <p className="text-xs text-slate-400">Loading...</p>
+          ) : history.length === 0 ? (
+            <p className="text-xs text-slate-400">No billing history yet.</p>
+          ) : (
+            <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800">
+                    <th className="text-left px-3 py-2 text-xs font-medium text-slate-500">Date</th>
+                    <th className="text-left px-3 py-2 text-xs font-medium text-slate-500">Amount</th>
+                    <th className="text-left px-3 py-2 text-xs font-medium text-slate-500">Status</th>
+                    <th className="text-left px-3 py-2 text-xs font-medium text-slate-500">Receipt</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {history.map((inv) => (
+                    <tr key={inv.id} className="border-b border-slate-100 dark:border-slate-800 last:border-0">
+                      <td className="px-3 py-2 text-slate-600 dark:text-slate-300 whitespace-nowrap">
+                        {new Date(inv.date).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })}
+                      </td>
+                      <td className="px-3 py-2 text-slate-900 dark:text-white font-medium">
+                        ${inv.amount.toFixed(2)}
+                      </td>
+                      <td className="px-3 py-2">
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                          inv.status === "paid" ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
+                          : inv.status === "open" ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400"
+                          : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400"
+                        }`}>
+                          {inv.status}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2 flex items-center gap-2">
+                        {inv.pdf && (
+                          <a href={inv.pdf} target="_blank" rel="noreferrer" className="text-primary text-xs underline hover:no-underline">
+                            PDF
+                          </a>
+                        )}
+                        {inv.url && (
+                          <a href={inv.url} target="_blank" rel="noreferrer" className="text-primary text-xs underline hover:no-underline">
+                            View
+                          </a>
+                        )}
+                        {!inv.pdf && !inv.url && <span className="text-xs text-slate-400">—</span>}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
       </div>
     );
   }

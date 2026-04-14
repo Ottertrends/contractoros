@@ -4,7 +4,7 @@ import * as React from "react";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Trash2, Plus, BookOpen, X, Mail, Send, ChevronDown, Copy, ExternalLink } from "lucide-react";
+import { Trash2, Plus, BookOpen, X, Mail, Send, ChevronDown, Copy, ExternalLink, Share2 } from "lucide-react";
 
 import { supabase } from "@/lib/supabase/client";
 import { useLanguage } from "@/lib/i18n/client";
@@ -1732,6 +1732,34 @@ export function DraftInvoiceCard({
                     Void
                   </Button>
                 </>
+              )}
+
+              {/* ── Share button — visible for open, sent, paid, uncollectible ── */}
+              {(status === "open" || status === "sent" || status === "paid" || status === "uncollectible") && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="gap-1.5"
+                  onClick={() => void (async () => {
+                    try {
+                      const res = await fetch(`/api/invoices/${invoice.id}/share`, { method: "POST" });
+                      const j = (await res.json().catch(() => ({}))) as { share_url?: string; error?: string };
+                      if (!res.ok || !j.share_url) {
+                        toast.error(j.error ?? "Failed to generate share link");
+                        return;
+                      }
+                      await navigator.clipboard.writeText(j.share_url);
+                      toast.success("Share link copied to clipboard!");
+                    } catch {
+                      toast.error("Failed to copy share link");
+                    }
+                  })()}
+                  title="Copy a public shareable link for this invoice"
+                >
+                  <Share2 className="w-3.5 h-3.5" />
+                  Share
+                </Button>
               )}
             </div>
 

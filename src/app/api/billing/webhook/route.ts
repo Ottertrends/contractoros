@@ -62,8 +62,9 @@ export async function POST(req: NextRequest) {
       const userId = session.metadata?.supabase_user_id ?? await getSupabaseUserId(session.customer);
       if (userId) {
         const { data: prof } = await admin.from("profiles").select("subscription_plan").eq("id", userId).single();
-        // Honor admin-granted plans — don't overwrite them
-        const adminGranted = prof?.subscription_plan === "free_premium" || prof?.subscription_plan === "free_premium_team";
+        // Honor admin-granted plans and legacy paid plans — don't overwrite them
+        const PROTECTED_PLANS = ["free_premium", "free_premium_team", "standard", "paid"];
+        const adminGranted = PROTECTED_PLANS.includes(prof?.subscription_plan ?? "");
         const newPlan = adminGranted
           ? prof?.subscription_plan
           : (session.metadata?.plan ?? "premium");
