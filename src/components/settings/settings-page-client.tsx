@@ -23,6 +23,7 @@ import type { TaxRate } from "@/lib/types/database";
 // ── Tax Rates Card ────────────────────────────────────────────────────────────
 
 function TaxRatesCard() {
+  const { t } = useLanguage();
   const [taxRates, setTaxRates] = React.useState<TaxRate[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [newName, setNewName] = React.useState("");
@@ -57,7 +58,7 @@ function TaxRatesCard() {
       setTaxRates((prev) => [...prev, j.tax_rate!]);
       setNewName("");
       setNewRate("");
-      toast.success("Tax rate saved" + (j.tax_rate?.stripe_tax_rate_id ? " and synced to Stripe." : "."));
+      toast.success(t.toasts.taxRateSaved + (j.tax_rate?.stripe_tax_rate_id ? " and synced to Stripe." : "."));
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to save tax rate");
     } finally {
@@ -71,7 +72,7 @@ function TaxRatesCard() {
       const res = await fetch(`/api/tax-rates/${id}`, { method: "DELETE" });
       if (!res.ok) throw new Error("Failed to delete");
       setTaxRates((prev) => prev.filter((r) => r.id !== id));
-      toast.success("Tax rate deleted.");
+      toast.success(t.toasts.taxRateDeleted);
     } catch {
       toast.error("Failed to delete tax rate");
     } finally {
@@ -169,6 +170,7 @@ const passwordSchema = z
   });
 
 function NotificationsToggleCard({ initialEnabled }: { initialEnabled: boolean }) {
+  const { t } = useLanguage();
   const [enabled, setEnabled] = React.useState(initialEnabled);
   const [saving, setSaving] = React.useState(false);
 
@@ -183,7 +185,7 @@ function NotificationsToggleCard({ initialEnabled }: { initialEnabled: boolean }
       });
       if (!res.ok) throw new Error("Failed to save");
       setEnabled(next);
-      toast.success(next ? "Notifications enabled" : "Notifications disabled");
+      toast.success(next ? t.toasts.notificationsEnabled : t.toasts.notificationsDisabled);
     } catch {
       toast.error("Failed to update notification setting");
     } finally {
@@ -294,7 +296,7 @@ export function SettingsPageClient({ userId, profile }: { userId: string; profil
         .eq("id", userId);
 
       if (error) throw error;
-      toast.success("Profile updated");
+      toast.success(t.toasts.profileUpdated);
       router.refresh();
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : "Failed to save profile";
@@ -311,7 +313,7 @@ export function SettingsPageClient({ userId, profile }: { userId: string; profil
       });
       if (error) throw error;
       setResetSent(true);
-      toast.success("Reset email sent");
+      toast.success(t.toasts.resetEmailSent);
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Failed to send reset email");
     } finally {
@@ -328,7 +330,7 @@ export function SettingsPageClient({ userId, profile }: { userId: string; profil
       }
       const { error } = await supabase.auth.updateUser({ password: newPassword });
       if (error) throw error;
-      toast.success("Password updated");
+      toast.success(t.toasts.passwordUpdated);
       setNewPassword("");
       setConfirmPassword("");
     } catch (e: unknown) {
@@ -345,7 +347,7 @@ export function SettingsPageClient({ userId, profile }: { userId: string; profil
         const msg = await res.text();
         throw new Error(msg || "Failed to delete account");
       }
-      toast.success("Account deleted");
+      toast.success(t.toasts.accountDeleted);
       await supabase.auth.signOut();
       router.push("/auth/login");
     } catch (e: unknown) {

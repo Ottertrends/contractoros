@@ -161,10 +161,13 @@ export default function SignupPage() {
 
       if (error) throw error;
 
-      toast.success("Account created. Redirecting...");
-      if (data?.session?.access_token) {
-        router.push("/dashboard");
+      if (!data.session) {
+        // Email confirmation required — Supabase sent a verification email
+        toast.success(t.toasts.checkEmail);
+        router.push("/auth/check-email");
       } else {
+        // Auto-confirmed (local dev or email confirm disabled)
+        toast.success(t.toasts.accountCreated);
         router.push("/dashboard");
       }
     } catch (e: unknown) {

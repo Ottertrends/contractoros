@@ -410,7 +410,7 @@ export function DraftInvoiceCard({
         if (j.stripe_invoice_number) setStripeInvoiceNumber(j.stripe_invoice_number);
         if (j.stripe_invoice_id) setStripeInvoiceId(j.stripe_invoice_id);
         if (typeof j.open_edit_count === "number") setOpenEditCount(j.open_edit_count);
-        toast.success(`Invoice updated. (${j.open_edit_count ?? openEditCount + 1}/3 edits used)`);
+        toast.success(`${t.toasts.invoiceSaved} (${j.open_edit_count ?? openEditCount + 1}/3 edits used)`);
         router.refresh();
         return;
       }
@@ -421,7 +421,7 @@ export function DraftInvoiceCard({
         const res = await fetch(`/api/invoices/${invoice.id}/void`, { method: "POST" });
         const j = (await res.json().catch(() => ({}))) as { success?: boolean; error?: string };
         if (!res.ok) throw new Error(j.error ?? "Failed to reset invoice");
-        toast.success("Invoice reset to draft. You can now re-finalize it.");
+        toast.success(t.toasts.invoiceSaved + " Reset to draft.");
         window.location.href = `/dashboard/projects/${project.id}`;
         return;
       }
@@ -451,7 +451,7 @@ export function DraftInvoiceCard({
         }
       }
 
-      toast.success("Invoice saved");
+      toast.success(t.toasts.invoiceSaved);
       router.refresh();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Save failed");
@@ -485,11 +485,7 @@ export function DraftInvoiceCard({
       if (j.stripe_invoice_number) setStripeInvoiceNumber(j.stripe_invoice_number);
       if (j.stripe_invoice_id) setStripeInvoiceId(j.stripe_invoice_id);
       setStatus("open");
-      toast.success(
-        stripeConnected
-          ? "Invoice finalized — payment link generated."
-          : "Invoice finalized.",
-      );
+      toast.success(stripeConnected ? t.toasts.invoiceFinalized : t.toasts.invoiceFinalizedNoStripe);
       router.refresh();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to finalize invoice");
@@ -512,7 +508,7 @@ export function DraftInvoiceCard({
         error?: string;
       };
       if (!res.ok) throw new Error(j.error ?? "Void failed");
-      toast.success("Invoice voided. A new draft has been created.");
+      toast.success(t.toasts.invoiceVoided);
       window.location.href = `/dashboard/projects/${project.id}`;
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to void invoice");
@@ -535,7 +531,7 @@ export function DraftInvoiceCard({
       };
       if (!res.ok) throw new Error(j.error ?? "Failed");
       setStatus("uncollectible");
-      toast.success("Invoice marked as uncollectible.");
+      toast.success(t.toasts.invoiceMarkedUncollectible);
       router.refresh();
     } catch (e) {
       toast.error(
@@ -576,7 +572,7 @@ export function DraftInvoiceCard({
           await fetch(`/api/invoices/${invoice.id}/sync-stripe`, { method: "POST" });
         } catch { /* non-blocking */ }
       }
-      toast.success("Invoice cleared.");
+      toast.success(t.toasts.invoiceCleared);
       router.refresh();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to clear invoice");
@@ -588,7 +584,7 @@ export function DraftInvoiceCard({
   // ── Open Send Stripe dialog ──
   function openSendStripeDialog() {
     if (!project.client_email) {
-      toast.error("Add a client email to the project before sending via Stripe.");
+      toast.error(t.toasts.invoiceNeedEmail);
       return;
     }
     setSendDialogCc("");
@@ -598,7 +594,7 @@ export function DraftInvoiceCard({
   // ── Open Send Email dialog ──
   function openSendEmailDialog() {
     if (!project.client_email) {
-      toast.error("Please add client email in the Edit Project form.");
+      toast.error(t.toasts.invoiceNeedEmailEmail);
       return;
     }
     setSendDialogCc("");
@@ -617,7 +613,7 @@ export function DraftInvoiceCard({
         if (!res.ok) throw new Error(j.error ?? "Stripe send failed");
         setStatus("sent");
         if (j.hosted_url) setStripeHostedUrl(j.hosted_url);
-        toast.success("Invoice sent via Stripe — your client will receive an email.");
+        toast.success(t.toasts.invoiceSentStripe);
         router.refresh();
       }
       // Email mode is handled via the anchor tag in the dialog (see render below)
@@ -692,7 +688,7 @@ export function DraftInvoiceCard({
       await supabase.from("invoices").update({ status: "sent", updated_at: new Date().toISOString() }).eq("id", invoice.id);
       setStatus("sent");
       setSendDialogMode(null);
-      toast.success("Invoice marked as Sent.");
+      toast.success(t.toasts.invoiceMarkedSent);
       router.refresh();
     } catch {
       toast.error("Failed to mark invoice as sent");
@@ -1054,7 +1050,7 @@ export function DraftInvoiceCard({
                           const j = (await res.json().catch(() => ({}))) as { error?: string };
                           if (!res.ok) throw new Error(j.error ?? "Failed to mark paid");
                           setStatus("paid");
-                          toast.success("Invoice marked as paid.");
+                          toast.success(t.toasts.invoiceMarkedPaid);
                           router.refresh();
                         } catch (e) {
                           toast.error(e instanceof Error ? e.message : "Failed");
@@ -1068,7 +1064,7 @@ export function DraftInvoiceCard({
                           const j = (await res.json().catch(() => ({}))) as { error?: string };
                           if (!res.ok) throw new Error(j.error ?? "Failed");
                           setStatus("uncollectible");
-                          toast.success("Invoice marked as uncollectible.");
+                          toast.success(t.toasts.invoiceMarkedUncollectible);
                           router.refresh();
                         } catch (e) {
                           toast.error(e instanceof Error ? e.message : "Failed");
@@ -1080,7 +1076,7 @@ export function DraftInvoiceCard({
                         try {
                           await supabase.from("invoices").update({ status: "sent", updated_at: new Date().toISOString() }).eq("id", invoice.id);
                           setStatus("sent");
-                          toast.success("Invoice marked as sent.");
+                          toast.success(t.toasts.invoiceMarkedSent);
                           router.refresh();
                         } catch (e) {
                           toast.error(e instanceof Error ? e.message : "Failed");
@@ -1129,7 +1125,7 @@ export function DraftInvoiceCard({
                     type="button"
                     onClick={() => {
                       void navigator.clipboard.writeText(stripeInvoiceNumber);
-                      toast.success("Stripe invoice number copied");
+                      toast.success(t.toasts.invoiceStripeNumCopied);
                     }}
                     title="Copy Stripe invoice number"
                     className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition-colors"
@@ -1429,7 +1425,7 @@ export function DraftInvoiceCard({
                           setUserTaxRates((prev) => [...prev, saved]);
                           updateRow(rowId, "tax_rate", String(rateNum));
                           setNewRateModal(null);
-                          toast.success(`Tax rate "${saved.name}" saved and applied.`);
+                          toast.success(`${t.toasts.invoiceTaxRateSaved} "${saved.name}"`);
                         })
                         .catch((err: unknown) => {
                           toast.error(err instanceof Error ? err.message : "Failed to save tax rate");
@@ -1543,7 +1539,7 @@ export function DraftInvoiceCard({
                       void navigator.clipboard.writeText(
                         stripeHostedUrl || paymentLinkUrl,
                       );
-                      toast.success("Link copied");
+                      toast.success(t.toasts.invoiceLinkCopied);
                     }}
                   >
                     Copy
@@ -1688,7 +1684,7 @@ export function DraftInvoiceCard({
                         const j = (await res.json().catch(() => ({}))) as { error?: string };
                         if (!res.ok) throw new Error(j.error ?? "Failed to mark paid");
                         setStatus("paid");
-                        toast.success("Invoice marked as paid.");
+                        toast.success(t.toasts.invoiceMarkedPaid);
                         router.refresh();
                       } catch (e) {
                         toast.error(e instanceof Error ? e.message : "Failed");
@@ -1750,9 +1746,9 @@ export function DraftInvoiceCard({
                         return;
                       }
                       await navigator.clipboard.writeText(j.share_url);
-                      toast.success("Share link copied to clipboard!");
+                      toast.success(t.toasts.invoiceShareCopied);
                     } catch {
-                      toast.error("Failed to copy share link");
+                      toast.error(t.toasts.failed);
                     }
                   })()}
                   title="Copy a public shareable link for this invoice"

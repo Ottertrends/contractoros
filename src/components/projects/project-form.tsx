@@ -214,7 +214,7 @@ export function ProjectForm({
           })();
         }
 
-        toast.success("Project created");
+        toast.success(t.toasts.projectCreated);
         router.push(`/dashboard/projects/${data.id}`);
       } else {
         if (!project?.id) return;
@@ -234,7 +234,7 @@ export function ProjectForm({
             .eq("client_name", clientName);
         }
 
-        toast.success("Project saved");
+        toast.success(t.toasts.projectSaved);
         router.refresh();
       }
     } catch (e: unknown) {
@@ -252,7 +252,7 @@ export function ProjectForm({
         .eq("id", project.id);
 
       if (error) throw error;
-      toast.success("Project deleted");
+      toast.success(t.toasts.projectDeleted);
       router.push("/dashboard/projects");
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : "Failed to delete project";

@@ -59,7 +59,8 @@ export async function POST(req: NextRequest) {
   // Build line items
   const basePriceId = PRICE_MAP[requestedPlan]?.[interval];
   if (!basePriceId) {
-    return NextResponse.json({ error: "Invalid plan or interval." }, { status: 400 });
+    console.error(`[checkout] Missing price ID for plan=${requestedPlan} interval=${interval}. Check STRIPE_PRICE_PREMIUM_MONTHLY / STRIPE_PRICE_TEAM_MONTHLY env vars.`);
+    return NextResponse.json({ error: "This plan is not currently available. Please contact support." }, { status: 400 });
   }
 
   const lineItems: { price: string; quantity: number }[] = [
@@ -76,24 +77,30 @@ export async function POST(req: NextRequest) {
       ? [{ promotion_code: process.env.STRIPE_PROMO_ID }]
       : [];
 
-  const session = await getStripe().checkout.sessions.create({
-    customer: customerId,
-    mode: "subscription",
-    line_items: lineItems,
-    automatic_tax: { enabled: true },
-    customer_update: { address: "auto" },
-    ...(appliedDiscounts.length
-      ? { discounts: appliedDiscounts }
-      : { allow_promotion_codes: true }),
-    success_url: `${appUrl}/dashboard/billing?success=1`,
-    cancel_url: `${appUrl}/dashboard/billing?canceled=1`,
-    metadata: {
-      supabase_user_id: user.id,
-      plan: requestedPlan,
-      interval,
-      extra_seats: String(extraSeats),
-    },
-  });
+  try {
+    const session = await getStripe().checkout.sessions.create({
+      customer: customerId,
+      mode: "subscription",
+      line_items: lineItems,
+      automatic_tax: { enabled: true },
+      customer_update: { address: "auto" },
+      ...(appliedDiscounts.length
+        ? { discounts: appliedDiscounts }
+        : { allow_promotion_codes: true }),
+      success_url: `${appUrl}/dashboard/billing?success=1`,
+      cancel_url: `${appUrl}/dashboard/billing?canceled=1`,
+      metadata: {
+        supabase_user_id: user.id,
+        plan: requestedPlan,
+        interval,
+        extra_seats: String(extraSeats),
+      },
+    });
 
-  return NextResponse.json({ url: session.url });
+    return NextResponse.json({ url: session.url });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Stripe error";
+    console.error("[checkout] Stripe session creation failed:", msg);
+    return NextResponse.json({ error: `Checkout failed: ${msg}` }, { status: 500 });
+  }
 }

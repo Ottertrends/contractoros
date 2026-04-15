@@ -628,6 +628,9 @@ async function handleMessagesUpsert(
 
   await admin.from("messages").update({ processed: true }).eq("id", inboundId);
 
+  // Cap dashboard message history at 50 per user (fire-and-forget)
+  void Promise.resolve(admin.rpc("trim_user_messages", { p_user_id: userId, p_keep: 50 })).catch(() => {});
+
   const evolution = createEvolutionClient();
   const sendTarget = ownerJid ?? jid;
   const to = sendTarget.endsWith("@lid")

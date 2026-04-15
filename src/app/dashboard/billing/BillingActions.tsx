@@ -206,6 +206,7 @@ export function BillingActions({ paid, hasStripeCustomer, plan, normalizedPlan }
 
   return (
     <div className="flex flex-col gap-5">
+      <p className="text-sm font-medium text-slate-700 dark:text-slate-300">Choose a plan to upgrade:</p>
       {/* Interval toggle */}
       <div className="flex items-center gap-2">
         <button

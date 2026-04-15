@@ -24,6 +24,7 @@ import {
   BookTemplate,
 } from "lucide-react";
 
+import { useLanguage } from "@/lib/i18n/client";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -93,6 +94,7 @@ const STEP_LABELS: Record<Step, string> = {
 /* ─── Main Component ─────────────────────────────────────────── */
 
 export function ProposalsClient({ projects, initialTemplates }: Props) {
+  const { t } = useLanguage();
   const [tab, setTab] = React.useState<Tab>("generate");
 
   /* ── Generate tab state ── */
@@ -174,11 +176,11 @@ export function ProposalsClient({ projects, initialTemplates }: Props) {
   /* ── Apply template ── */
   function applyTemplate(id: string) {
     setSelectedTemplateId(id);
-    const t = templates.find((tpl) => tpl.id === id);
-    if (!t) return;
-    if (t.scope_template) setFormScope(t.scope_template);
-    if (t.terms_template) setFormTerms(t.terms_template);
-    toast.success(`Applied template "${t.name}"`);
+    const tpl = templates.find((tpl) => tpl.id === id);
+    if (!tpl) return;
+    if (tpl.scope_template) setFormScope(tpl.scope_template);
+    if (tpl.terms_template) setFormTerms(tpl.terms_template);
+    toast.success(`${t.toasts.templateApplied}: "${tpl.name}"`);
   }
 
   /* ── Save current scope/terms as template ── */
@@ -197,10 +199,10 @@ export function ProposalsClient({ projects, initialTemplates }: Props) {
       const data = await res.json();
       if (data.template) {
         setTemplates((prev) => [...prev, data.template]);
-        toast.success("Template saved");
+        toast.success(t.toasts.templateSaved);
       }
     } catch {
-      toast.error("Failed to save template");
+      toast.error(t.toasts.failed);
     } finally {
       setShowTemplateSave(false);
       setTemplateName("");
@@ -216,9 +218,9 @@ export function ProposalsClient({ projects, initialTemplates }: Props) {
       });
       setTemplates((prev) => prev.filter((t) => t.id !== id));
       if (selectedTemplateId === id) setSelectedTemplateId("");
-      toast.success("Template deleted");
+      toast.success(t.toasts.templateDeleted);
     } catch {
-      toast.error("Failed to delete template");
+      toast.error(t.toasts.failed);
     }
   }
 
@@ -259,7 +261,7 @@ export function ProposalsClient({ projects, initialTemplates }: Props) {
       });
       setStep("done");
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to generate proposal");
+      toast.error(e instanceof Error ? e.message : t.toasts.failed);
       setStep("idle");
     }
   }
@@ -304,9 +306,9 @@ export function ProposalsClient({ projects, initialTemplates }: Props) {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Save failed");
       if (data.id) setSavedId(data.id);
-      toast.success(savedId ? "Proposal updated" : "Proposal saved");
+      toast.success(savedId ? t.toasts.proposalUpdated : t.toasts.proposalSaved);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to save");
+      toast.error(e instanceof Error ? e.message : t.toasts.failed);
     }
   }
 
@@ -327,9 +329,9 @@ export function ProposalsClient({ projects, initialTemplates }: Props) {
       const url = `${window.location.origin}/proposal/${data.shareToken}`;
       setShareUrl(url);
       await navigator.clipboard.writeText(url);
-      toast.success("Share link copied to clipboard!");
+      toast.success(t.toasts.proposalShareCopied);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to share");
+      toast.error(e instanceof Error ? e.message : t.toasts.failed);
     }
   }
 
@@ -365,7 +367,7 @@ export function ProposalsClient({ projects, initialTemplates }: Props) {
         const data = await res.json();
         if (!res.ok) throw new Error(data.error);
       }
-      toast.success(`Email sent to ${emailTo}`);
+      toast.success(`${t.toasts.proposalEmailSent} ${emailTo}`);
       setShowEmailDialog(false);
       setEmailTo("");
     } catch (e) {
@@ -413,9 +415,9 @@ export function ProposalsClient({ projects, initialTemplates }: Props) {
       const res = await fetch(`/api/proposals/${id}`, { method: "DELETE" });
       if (!res.ok) throw new Error("Delete failed");
       setHistory((prev) => prev.filter((p) => p.id !== id));
-      toast.success("Proposal deleted");
+      toast.success(t.toasts.proposalDeleted);
     } catch {
-      toast.error("Failed to delete proposal");
+      toast.error(t.toasts.failed);
     }
   }
 
@@ -858,7 +860,7 @@ export function ProposalsClient({ projects, initialTemplates }: Props) {
                   <button
                     onClick={() => {
                       void navigator.clipboard.writeText(shareUrl);
-                      toast.success("Copied!");
+                      toast.success(t.toasts.copied);
                     }}
                     className="text-green-600 hover:text-green-800"
                   >

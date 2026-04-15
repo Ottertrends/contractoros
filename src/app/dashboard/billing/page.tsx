@@ -29,7 +29,10 @@ export default async function BillingPage() {
   const isTeam = isPremiumTeam(profile ?? {});
   const isAdminGranted = normalizedPlan === "free_premium" || normalizedPlan === "free_premium_team";
   const status = profile?.subscription_status ?? "none";
-  const planDisplay = PLAN_DISPLAY[normalizedPlan] ?? PLAN_DISPLAY.basic;
+  // Always show Basic for non-paid users regardless of what's stored in the DB
+  const planDisplay = (paid || isAdminGranted)
+    ? (PLAN_DISPLAY[normalizedPlan] ?? PLAN_DISPLAY.basic)
+    : PLAN_DISPLAY.basic;
   const extraSeats = profile?.subscription_seats ?? 0;
 
   return (

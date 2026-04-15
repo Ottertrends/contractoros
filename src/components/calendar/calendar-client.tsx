@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { Bell, BellOff, ChevronLeft, ChevronRight, Trash2 } from "lucide-react";
 
 import type { RecurringRule } from "@/app/api/recurring/route";
+import { useLanguage } from "@/lib/i18n/client";
 
 interface Project {
   id: string;
@@ -82,6 +83,7 @@ function toDateKey(d: Date): string {
 // ── Component ────────────────────────────────────────────────────────────────
 
 export function CalendarClient({ initialRules, projects, initialNotificationsEnabled }: Props) {
+  const { t } = useLanguage();
   const today = new Date();
   const [year, setYear] = React.useState(today.getFullYear());
   const [month, setMonth] = React.useState(today.getMonth());
@@ -161,7 +163,7 @@ export function CalendarClient({ initialRules, projects, initialNotificationsEna
       });
       if (!res.ok) throw new Error("Failed to save");
       setNotificationsEnabled(next);
-      toast.success(next ? "Notifications enabled" : "Notifications disabled");
+      toast.success(next ? t.toasts.notificationsEnabled : t.toasts.notificationsDisabled);
     } catch {
       toast.error("Failed to update notification setting");
     } finally {
@@ -198,7 +200,7 @@ export function CalendarClient({ initialRules, projects, initialNotificationsEna
       const listRes = await fetch("/api/recurring");
       const listData = (await listRes.json()) as { rules?: RecurringRule[] };
       setRules(listData.rules ?? []);
-      toast.success("Recurring schedule saved");
+      toast.success(t.toasts.scheduleSaved);
       setFormProjectId("");
       setSelectedDates(new Set());
       setFormTime("");
@@ -219,7 +221,7 @@ export function CalendarClient({ initialRules, projects, initialNotificationsEna
       });
       if (!res.ok) throw new Error("Delete failed");
       setRules(prev => prev.filter(r => r.id !== id));
-      toast.success("Rule removed");
+      toast.success(t.toasts.scheduleRemoved);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed");
     }

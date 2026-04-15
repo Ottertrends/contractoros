@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import type { AuthChangeEvent, Session } from "@supabase/supabase-js";
 
 import { supabase } from "@/lib/supabase/client";
+import { useLanguage } from "@/lib/i18n/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -38,6 +39,7 @@ function extractAuthErrorMessage(error: unknown): string {
 
 export function LoginForm() {
   const router = useRouter();
+  const { t } = useLanguage();
   const [debugError, setDebugError] = React.useState<string | null>(null);
   const [mode, setMode] = React.useState<"login" | "forgot">("login");
   const [forgotEmail, setForgotEmail] = React.useState("");
@@ -92,7 +94,7 @@ export function LoginForm() {
         toast.error(msg);
         return;
       }
-      toast.success("Logged in");
+      toast.success(t.toasts.loggedIn);
       router.refresh();
       router.push("/dashboard");
     } catch (e: unknown) {

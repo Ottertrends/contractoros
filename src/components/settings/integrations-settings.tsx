@@ -5,11 +5,15 @@ import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 
 import type { Profile } from "@/lib/types/database";
+import { canUseStripeConnect, type SubscriptionProfile } from "@/lib/billing/access";
+import { useLanguage } from "@/lib/i18n/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 export function IntegrationsSettings({ profile }: { profile: Profile }) {
   const searchParams = useSearchParams();
+  const { t } = useLanguage();
+  const canStripe = canUseStripeConnect(profile as unknown as SubscriptionProfile);
 
   const [google, setGoogle] = React.useState<{ connected: boolean; googleEmail: string | null } | null>(
     null,
@@ -32,7 +36,7 @@ export function IntegrationsSettings({ profile }: { profile: Profile }) {
     const stripeParam = searchParams.get("stripe");
     const reason = searchParams.get("reason");
     if (stripeParam === "connected") {
-      toast.success("Stripe connected successfully!");
+      toast.success(t.toasts.stripeConnected);
       // Pull fresh Stripe state from the server without a full page reload
       void fetch("/api/stripe-connect/status")
         .then((r) => r.json())
@@ -76,7 +80,7 @@ export function IntegrationsSettings({ profile }: { profile: Profile }) {
       const j = (await res.json()) as { error?: string; synced?: number; results?: unknown[] };
       if (!res.ok) throw new Error(typeof j.error === "string" ? j.error : "Sync failed");
       const n = typeof j.synced === "number" ? j.synced : (j.results as unknown[] | undefined)?.length ?? 0;
-      toast.success(`Synced ${n} recurring rule(s) to Google Calendar`);
+      toast.success(`${t.toasts.googleSynced} (${n})`);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Calendar sync failed");
     } finally {
@@ -91,7 +95,7 @@ export function IntegrationsSettings({ profile }: { profile: Profile }) {
       return;
     }
     setGoogle({ connected: false, googleEmail: null });
-    toast.success("Google disconnected");
+    toast.success(t.toasts.googleDisconnected);
   }
 
   function connectStripe() {
@@ -109,7 +113,7 @@ export function IntegrationsSettings({ profile }: { profile: Profile }) {
       }
       setStripeAccountId(null);
       setStripeChargesOk(false);
-      toast.success("Stripe disconnected");
+      toast.success(t.toasts.stripeDisconnected);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to disconnect Stripe");
     } finally {
@@ -187,7 +191,7 @@ export function IntegrationsSettings({ profile }: { profile: Profile }) {
                 </Button>
               </div>
             </div>
-          ) : (
+          ) : canStripe ? (
             <div className="flex flex-col gap-2">
               <div className="text-sm text-slate-500 dark:text-slate-400">Not connected.</div>
               <div>
@@ -201,6 +205,18 @@ export function IntegrationsSettings({ profile }: { profile: Profile }) {
                   {stripeLoading ? "Opening Stripe…" : "Connect Stripe"}
                 </Button>
               </div>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-2">
+              <Button type="button" variant="secondary" size="sm" disabled>
+                Connect Stripe
+              </Button>
+              <p className="text-xs text-slate-400">
+                Upgrade to Premium to connect your Stripe account and accept client payments.{" "}
+                <a href="/dashboard/billing" className="underline text-primary">
+                  Upgrade →
+                </a>
+              </p>
             </div>
           )}
         </div>
