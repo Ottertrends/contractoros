@@ -140,7 +140,7 @@ export async function processContractorMessage(
     };
 
     let messages = buildMessageParams(history, messageText);
-    const maxLoops = 5;
+    const maxLoops = 15;
 
     for (let i = 0; i < maxLoops; i++) {
       const response = await client.messages.create({
@@ -225,8 +225,28 @@ export async function processContractorMessage(
       };
     }
 
+    // Exceeded tool loop limit — ask Claude to summarize what was done and what's still pending
+    try {
+      const summaryResp = await client.messages.create({
+        model,
+        max_tokens: 512,
+        system: [systemBlock],
+        messages: [
+          ...messages,
+          {
+            role: "user",
+            content: "You ran out of steps before finishing. Briefly tell the contractor what you completed so far and what still needs to be done, so they know exactly where things stand.",
+          },
+        ],
+      });
+      const summaryText = extractTextFromResponse(summaryResp.content);
+      if (summaryText) return { reply: summaryText, error: "Exceeded max tool loops" };
+    } catch {
+      // ignore summary error, fall through
+    }
+
     return {
-      reply: fallback,
+      reply: "I ran out of steps before finishing your request. Here's what I was working on — please reply to continue and I'll pick up where I left off.",
       error: "Exceeded max tool loops",
     };
   } catch (e) {

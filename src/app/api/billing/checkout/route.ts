@@ -54,7 +54,17 @@ export async function POST(req: NextRequest) {
     await supabase.from("profiles").update({ stripe_customer_id: customerId }).eq("id", user.id);
   }
 
-  const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? "https://worksup.vercel.app").replace(/\/$/, "");
+  // Build the base URL — prefer explicit env var, then Vercel auto-URL, then hardcoded fallback
+  const rawAppUrl =
+    process.env.NEXT_PUBLIC_APP_URL?.trim() ||
+    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "") ||
+    "https://worksup.vercel.app";
+  const appUrl = rawAppUrl.replace(/\/$/, "");
+
+  if (!appUrl.startsWith("http")) {
+    console.error(`[checkout] appUrl is not a valid URL: "${appUrl}". Set NEXT_PUBLIC_APP_URL in environment variables.`);
+    return NextResponse.json({ error: "Server configuration error: invalid app URL. Contact support." }, { status: 500 });
+  }
 
   // Build line items
   const basePriceId = PRICE_MAP[requestedPlan]?.[interval];
