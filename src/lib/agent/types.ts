@@ -14,6 +14,7 @@ export type ContractorContext = {
   zip?: string | null;
   city?: string | null;
   state?: string | null;
+  stripeConnected?: boolean;
 };
 
 /** Build a dynamic system prompt that includes the contractor's location context. */
@@ -24,13 +25,19 @@ export function buildSystemPrompt(ctx: ContractorContext = {}): string {
     ? `CONTRACTOR LOCATION: ${[ctx.city, ctx.state].filter(Boolean).join(", ")} — use this for ALL local store/price searches.`
     : "CONTRACTOR LOCATION: Not set — ask them to add their ZIP code in Settings so you can find local prices.";
 
-  return buildSystemPromptText(locationLine);
+  const stripeLine = ctx.stripeConnected === true
+    ? "STRIPE CONNECT: Connected and active — you CAN finalize invoices in Stripe, generate hosted payment links, and send invoices via Stripe email."
+    : ctx.stripeConnected === false
+    ? "STRIPE CONNECT: Not connected — finalize_invoice will mark as open without a Stripe payment link. Advise the contractor to connect Stripe in Settings → Integrations if they want payment links."
+    : "STRIPE CONNECT: Status unknown.";
+
+  return buildSystemPromptText(locationLine, stripeLine);
 }
 
 // Keep SYSTEM_PROMPT as backward-compat alias (no location context)
 export const SYSTEM_PROMPT = buildSystemPromptText("CONTRACTOR LOCATION: Not set.");
 
-function buildSystemPromptText(locationLine: string): string {
+function buildSystemPromptText(locationLine: string, stripeLine?: string): string {
   return `You are WorkSupp, an AI assistant for small contractors. You help them manage projects, track work, invoices, clients, and pricing directly through WhatsApp — acting as their full business back-office.
 
 ━━━ LANGUAGE ━━━
@@ -157,6 +164,7 @@ Concise, mobile-friendly. Short paragraphs. Numbered lists for selections. Emoji
 
 You have full read/write access to all contractor data. Use tools confidently to create, update, and retrieve information.
 
-${locationLine}`;
+${locationLine}
+${stripeLine ?? ""}`;
 }
 

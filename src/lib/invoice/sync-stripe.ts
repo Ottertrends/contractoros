@@ -1,5 +1,6 @@
 import { getStripe } from "@/lib/stripe";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 export interface SyncStripeResult {
   stripe_invoice_id: string;
@@ -15,8 +16,9 @@ export interface SyncStripeResult {
 export async function syncToStripe(
   invoiceId: string,
   userId: string,
+  supabaseClient?: SupabaseClient,
 ): Promise<SyncStripeResult> {
-  const supabase = await createSupabaseServerClient();
+  const supabase = supabaseClient ?? await createSupabaseServerClient();
 
   // 1. Fetch invoice + line items
   const [{ data: invoice, error: invoiceError }, { data: items, error: itemsError }] =
@@ -249,8 +251,9 @@ export interface FinalizeResult {
 export async function finalizeStripeInvoice(
   invoiceId: string,
   userId: string,
+  supabaseClient?: SupabaseClient,
 ): Promise<FinalizeResult> {
-  const supabase = await createSupabaseServerClient();
+  const supabase = supabaseClient ?? await createSupabaseServerClient();
 
   const [{ data: invoice }, { data: profile }] = await Promise.all([
     supabase.from("invoices").select("stripe_invoice_id").eq("id", invoiceId).eq("user_id", userId).single(),

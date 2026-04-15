@@ -97,7 +97,7 @@ export async function processContractorMessage(
     const admin = createSupabaseAdminClient();
     const [{ data: memRow }, { data: profRow }] = await Promise.all([
       admin.from("agent_memory").select("memory_text, updated_at").eq("user_id", userId).maybeSingle(),
-      admin.from("profiles").select("zip, city, state").eq("id", userId).maybeSingle(),
+      admin.from("profiles").select("zip, city, state, stripe_connect_account_id, stripe_connect_charges_enabled").eq("id", userId).maybeSingle(),
     ]);
 
     const memoryBlock = memRow?.memory_text?.trim()
@@ -108,6 +108,7 @@ export async function processContractorMessage(
       zip: profRow?.zip,
       city: profRow?.city,
       state: profRow?.state,
+      stripeConnected: !!(profRow?.stripe_connect_account_id && profRow?.stripe_connect_charges_enabled),
     }) + memoryBlock;
 
     // Monthly token cap check (6.5M tokens)

@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { syncDraftFromProject } from "@/lib/invoice/sync-draft";
+import { syncToStripe, finalizeStripeInvoice } from "@/lib/invoice/sync-stripe";
 import { DEFAULT_ANTHROPIC_MODEL } from "@/lib/agent/model";
 import { isPremium, maxProjects, maxMonthlySearches } from "@/lib/billing/access";
 import { getStripe } from "@/lib/stripe";
@@ -1173,47 +1174,67 @@ Return ONLY valid JSON, no markdown:
       if (!inv) return jsonResult({ error: "Invoice not found" });
       if (inv.status !== "draft") return jsonResult({ error: `Invoice is already ${inv.status}` });
 
-      let hostedUrl: string | null = null;
+      // Check if Stripe Connect is set up for this user
+      const { data: prof } = await admin
+        .from("profiles")
+        .select("stripe_connect_account_id, stripe_connect_charges_enabled")
+        .eq("id", userId)
+        .single();
 
-      if (inv.stripe_invoice_id) {
+      const stripeConnected = !!(prof?.stripe_connect_account_id && prof?.stripe_connect_charges_enabled);
+
+      let hostedUrl: string | null = null;
+      let stripeInvoiceNumber: string | null = null;
+
+      if (stripeConnected) {
         try {
-          const stripeInv = await getStripe().invoices.finalizeInvoice(inv.stripe_invoice_id);
-          hostedUrl = stripeInv.hosted_invoice_url ?? null;
-          await admin
-            .from("invoices")
-            .update({ status: "open", stripe_hosted_url: hostedUrl, updated_at: new Date().toISOString() })
-            .eq("id", invoiceId);
+          // Sync line items to Stripe (creates/updates the Stripe draft invoice)
+          await syncToStripe(invoiceId, userId, admin);
+          // Finalize: draft → open, generates hosted_invoice_url
+          const result = await finalizeStripeInvoice(invoiceId, userId, admin);
+          hostedUrl = result.hostedUrl;
+          stripeInvoiceNumber = result.invoiceNumber;
         } catch (e) {
           const msg = e instanceof Error ? e.message : "Stripe error";
-          return jsonResult({ error: `Failed to finalize in Stripe: ${msg}` });
+          return jsonResult({ error: `Failed to finalize via Stripe: ${msg}` });
         }
-      } else {
-        await admin
-          .from("invoices")
-          .update({ status: "open", updated_at: new Date().toISOString() })
-          .eq("id", invoiceId);
       }
 
-      return jsonResult({ ok: true, status: "open", hosted_url: hostedUrl });
+      // Mark as open in our DB (hosted_url already saved inside finalizeStripeInvoice if connected)
+      await admin
+        .from("invoices")
+        .update({ status: "open", updated_at: new Date().toISOString() })
+        .eq("id", invoiceId);
+
+      return jsonResult({
+        ok: true,
+        status: "open",
+        stripe_connected: stripeConnected,
+        hosted_url: hostedUrl,
+        stripe_invoice_number: stripeInvoiceNumber,
+      });
     }
 
     case "send_invoice_stripe": {
       const invoiceId = String(input.invoice_id ?? "").trim();
       if (!invoiceId) return jsonResult({ error: "invoice_id is required" });
 
-      const { data: inv } = await admin
-        .from("invoices")
-        .select("id, status, stripe_invoice_id, user_id")
-        .eq("id", invoiceId)
-        .eq("user_id", userId)
-        .single();
+      const [{ data: inv }, { data: sendProf }] = await Promise.all([
+        admin.from("invoices").select("id, status, stripe_invoice_id, user_id").eq("id", invoiceId).eq("user_id", userId).single(),
+        admin.from("profiles").select("stripe_connect_account_id, stripe_connect_charges_enabled").eq("id", userId).single(),
+      ]);
 
       if (!inv) return jsonResult({ error: "Invoice not found" });
-      if (!inv.stripe_invoice_id) return jsonResult({ error: "This invoice is not linked to Stripe. Finalize it first with Stripe connected." });
+      if (!inv.stripe_invoice_id) return jsonResult({ error: "This invoice has no Stripe invoice linked. Call finalize_invoice first." });
       if (inv.status === "draft") return jsonResult({ error: "Invoice must be finalized before sending. Call finalize_invoice first." });
+      if (!sendProf?.stripe_connect_account_id) return jsonResult({ error: "Stripe Connect is not set up. Go to Settings → Integrations to connect Stripe." });
 
       try {
-        await getStripe().invoices.sendInvoice(inv.stripe_invoice_id);
+        await getStripe().invoices.sendInvoice(
+          inv.stripe_invoice_id,
+          undefined,
+          { stripeAccount: sendProf.stripe_connect_account_id },
+        );
         await admin
           .from("invoices")
           .update({ status: "sent", updated_at: new Date().toISOString() })
