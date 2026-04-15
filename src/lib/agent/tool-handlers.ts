@@ -1172,7 +1172,22 @@ Return ONLY valid JSON, no markdown:
         .single();
 
       if (!inv) return jsonResult({ error: "Invoice not found" });
-      if (inv.status !== "draft") return jsonResult({ error: `Invoice is already ${inv.status}` });
+      // If already open/sent/paid — return existing state so the bot doesn't re-finalize
+      if (inv.status !== "draft") {
+        const { data: existingInv } = await admin
+          .from("invoices")
+          .select("stripe_hosted_url, stripe_invoice_number, status")
+          .eq("id", invoiceId)
+          .single();
+        return jsonResult({
+          ok: true,
+          already_finalized: true,
+          status: existingInv?.status ?? inv.status,
+          hosted_url: existingInv?.stripe_hosted_url ?? null,
+          stripe_invoice_number: existingInv?.stripe_invoice_number ?? null,
+          message: `Invoice is already ${inv.status} — no changes made.`,
+        });
+      }
 
       // Check if Stripe Connect is set up for this user
       const { data: prof } = await admin
@@ -1227,6 +1242,8 @@ Return ONLY valid JSON, no markdown:
       if (!inv) return jsonResult({ error: "Invoice not found" });
       if (!inv.stripe_invoice_id) return jsonResult({ error: "This invoice has no Stripe invoice linked. Call finalize_invoice first." });
       if (inv.status === "draft") return jsonResult({ error: "Invoice must be finalized before sending. Call finalize_invoice first." });
+      // Guard: already sent — do NOT send again (avoids duplicate emails on retry)
+      if (inv.status === "sent") return jsonResult({ ok: true, already_sent: true, message: "Invoice was already sent to the client via Stripe. No duplicate email sent." });
       if (!sendProf?.stripe_connect_account_id) return jsonResult({ error: "Stripe Connect is not set up. Go to Settings → Integrations to connect Stripe." });
 
       try {
