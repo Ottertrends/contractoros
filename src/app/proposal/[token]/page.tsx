@@ -21,6 +21,13 @@ export default async function SharedProposalPage({ params }: Props) {
 
   if (!proposal) notFound();
 
+  // Fetch user's logo for the share page header
+  const { data: profile } = await admin
+    .from("profiles")
+    .select("invoice_logo_url")
+    .eq("id", proposal.user_id as string)
+    .single();
+
   const blocks = (proposal.content_blocks ?? []) as ContentBlock[];
   for (const block of blocks) {
     if (block.type === "image" && block.storagePath) {
@@ -47,6 +54,7 @@ export default async function SharedProposalPage({ params }: Props) {
       projectName={(proposal.project_name as string) ?? ""}
       design={(proposal.design as ProposalDesign) ?? null}
       contentBlocks={blocks.filter((b) => b.included)}
+      logoUrl={(profile as { invoice_logo_url?: string | null } | null)?.invoice_logo_url ?? null}
     />
   );
 }

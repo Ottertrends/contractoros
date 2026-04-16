@@ -96,7 +96,7 @@ export default async function SharedInvoicePage({ params }: Props) {
                 className="h-10 max-w-[120px] object-contain"
               />
             ) : (
-              <span className="font-bold text-primary text-xl">WorkSupp</span>
+              null
             )}
             <div>
               <p className="font-semibold text-slate-900 text-sm">{profile?.company_name ?? profile?.full_name ?? "WorkSupp"}</p>

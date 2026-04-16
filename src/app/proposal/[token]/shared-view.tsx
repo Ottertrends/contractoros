@@ -18,6 +18,7 @@ interface Props {
   projectName: string;
   design: ProposalDesign | null;
   contentBlocks: ContentBlock[];
+  logoUrl?: string | null;
 }
 
 export function SharedProposalView({
@@ -28,6 +29,7 @@ export function SharedProposalView({
   projectName,
   design,
   contentBlocks,
+  logoUrl,
 }: Props) {
   const total = proposal.lineItems.reduce((s, i) => s + i.qty * i.unitPrice, 0);
 
@@ -37,6 +39,10 @@ export function SharedProposalView({
         {/* Header */}
         <div className="flex items-start justify-between">
           <div>
+            {logoUrl && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={logoUrl} alt="Company logo" className="h-10 max-w-[120px] object-contain mb-2" />
+            )}
             {companyName && (
               <p className="text-lg font-bold text-slate-900 dark:text-white">{companyName}</p>
             )}
