@@ -123,8 +123,15 @@ export async function POST(request: Request) {
       } catch {
         /* ignore if doesn't exist */
       }
-      await evolution.createInstance(instanceName, webhookUrl, { qrcode: false });
-      console.log("[whatsapp/connect] created pairing instance (qrcode:false)");
+      try {
+        await evolution.createInstance(instanceName, webhookUrl, { qrcode: false });
+        console.log("[whatsapp/connect] created pairing instance (qrcode:false)");
+      } catch (createErr) {
+        const createMsg = createErr instanceof Error ? createErr.message : String(createErr);
+        if (!/token already|already\s+exist/i.test(createMsg)) throw createErr;
+        // Delete didn't fully take — instance persists; proceed to request pairing code from it
+        console.log("[whatsapp/connect] instance persisted after delete — requesting pairing code from existing instance");
+      }
       try {
         await evolution.setWebhook(instanceName, webhookUrl, WEBHOOK_EVENTS);
       } catch (we) {
@@ -178,7 +185,14 @@ export async function POST(request: Request) {
               qr = await resolveQrDataUrl(connect2, created);
             }
           } catch (recreateErr) {
-            throw recreateErr;
+            const recreateMsg = recreateErr instanceof Error ? recreateErr.message : String(recreateErr);
+            if (!/token already|already\s+exist/i.test(recreateMsg)) throw recreateErr;
+            // Instance persisted after delete — fetch QR from existing instance
+            console.log("[whatsapp/connect] instance persisted after delete — fetching QR from existing instance");
+            try {
+              const connect2 = await evolution.getQRCode(instanceName);
+              qr = await resolveQrDataUrl(connect2);
+            } catch { /* QR fetch failed, qr stays null */ }
           }
         }
       }
