@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import {
   createEvolutionClient,
   extractPairingCode,
+  mapConnectionState,
   resolveQrDataUrl,
 } from "@/lib/evolution/client";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
@@ -94,7 +95,6 @@ export async function POST(request: Request) {
       // If instance is already open (connected), sync profile and return immediately
       try {
         const statusRes = await evolution.getInstanceStatus(instanceName);
-        const { mapConnectionState } = await import("@/lib/evolution/client");
         const { connected } = mapConnectionState(statusRes);
         if (connected) {
           console.log("[whatsapp/connect] instance is open — syncing profile and returning connected");
