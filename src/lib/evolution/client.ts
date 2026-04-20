@@ -100,6 +100,7 @@ export function createEvolutionClient(): EvolutionClient {
       // Pass qrcode:false for pairing code path so Baileys starts in pairing mode.
       const body: CreateInstanceBody = {
         instanceName,
+        token: crypto.randomUUID(),
         qrcode: opts?.qrcode !== false, // default true; false locks into pairing mode
         integration: "WHATSAPP-BAILEYS",
       };
