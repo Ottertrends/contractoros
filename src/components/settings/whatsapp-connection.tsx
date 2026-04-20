@@ -221,6 +221,12 @@ function LineBlock({
       });
       const body = await res.json();
       if (!res.ok) throw new Error(body.error ?? "Connect failed");
+      // Already connected on the Evolution side — profile synced server-side
+      if (body.connected) {
+        toast.success("WhatsApp already connected — refreshing status.");
+        startPolling();
+        return;
+      }
       let qr = body.qrCodeBase64 as string | null;
       if (!qr) {
         const q = slot === "secondary" ? "?slot=secondary" : "";

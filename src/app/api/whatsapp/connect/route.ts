@@ -89,7 +89,23 @@ export async function POST(request: Request) {
 
       if (!alreadyExists) throw e;
 
-      console.log("[whatsapp/connect] instance already exists — re-registering webhook");
+      console.log("[whatsapp/connect] instance already exists — checking current state");
+
+      // If instance is already open (connected), sync profile and return immediately
+      try {
+        const statusRes = await evolution.getInstanceStatus(instanceName);
+        const { mapConnectionState } = await import("@/lib/evolution/client");
+        const { connected } = mapConnectionState(statusRes);
+        if (connected) {
+          console.log("[whatsapp/connect] instance is open — syncing profile and returning connected");
+          const connectedPatch = slot === "secondary"
+            ? { whatsapp_secondary_instance_id: instanceName, whatsapp_secondary_connected: true }
+            : { whatsapp_instance_id: instanceName, whatsapp_connected: true };
+          await supabase.from("profiles").update(connectedPatch).eq("id", user.id);
+          return NextResponse.json({ instanceName, slot, connected: true });
+        }
+      } catch { /* status check failed, fall through to QR path */ }
+
       try {
         await evolution.setWebhook(instanceName, webhookUrl, WEBHOOK_EVENTS);
       } catch (we) {
