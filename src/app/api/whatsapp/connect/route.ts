@@ -41,7 +41,7 @@ export async function POST(request: Request) {
       /* default primary */
     }
 
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "");
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL?.trim().replace(/\/$/, "");
     if (!appUrl) {
       return NextResponse.json(
         { error: "Missing NEXT_PUBLIC_APP_URL" },
